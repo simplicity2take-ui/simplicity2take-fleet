@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Simplicity2Take Fleet</title>
+    <link rel="stylesheet" href="./styles.css?v=v1-0-final-20260720" />
+  </head>
+  <body>
+    <section class="login-screen" id="loginScreen" aria-labelledby="loginTitle">
+      <div class="login-panel">
+        <div class="logo large">
+          <img src="./simplicity2take-logo.jpeg" alt="Simplicity2Take" />
+        </div>
+        <h1 id="loginTitle">Simplicity2Take Fleet</h1>
+
+        <form class="login-form" id="loginForm">
+          <label>
+            Email ou telemóvel
+            <input id="loginIdentifier" autocomplete="username" placeholder="email@simplicity2take.pt ou telemóvel" required />
+          </label>
+          <label>
+            Palavra-passe
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••" required />
+          </label>
+          <button class="primary-button" type="submit">Entrar</button>
+        </form>
+
+        <button class="secondary-button public-cta" type="button" id="workWithUsButton">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
+          Trabalhar Connosco
+        </button>
+
+        <div class="login-options" id="loginOptions"></div>
+      </div>
+    </section>
+
+    <section class="recruitment-screen hidden" id="recruitmentScreen" aria-labelledby="recruitmentTitle">
+      <div class="recruitment-header">
+        <div class="logo">
+          <img src="./simplicity2take-logo.jpeg" alt="Simplicity2Take" />
+        </div>
+        <button class="ghost-button" type="button" id="backToLoginButton">Voltar ao login</button>
+      </div>
+      <div class="recruitment-layout">
+        <article class="recruitment-copy">
+          <p class="eyebrow">S2T AI Recruiter</p>
+          <h1 id="recruitmentTitle">Trabalhar Connosco</h1>
+          <p>O assistente recolhe a informação necessária, responde a perguntas frequentes e prepara a candidatura para análise pelo Administrador.</p>
+          <div class="requirements-list" id="publicRequirements"></div>
+        </article>
+        <article class="chat-panel">
+          <div class="chat-log" id="recruiterChatLog"></div>
+          <form class="chat-form" id="recruiterForm">
+            <input id="recruiterInput" placeholder="Escreva a sua resposta ou pergunta" autocomplete="off" required />
+            <button class="primary-button" type="submit">Enviar</button>
+          </form>
+          <label class="upload-line">
+            Enviar documentos
+            <input id="candidateDocuments" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" />
+          </label>
+        </article>
+      </div>
+    </section>
+
+    <div class="app-shell hidden" id="appShell">
+      <aside class="sidebar" aria-label="Menu lateral">
+        <div class="logo">
+          <img src="./simplicity2take-logo.jpeg" alt="Simplicity2Take" />
+        </div>
+        <nav class="side-nav" id="sideNav" aria-label="Navegação principal"></nav>
+        <div class="session-card">
+          <span id="sessionRole">Perfil</span>
+          <strong id="sessionName">Utilizador</strong>
+          <button class="ghost-on-dark" type="button" id="logoutButton">Terminar sessão</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="contextLabel">Simplicity2Take Fleet</p>
+            <h1 id="pageTitle">Dashboard</h1>
+          </div>
+          <div class="topbar-actions">
+            <label class="search">
+              <span aria-hidden="true">⌕</span>
+              <input id="globalSearch" type="search" placeholder="Pesquisar" aria-label="Pesquisar" />
+            </label>
+            <button class="secondary-button" type="button" data-open="password">Alterar palavra-passe</button>
+          </div>
+        </header>
+
+        <section class="dashboard-view" id="content" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <dialog id="entityModal">
+      <form method="dialog" class="modal-card" id="entityForm">
+        <div class="modal-heading">
+          <div>
+            <p class="eyebrow" id="modalKicker">Simplicity2Take Fleet</p>
+            <h2 id="modalTitle">Criar</h2>
+          </div>
+          <button class="icon-button" type="button" id="closeModal" aria-label="Fechar">×</button>
+        </div>
+        <div class="form-grid" id="modalFields"></div>
+        <menu class="modal-actions">
+          <button class="ghost-button" type="button" id="cancelModal">Cancelar</button>
+          <button class="primary-button" type="submit">Guardar</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js?v=v1-0-final-20260720"></script>
+  </body>
+</html>

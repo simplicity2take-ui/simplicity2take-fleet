@@ -1,5 +1,7 @@
 const state = {
   sessionUserId: null,
+  profile: null,
+  backendReady: false,
   activeView: "dashboard",
   editing: null,
   smartPreview: null,
@@ -109,6 +111,12 @@ const state = {
   recruiterSession: null
 };
 
+const SUPABASE_URL = "https://lmutpimlokagjwngqanx.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_8NuXQQp9sef-eTwGMItD0Q_GyD1GBVS";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+});
+
 const documentTypes = ["Carta Verde", "Seguro", "IPO", "DUA", "Licença TVDE", "Carta de Condução", "Certificado TVDE", "Contrato", "Cartão de Operador TVDE", "Outros"];
 const navByRole = {
   admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["documents", "Documentos", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
@@ -142,7 +150,96 @@ const selectors = {
 };
 
 function currentUser() {
+  if (state.profile) {
+    return {
+      id: state.profile.id,
+      role: state.profile.role,
+      name: state.profile.full_name || state.profile.name || state.profile.email,
+      email: state.profile.email || "",
+      phone: state.profile.phone || "",
+      driverId: state.profile.driver_id || state.drivers.find(driver => driver.profileId === state.profile.id)?.id || ""
+    };
+  }
   return state.users.find(user => user.id === state.sessionUserId);
+}
+
+function valueOf(row, ...keys) {
+  for (const key of keys) if (row?.[key] !== undefined && row?.[key] !== null) return row[key];
+  return "";
+}
+
+async function loadBackendData() {
+  const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult] = await Promise.all([
+    supabaseClient.from("drivers").select("*"),
+    supabaseClient.from("vehicles").select("*"),
+    supabaseClient.from("vehicle_assignments").select("*"),
+    supabaseClient.from("documents").select("*"),
+    supabaseClient.from("document_viewers").select("*"),
+    supabaseClient.from("applications").select("*").order("created_at", { ascending: false })
+  ]);
+
+  const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult].find(result => result.error)?.error;
+  if (firstError) throw firstError;
+
+  const assignments = assignmentsResult.data || [];
+  const viewers = viewersResult.data || [];
+  state.drivers = (driversResult.data || []).map(row => ({
+    id: row.id,
+    profileId: valueOf(row, "profile_id", "user_id"),
+    name: valueOf(row, "full_name", "name"),
+    email: valueOf(row, "email"),
+    phone: valueOf(row, "phone"),
+    status: valueOf(row, "status") || "Ativo",
+    raw: row
+  }));
+  state.vehicles = (vehiclesResult.data || []).map(row => ({
+    id: row.id,
+    plate: valueOf(row, "plate", "registration_plate", "license_plate"),
+    brand: valueOf(row, "brand", "make"),
+    model: valueOf(row, "model"),
+    year: valueOf(row, "year"),
+    vin: valueOf(row, "vin"),
+    status: valueOf(row, "status") || "Ativo",
+    driverIds: assignments.filter(item => item.vehicle_id === row.id && item.active !== false).map(item => item.driver_id),
+    raw: row
+  }));
+  state.documents = (documentsResult.data || []).map(row => ({
+    id: row.id,
+    name: valueOf(row, "name", "title", "file_name"),
+    type: valueOf(row, "document_type", "type") || "Outros",
+    number: valueOf(row, "document_number", "number"),
+    policyNumber: valueOf(row, "policy_number"),
+    issueDate: valueOf(row, "issue_date"),
+    expiryDate: valueOf(row, "expiry_date"),
+    observations: valueOf(row, "observations", "notes"),
+    fileName: valueOf(row, "file_name", "name"),
+    fileType: valueOf(row, "mime_type", "file_type"),
+    driveFileId: valueOf(row, "drive_file_id", "google_drive_file_id"),
+    driveUrl: valueOf(row, "drive_url", "web_view_link", "file_url"),
+    vehicleId: valueOf(row, "vehicle_id"),
+    driverId: valueOf(row, "driver_id"),
+    viewerDriverIds: viewers.filter(item => item.document_id === row.id).map(item => item.driver_id),
+    raw: row
+  }));
+  state.applications = (applicationsResult.data || []).map(row => ({
+    id: row.id,
+    candidate: {
+      name: valueOf(row, "candidate_name", "full_name", "name"),
+      phone: valueOf(row, "phone"),
+      email: valueOf(row, "email"),
+      tvdeCertificate: valueOf(row, "tvde_certificate"),
+      drivingLicense: valueOf(row, "driving_license"),
+      tvdeExperience: valueOf(row, "tvde_experience"),
+      availability: valueOf(row, "availability"),
+      schedulePreference: valueOf(row, "schedule_preference")
+    },
+    documents: [],
+    status: valueOf(row, "status") || "Nova",
+    summary: valueOf(row, "summary") || "Candidatura recebida.",
+    conversation: valueOf(row, "conversation") || [],
+    raw: row
+  }));
+  state.backendReady = true;
 }
 
 function escapeHtml(value) {
@@ -338,22 +435,49 @@ function renderLogin() {
   selectors.loginOptions.innerHTML = "";
 }
 
-function login(identifier, password) {
-  const normalized = identifier.trim().toLowerCase();
-  const user = state.users.find(item => (item.email?.toLowerCase() === normalized || item.phone === normalized) && item.password === password);
-  if (!user) {
-    showToast("Email, telemóvel ou palavra-passe inválidos.");
-    return;
+async function login(identifier, password) {
+  const submitButton = selectors.loginForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  submitButton.textContent = "A entrar…";
+  try {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
+      email: identifier.trim().toLowerCase(),
+      password
+    });
+    if (error || !data.user) throw error || new Error("Sessão inválida.");
+    await startAuthenticatedSession(data.user);
+  } catch (error) {
+    console.error(error);
+    showToast("Email ou palavra-passe inválidos.");
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = "Entrar";
   }
+}
+
+async function startAuthenticatedSession(user) {
+  const { data: profile, error } = await supabaseClient.from("profiles").select("*").eq("id", user.id).single();
+  if (error || !profile) {
+    await supabaseClient.auth.signOut();
+    throw error || new Error("Perfil não encontrado.");
+  }
+  if (profile.status && profile.status !== "Ativo") {
+    await supabaseClient.auth.signOut();
+    throw new Error("Conta inativa.");
+  }
+  state.profile = { ...profile, email: profile.email || user.email };
   state.sessionUserId = user.id;
-  state.activeView = user.role === "admin" ? "dashboard" : "vehicles";
+  await loadBackendData();
+  state.activeView = profile.role === "admin" ? "dashboard" : "vehicles";
   selectors.loginScreen.classList.add("hidden");
   selectors.appShell.classList.remove("hidden");
   renderApp();
 }
 
-function logout() {
+async function logout() {
+  await supabaseClient.auth.signOut();
   state.sessionUserId = null;
+  state.profile = null;
   selectors.appShell.classList.add("hidden");
   selectors.loginScreen.classList.remove("hidden");
   selectors.loginPassword.value = "";
@@ -755,101 +879,178 @@ function analyseFileName(fileName) {
   };
 }
 
-function submitModal(event) {
+async function submitModal(event) {
   event.preventDefault();
+  const submitButton = selectors.form.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  submitButton.textContent = "A guardar…";
   const data = new FormData(selectors.form);
   const values = Object.fromEntries(data.entries());
   const checked = name => data.getAll(name);
   const { type, id } = state.editing;
-  if (type === "driver") saveDriver(values, id);
-  if (type === "vehicle") saveVehicle(values, checked("driverIds"), id);
-  if (type === "document") saveDocument(values, checked("viewerDriverIds"), id);
-  if (type === "password") savePassword(values.password);
-  selectors.modal.close();
-  renderApp();
+  try {
+    if (type === "driver") await saveDriver(values, id);
+    if (type === "vehicle") await saveVehicle(values, checked("driverIds"), id);
+    if (type === "document") await saveDocument(values, checked("viewerDriverIds"), id);
+    if (type === "password") await savePassword(values.password);
+    selectors.modal.close();
+    await loadBackendData();
+    renderApp();
+  } catch (error) {
+    console.error(error);
+    showToast(error?.message || "Não foi possível guardar.");
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = "Guardar";
+  }
 }
 
-function saveDriver(values, id) {
-  let driver = state.drivers.find(item => item.id === id);
-  if (!driver) {
-    driver = { id: makeId("d") };
-    state.drivers.unshift(driver);
-    state.users.push({ id: makeId("u"), role: "driver", name: values.name, email: values.email, phone: values.phone, password: "123456", driverId: driver.id });
-  }
-  Object.assign(driver, { name: values.name, email: values.email, phone: values.phone, status: values.status });
-  const account = state.users.find(user => user.driverId === driver.id);
-  if (account) Object.assign(account, { name: values.name, email: values.email, phone: values.phone });
-  showToast(id ? "Motorista atualizado." : "Motorista criado. Palavra-passe inicial: 123456");
+async function saveDriver(values, id) {
+  if (!id) throw new Error("A criação do acesso do motorista será ativada no próximo passo.");
+  const { error } = await supabaseClient.from("drivers").update({
+    full_name: values.name,
+    email: values.email,
+    phone: values.phone,
+    status: values.status
+  }).eq("id", id);
+  if (error) throw error;
+  showToast("Motorista atualizado.");
 }
 
-function saveVehicle(values, driverIds, id) {
-  let vehicle = state.vehicles.find(item => item.id === id);
-  if (!vehicle) {
-    vehicle = { id: makeId("v") };
-    state.vehicles.unshift(vehicle);
+async function saveVehicle(values, driverIds, id) {
+  const payload = {
+    plate: values.plate.toUpperCase(),
+    brand: values.brand,
+    model: values.model,
+    year: Number(values.year),
+    vin: values.vin,
+    status: values.status
+  };
+  const query = id
+    ? supabaseClient.from("vehicles").update(payload).eq("id", id).select().single()
+    : supabaseClient.from("vehicles").insert(payload).select().single();
+  const { data: vehicle, error } = await query;
+  if (error) throw error;
+  const vehicleId = id || vehicle.id;
+  const { error: deleteError } = await supabaseClient.from("vehicle_assignments").delete().eq("vehicle_id", vehicleId);
+  if (deleteError) throw deleteError;
+  if (driverIds.length) {
+    const { error: assignmentError } = await supabaseClient.from("vehicle_assignments").insert(
+      driverIds.map(driverId => ({ vehicle_id: vehicleId, driver_id: driverId, active: true }))
+    );
+    if (assignmentError) throw assignmentError;
   }
-  Object.assign(vehicle, { plate: values.plate, brand: values.brand, model: values.model, year: values.year, vin: values.vin, status: values.status, driverIds });
   showToast(id ? "Veículo atualizado." : "Veículo criado.");
 }
 
-function saveDocument(values, viewerDriverIds, id) {
+async function saveDocument(values, viewerDriverIds, id) {
   const file = selectors.modalFields.querySelector('[name="file"]')?.files?.[0];
-  let doc = state.documents.find(item => item.id === id);
-  if (!doc) {
-    doc = { id: makeId("doc") };
-    state.documents.unshift(doc);
+  const existing = state.documents.find(item => item.id === id);
+  let driveData = existing ? {
+    fileId: existing.driveFileId,
+    fileName: existing.fileName,
+    mimeType: existing.fileType,
+    webViewLink: existing.driveUrl
+  } : null;
+
+  if (file) {
+    if (file.size > 10 * 1024 * 1024) throw new Error("O ficheiro ultrapassa 10 MB.");
+    if (!["application/pdf", "image/jpeg", "image/png"].includes(file.type)) throw new Error("Só são permitidos PDF, JPG e PNG.");
+    const base64 = await fileToBase64(file);
+    const { data, error } = await supabaseClient.functions.invoke("drive-upload", {
+      body: {
+        fileName: file.name,
+        mimeType: file.type,
+        base64,
+        folderType: values.vehicleId ? "vehicles" : values.driverId ? "drivers" : "documents",
+        documentType: values.type
+      }
+    });
+    if (error) throw error;
+    if (!data?.ok) throw new Error(data?.error || "Falha ao guardar no Google Drive.");
+    driveData = data;
   }
-  Object.assign(doc, {
+  if (!driveData) throw new Error("Selecione um ficheiro.");
+
+  const payload = {
     name: values.name,
-    type: values.type,
-    number: values.number,
-    policyNumber: values.policyNumber,
-    issueDate: values.issueDate,
-    expiryDate: values.expiryDate,
+    document_type: values.type,
+    document_number: values.number,
+    policy_number: values.policyNumber || null,
+    issue_date: values.issueDate || null,
+    expiry_date: values.expiryDate || null,
     observations: values.observations,
-    fileName: file?.name || doc.fileName || "documento.pdf",
-    fileType: file?.type || doc.fileType || "application/pdf",
-    vehicleId: values.vehicleId,
-    driverId: values.driverId,
-    viewerDriverIds
-  });
+    file_name: driveData.fileName,
+    mime_type: driveData.mimeType,
+    drive_file_id: driveData.fileId,
+    drive_url: driveData.webViewLink,
+    vehicle_id: values.vehicleId || null,
+    driver_id: values.driverId || null,
+    uploaded_by: state.sessionUserId
+  };
+  const query = id
+    ? supabaseClient.from("documents").update(payload).eq("id", id).select().single()
+    : supabaseClient.from("documents").insert(payload).select().single();
+  const { data: saved, error } = await query;
+  if (error) throw error;
+  const documentId = id || saved.id;
+  const { error: viewerDeleteError } = await supabaseClient.from("document_viewers").delete().eq("document_id", documentId);
+  if (viewerDeleteError) throw viewerDeleteError;
+  if (viewerDriverIds.length) {
+    const { error: viewerError } = await supabaseClient.from("document_viewers").insert(
+      viewerDriverIds.map(driverId => ({ document_id: documentId, driver_id: driverId }))
+    );
+    if (viewerError) throw viewerError;
+  }
   state.activeView = "documents";
-  showToast("Documento confirmado e disponível para os motoristas autorizados.");
+  showToast("Documento guardado no Google Drive.");
 }
 
-function savePassword(password) {
-  currentUser().password = password;
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1]);
+    reader.onerror = () => reject(new Error("Não foi possível ler o ficheiro."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function savePassword(password) {
+  const { error } = await supabaseClient.auth.updateUser({ password });
+  if (error) throw error;
   showToast("Palavra-passe alterada.");
 }
 
-function resetPassword(driverId) {
-  const account = state.users.find(user => user.driverId === driverId);
-  if (!account) return;
-  account.password = "123456";
-  showToast(`Palavra-passe recuperada para ${account.name}: 123456`);
+function resetPassword() {
+  showToast("A recuperação segura será enviada por email na próxima etapa.");
 }
 
-function deleteById(collection, id, message) {
-  state[collection] = state[collection].filter(item => item.id !== id);
-  if (collection === "drivers") {
-    state.users = state.users.filter(user => user.driverId !== id);
-    state.vehicles.forEach(vehicle => vehicle.driverIds = vehicle.driverIds.filter(driverId => driverId !== id));
-    state.documents.forEach(doc => doc.viewerDriverIds = doc.viewerDriverIds.filter(driverId => driverId !== id));
+async function deleteById(collection, id, message) {
+  const table = { drivers: "drivers", vehicles: "vehicles", documents: "documents" }[collection];
+  if (!table) return;
+  if (!window.confirm("Confirma que pretende eliminar este registo?")) return;
+  const { error } = await supabaseClient.from(table).delete().eq("id", id);
+  if (error) {
+    showToast(error.message);
+    return;
   }
+  await loadBackendData();
   showToast(message);
   renderApp();
 }
 
 function openDocument(id, download = false) {
   const doc = state.documents.find(item => item.id === id);
-  const blob = createDemoPdf(doc);
-  const url = URL.createObjectURL(blob);
+  if (!doc?.driveUrl) {
+    showToast("Este documento ainda não tem ligação ao Google Drive.");
+    return;
+  }
   const link = document.createElement("a");
-  link.href = url;
+  link.href = doc.driveUrl;
   link.target = "_blank";
-  link.download = download ? doc.fileName.replace(/\.(jpg|jpeg|png)$/i, ".pdf") : "";
+  if (download) link.download = doc.fileName;
+  link.rel = "noopener";
   link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function createDemoPdf(doc) {
@@ -873,7 +1074,7 @@ startxref
   return new Blob([pdf], { type: "application/pdf" });
 }
 
-document.addEventListener("click", event => {
+document.addEventListener("click", async event => {
   const publicRecruitment = event.target.closest("[data-view-public-recruitment]");
   if (publicRecruitment) openRecruitment();
 
@@ -898,11 +1099,11 @@ document.addEventListener("click", event => {
   const reset = event.target.closest("[data-reset-password]");
   if (reset) resetPassword(reset.dataset.resetPassword);
   const deleteDriver = event.target.closest("[data-delete-driver]");
-  if (deleteDriver) deleteById("drivers", deleteDriver.dataset.deleteDriver, "Motorista eliminado.");
+  if (deleteDriver) await deleteById("drivers", deleteDriver.dataset.deleteDriver, "Motorista eliminado.");
   const deleteVehicle = event.target.closest("[data-delete-vehicle]");
-  if (deleteVehicle) deleteById("vehicles", deleteVehicle.dataset.deleteVehicle, "Veículo eliminado.");
+  if (deleteVehicle) await deleteById("vehicles", deleteVehicle.dataset.deleteVehicle, "Veículo eliminado.");
   const deleteDocument = event.target.closest("[data-delete-document]");
-  if (deleteDocument) deleteById("documents", deleteDocument.dataset.deleteDocument, "Documento eliminado.");
+  if (deleteDocument) await deleteById("documents", deleteDocument.dataset.deleteDocument, "Documento eliminado.");
   const openDoc = event.target.closest("[data-open-doc]");
   if (openDoc) openDocument(openDoc.dataset.openDoc, false);
   const downloadDoc = event.target.closest("[data-download-doc]");
@@ -912,9 +1113,13 @@ document.addEventListener("click", event => {
   if (applicationStatus) {
     const application = state.applications.find(item => item.id === applicationStatus.dataset.applicationStatus);
     if (application) {
-      application.status = applicationStatus.dataset.status;
-      showToast("Estado da candidatura atualizado.");
-      renderApp();
+      const { error } = await supabaseClient.from("applications").update({ status: applicationStatus.dataset.status }).eq("id", application.id);
+      if (error) showToast(error.message);
+      else {
+        await loadBackendData();
+        showToast("Estado da candidatura atualizado.");
+        renderApp();
+      }
     }
   }
 });
@@ -954,4 +1159,17 @@ $("#logoutButton").addEventListener("click", logout);
 $("#closeModal").addEventListener("click", () => selectors.modal.close());
 $("#cancelModal").addEventListener("click", () => selectors.modal.close());
 
-renderLogin();
+async function initialise() {
+  renderLogin();
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session?.user) return;
+  try {
+    await startAuthenticatedSession(session.user);
+  } catch (error) {
+    console.error(error);
+    await supabaseClient.auth.signOut();
+    showToast("Volte a iniciar sessão.");
+  }
+}
+
+initialise();

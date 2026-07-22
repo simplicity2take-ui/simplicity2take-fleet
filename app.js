@@ -906,15 +906,20 @@ async function submitModal(event) {
 }
 
 async function saveDriver(values, id) {
-  if (!id) throw new Error("A criação do acesso do motorista será ativada no próximo passo.");
-  const { error } = await supabaseClient.from("drivers").update({
+  const payload = {
     full_name: values.name,
     email: values.email,
     phone: values.phone,
     status: values.status
-  }).eq("id", id);
+  };
+
+  const query = id
+    ? supabaseClient.from("drivers").update(payload).eq("id", id)
+    : supabaseClient.from("drivers").insert(payload);
+
+  const { error } = await query;
   if (error) throw error;
-  showToast("Motorista atualizado.");
+  showToast(id ? "Motorista atualizado." : "Motorista criado com sucesso.");
 }
 
 async function saveVehicle(values, driverIds, id) {

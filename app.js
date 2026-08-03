@@ -117,7 +117,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLI
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
-const documentTypes = ["Carta Verde", "Seguro", "IPO", "DUA", "Licença TVDE", "Carta de Condução", "Certificado TVDE", "Contrato", "Cartão de Operador TVDE", "Outros"];
+const documentTypes = ["Carta de Condução", "Seguro", "IPO", "Licença TVDE", "Cartão de Cidadão"];
 const navByRole = {
   admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["documents", "Documentos", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
   driver: [["vehicles", "Meus Veículos", "VE"], ["documents", "Meus Documentos", "DO"], ["account", "Minha Conta", "EU"]]
@@ -639,7 +639,6 @@ function documentCard(doc, admin) {
         <span>${escapeHtml(doc.type)}</span>
         <span>${escapeHtml(doc.number || "Sem número")}</span>
         <span>Validade: ${escapeHtml(doc.expiryDate)}</span>
-        <span>${escapeHtml(vehicleName(doc.vehicleId))}</span>
         <span>${escapeHtml(driverName(doc.driverId))}</span>
       </div>
       <div class="row-actions">
@@ -795,7 +794,7 @@ function modalFields(type, id) {
   }
 
   const doc = state.documents.find(item => item.id === id) || {};
-  const selectedDriver = id && state.drivers.some(driver => driver.id === id) ? id : doc.driverId || "";
+  const selectedDriver = doc.driverId || "";
   return `
     <div class="smartdocs-box span-full">
       <strong>S2T SmartDocs</strong>
@@ -803,22 +802,17 @@ function modalFields(type, id) {
     </div>
     ${field("file", "Ficheiro original", "", "file", true, 'accept=".pdf,.jpg,.jpeg,.png"')}
     <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
-    ${field("name", "Nome", doc.name)}
-    ${selectField("type", "Tipo", documentTypes, doc.type || "Carta Verde")}
+    ${field("name", "Nome do motorista", doc.name)}
+    ${selectField("type", "Tipo", documentTypes, doc.type || "Carta de Condução")}
     ${field("number", "Número do documento", doc.number)}
-    ${field("policyNumber", "Número da apólice", doc.policyNumber)}
-    ${field("issueDate", "Data de emissão", doc.issueDate, "date")}
     ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
-    ${selectField("vehicleId", "Veículo associado", [["", "Sem veículo"], ...state.vehicles.map(vehicle => [vehicle.id, vehicleName(vehicle.id)])], doc.vehicleId || "")}
     ${selectField("driverId", "Motorista associado", [["", "Sem motorista"], ...state.drivers.map(driver => [driver.id, driver.name])], selectedDriver)}
-    ${field("observations", "Observações", doc.observations, "text", true)}
     ${checkList("viewerDriverIds", "Quem pode visualizar o documento", state.drivers, doc.viewerDriverIds || (selectedDriver ? [selectedDriver] : []))}
   `;
 }
 
 function field(name, label, value = "", type = "text", span = false, extra = "") {
-  const optionalFields = ["observations", "policyNumber"];
-  const required = type === "file" || optionalFields.includes(name) ? "" : "required";
+  const required = type === "file" ? "" : "required";
   return `<label class="${span ? "span-full" : ""}">${label}<input name="${name}" type="${type}" value="${type === "file" ? "" : escapeHtml(value)}" ${extra} ${required}></label>`;
 }
 
@@ -844,39 +838,27 @@ function wireSmartDocsUpload() {
     state.smartPreview = analyseFileName(file.name);
     const preview = $("#smartPreview");
     preview.innerHTML = `
-      <strong>Documento identificado:</strong>
+      <strong>Documento carregado.</strong>
+      <p>O tipo pode ser sugerido pelo nome do ficheiro. Confirme manualmente o número e a data de validade antes de guardar.</p>
       <dl>
-        <dt>Tipo:</dt><dd>${escapeHtml(state.smartPreview.type)}</dd>
-        <dt>Matrícula:</dt><dd>${escapeHtml(state.smartPreview.plate || "Não identificada")}</dd>
-        <dt>Número:</dt><dd>${escapeHtml(state.smartPreview.number || "Não identificado")}</dd>
-        <dt>Validade:</dt><dd>${escapeHtml(state.smartPreview.expiryDate || "Não identificada")}</dd>
+        <dt>Tipo sugerido:</dt><dd>${escapeHtml(state.smartPreview.type)}</dd>
+        <dt>Número:</dt><dd>Preencher manualmente</dd>
+        <dt>Validade:</dt><dd>Preencher manualmente</dd>
       </dl>
     `;
-    selectors.modalFields.querySelector('[name="type"]').value = state.smartPreview.type;
-    if (state.smartPreview.plate) {
-      const vehicle = state.vehicles.find(item => item.plate.toLowerCase() === state.smartPreview.plate.toLowerCase());
-      if (vehicle) selectors.modalFields.querySelector('[name="vehicleId"]').value = vehicle.id;
-    }
-    selectors.modalFields.querySelector('[name="number"]').value = state.smartPreview.number;
-    selectors.modalFields.querySelector('[name="policyNumber"]').value = state.smartPreview.policyNumber;
-    selectors.modalFields.querySelector('[name="issueDate"]').value = state.smartPreview.issueDate;
-    selectors.modalFields.querySelector('[name="expiryDate"]').value = state.smartPreview.expiryDate;
-    selectors.modalFields.querySelector('[name="name"]').value = `${state.smartPreview.type} ${state.smartPreview.plate}`.trim();
+    const typeField = selectors.modalFields.querySelector('[name="type"]');
+    if (typeField && state.smartPreview.type) typeField.value = state.smartPreview.type;
+    const nameField = selectors.modalFields.querySelector('[name="name"]');
+    if (nameField && !nameField.value) nameField.value = state.smartPreview.type;
   });
 }
 
 function analyseFileName(fileName) {
   const text = fileName.toLowerCase();
-  const type = documentTypes.find(item => text.includes(item.toLowerCase().replaceAll(" ", "-")) || text.includes(item.toLowerCase())) || (text.includes("ipo") ? "IPO" : text.includes("seguro") ? "Seguro" : text.includes("contrato") ? "Contrato" : "Outros");
-  const plate = fileName.match(/[A-Z]{2}-\d{2}-[A-Z]{2}|\d{2}-[A-Z]{2}-\d{2}|[A-Z]{2}-[A-Z]{2}-\d{2}/i)?.[0]?.toUpperCase() || "";
-  return {
-    type,
-    plate,
-    number: `DOC-${Math.floor(100000 + Math.random() * 900000)}`,
-    policyNumber: type === "Seguro" || type === "Carta Verde" ? `AP-${Math.floor(100000 + Math.random() * 900000)}` : "",
-    issueDate: "2026-01-01",
-    expiryDate: "2026-12-31"
-  };
+  const type = documentTypes.find(item =>
+    text.includes(item.toLowerCase().replaceAll(" ", "-")) || text.includes(item.toLowerCase())
+  ) || (text.includes("ipo") ? "IPO" : text.includes("seguro") ? "Seguro" : text.includes("licenca") || text.includes("licença") ? "Licença TVDE" : text.includes("cidad") ? "Cartão de Cidadão" : text.includes("carta") ? "Carta de Condução" : "Outros");
+  return { type, number: "", expiryDate: "" };
 }
 
 async function submitModal(event) {
@@ -967,7 +949,7 @@ async function saveDocument(values, viewerDriverIds, id) {
         fileName: file.name,
         mimeType: file.type,
         base64,
-        folderType: values.vehicleId ? "vehicles" : values.driverId ? "drivers" : "documents",
+        folderType: values.driverId ? "drivers" : "documents",
         documentType: values.type
       }
     });
@@ -981,15 +963,15 @@ async function saveDocument(values, viewerDriverIds, id) {
     name: values.name,
     document_type: values.type,
     document_number: values.number,
-    policy_number: values.policyNumber || null,
-    issue_date: values.issueDate || null,
+    policy_number: null,
+    issue_date: null,
     expiry_date: values.expiryDate || null,
-    observations: values.observations,
+    observations: null,
     file_name: driveData.fileName,
     mime_type: driveData.mimeType,
     drive_file_id: driveData.fileId,
     drive_url: driveData.webViewLink,
-    vehicle_id: values.vehicleId || null,
+    vehicle_id: null,
     driver_id: values.driverId || null,
     uploaded_by: state.sessionUserId
   };

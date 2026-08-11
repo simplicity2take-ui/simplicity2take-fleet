@@ -595,7 +595,7 @@ function vehicleRow(vehicle, admin) {
 function renderDrivers() {
   selectors.pageTitle.textContent = "Motoristas";
   selectors.content.innerHTML = `
-    ${heading("Gestão de motoristas", "Criar, editar, eliminar e recuperar palavras-passe.", `<button class="primary-button" type="button" data-open="driver">Criar motorista</button>`)}
+    ${heading("Gestão de motoristas", "Criar, editar, eliminar e definir palavras-passe. O administrador entrega a palavra-passe diretamente ao motorista.", `<button class="primary-button" type="button" data-open="driver">Criar motorista</button>`)}
     <div class="table-wrap">
       <table>
         <thead><tr><th>Nome completo</th><th>Email</th><th>Telemóvel</th><th>Estado</th><th>Documentos</th><th>Ações</th></tr></thead>
@@ -614,7 +614,7 @@ function driverRow(driver) {
       <td>${escapeHtml(driver.phone)}</td>
       <td><span class="tag ${driver.status === "Ativo" ? "active" : "inactive"}">${escapeHtml(driver.status)}</span></td>
       <td><span class="tag">${docs.length} docs</span></td>
-      <td><div class="row-actions"><button class="mini-button" type="button" data-doc-driver="${driver.id}">Documento</button><button class="mini-button" type="button" data-edit-driver="${driver.id}">Editar</button><button class="mini-button" type="button" data-reset-password="${driver.id}">Recuperar passe</button><button class="danger-button" type="button" data-delete-driver="${driver.id}">Eliminar</button></div></td>
+      <td><div class="row-actions"><button class="mini-button" type="button" data-doc-driver="${driver.id}">Documento</button><button class="mini-button" type="button" data-edit-driver="${driver.id}">Editar</button><button class="mini-button" type="button" data-reset-password="${driver.id}">Definir passe</button><button class="danger-button" type="button" data-delete-driver="${driver.id}">Eliminar</button></div></td>
     </tr>
   `;
 }
@@ -738,7 +738,7 @@ function renderAccount() {
   selectors.pageTitle.textContent = "Minha Conta";
   const user = currentUser();
   selectors.content.innerHTML = `
-    ${heading("Minha Conta", "Pode alterar a sua palavra-passe.", `<button class="primary-button" type="button" data-open="password">Alterar palavra-passe</button>`)}
+    ${heading("Minha Conta", user.role === "admin" ? "Pode alterar a sua palavra-passe." : "Se se esquecer da palavra-passe, peça uma nova ao administrador.", user.role === "admin" ? `<button class="primary-button" type="button" data-open="password">Alterar palavra-passe</button>` : `<button class="secondary-button" type="button" data-request-password>Copiar mensagem ao administrador</button>`)}
     <article class="panel">
       <h2>${escapeHtml(user.name)}</h2>
       <p class="section-copy">${escapeHtml(user.email)} · ${escapeHtml(user.phone)}</p>
@@ -760,8 +760,9 @@ function emptyCard(message) {
 
 function openModal(type, id = "") {
   state.editing = { type, id };
-  const title = { driver: "motorista", vehicle: "veículo", document: "documento", password: "palavra-passe" }[type];
-  selectors.modalTitle.textContent = `${id && type !== "document" ? "Editar" : type === "document" ? "Carregar" : "Criar"} ${title}`;
+  const title = { driver: "motorista", vehicle: "veículo", document: "documento", password: "palavra-passe", "admin-password": "palavra-passe do motorista" }[type];
+  const action = type === "admin-password" ? "Definir" : id && type !== "document" ? "Editar" : type === "document" ? "Carregar" : "Criar";
+  selectors.modalTitle.textContent = `${action} ${title}`;
   selectors.modalFields.innerHTML = modalFields(type, id);
   selectors.modal.showModal();
   if (type === "document") wireSmartDocsUpload();
@@ -770,12 +771,18 @@ function openModal(type, id = "") {
 function modalFields(type, id) {
   if (type === "driver") {
     const driver = state.drivers.find(item => item.id === id) || {};
+    const setupPassword = !id ? `<div class="smartdocs-box span-full"><strong>Acesso do motorista</strong><p>Defina a palavra-passe e entregue-a diretamente ao motorista.</p></div>${field("password", "Palavra-passe inicial", "", "password", true)}${field("passwordConfirm", "Confirmar palavra-passe", "", "password", true)}` : "";
     return [
       field("name", "Nome completo", driver.name),
       field("email", "Email", driver.email, "email"),
       field("phone", "Telemóvel", driver.phone, "tel"),
-      selectField("status", "Estado", ["Ativo", "Inativo"], driver.status || "Ativo")
+      selectField("status", "Estado", ["Ativo", "Inativo"], driver.status || "Ativo"), setupPassword
     ].join("");
+  }
+
+  if (type === "admin-password") {
+    const driver = state.drivers.find(item => item.id === id) || {};
+    return [`<div class="smartdocs-box span-full"><strong>Administrador</strong><p>Defina uma nova palavra-passe para ${escapeHtml(driver.name || "o motorista")}. Entregue-a diretamente ao motorista.</p></div>`, field("password", "Nova palavra-passe", "", "password", true), field("passwordConfirm", "Confirmar palavra-passe", "", "password", true)].join("");
   }
   if (type === "vehicle") {
     const vehicle = state.vehicles.find(item => item.id === id) || {};
@@ -875,6 +882,7 @@ async function submitModal(event) {
     if (type === "vehicle") await saveVehicle(values, checked("driverIds"), id);
     if (type === "document") await saveDocument(values, checked("viewerDriverIds"), id);
     if (type === "password") await savePassword(values.password);
+    if (type === "admin-password") await saveAdminPassword(id, values.password, values.passwordConfirm);
     selectors.modal.close();
     await loadBackendData();
     renderApp();
@@ -895,13 +903,19 @@ async function saveDriver(values, id) {
     status: values.status
   };
 
-  const query = id
-    ? supabaseClient.from("drivers").update(payload).eq("id", id)
-    : supabaseClient.from("drivers").insert(payload);
+  if (!id) {
+    if (!values.password || values.password.length < 8) throw new Error("Use pelo menos 8 caracteres na palavra-passe inicial.");
+    if (values.password !== values.passwordConfirm) throw new Error("As palavras-passe não coincidem.");
+    const { data, error } = await supabaseClient.functions.invoke("admin-create-driver", { body: { fullName: values.name, email: values.email, phone: values.phone, status: values.status, password: values.password } });
+    if (error) throw error;
+    if (!data?.ok) throw new Error(data?.error || "Não foi possível criar o motorista.");
+    showToast("Motorista criado. Entregue a palavra-passe diretamente.");
+    return;
+  }
+  const { error } = await supabaseClient.from("drivers").update(payload).eq("id", id);
 
-  const { error } = await query;
   if (error) throw error;
-  showToast(id ? "Motorista atualizado." : "Motorista criado com sucesso.");
+  showToast("Motorista atualizado.");
 }
 
 async function saveVehicle(values, driverIds, id) {
@@ -1008,8 +1022,24 @@ async function savePassword(password) {
   showToast("Palavra-passe alterada.");
 }
 
-function resetPassword() {
-  showToast("A recuperação segura será enviada por email na próxima etapa.");
+async function copyPasswordRequest() {
+  const message = "Olá. Esqueci-me da minha palavra-passe da Simplicity2Take Fleet. Pode definir uma nova, por favor?";
+  try { await navigator.clipboard.writeText(message); showToast("Mensagem copiada. Envie-a ao administrador."); } catch { showToast(message); }
+}
+
+async function saveAdminPassword(driverId, password, confirmation) {
+  if (currentUser().role !== "admin") throw new Error("Só o administrador pode definir palavras-passe.");
+  if (!password || password.length < 8) throw new Error("Use pelo menos 8 caracteres.");
+  if (password !== confirmation) throw new Error("As palavras-passe não coincidem.");
+  const { data, error } = await supabaseClient.functions.invoke("admin-reset-password", { body: { driverId, newPassword: password } });
+  if (error) throw error;
+  if (!data?.ok) throw new Error(data?.error || "Não foi possível definir a palavra-passe.");
+  showToast("Palavra-passe definida para o motorista.");
+}
+
+function resetPassword(driverId) {
+  if (currentUser().role !== "admin") { showToast("Só o administrador pode definir palavras-passe."); return; }
+  openModal("admin-password", driverId);
 }
 
 async function deleteById(collection, id, message) {
@@ -1074,7 +1104,9 @@ document.addEventListener("click", async event => {
   const nav = event.target.closest("[data-view]");
   if (nav) setView(nav.dataset.view);
   const open = event.target.closest("[data-open]");
-  if (open) openModal(open.dataset.open);
+  if (open) { if (open.dataset.open === "password" && currentUser().role !== "admin") { await copyPasswordRequest(); return; } openModal(open.dataset.open); }
+  const request = event.target.closest("[data-request-password]");
+  if (request) { await copyPasswordRequest(); return; }
   const editDriver = event.target.closest("[data-edit-driver]");
   if (editDriver) openModal("driver", editDriver.dataset.editDriver);
   const editVehicle = event.target.closest("[data-edit-vehicle]");

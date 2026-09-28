@@ -114,8 +114,24 @@
       </form>
     </dialog>
 
+    <dialog id="qrModal">
+      <div class="qr-card">
+        <div class="modal-heading">
+          <div>
+            <p class="eyebrow">Simplicity2Take Portal</p>
+            <h2 id="qrTitle">QR da viatura</h2>
+          </div>
+          <button class="icon-button" type="button" id="closeQrModal" aria-label="Fechar">×</button>
+        </div>
+        <div id="qrCode" class="qr-code"></div>
+        <p id="qrCaption" class="section-copy">Este QR fica associado permanentemente à viatura.</p>
+        <button class="primary-button" type="button" id="printQrButton">Imprimir QR</button>
+      </div>
+    </dialog>
+
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="./app.js?v=v1-1-live-20260722"></script>
   </body>
 </html>

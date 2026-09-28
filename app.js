@@ -584,7 +584,8 @@ function renderDashboard() {
   selectors.pageTitle.textContent = "Dashboard";
   const expiring = state.documents.filter(doc => ["30 dias", "15 dias", "7 dias", "3 dias"].includes(alertLevel(doc))).length;
   const expired = state.documents.filter(doc => alertLevel(doc) === "Expirado").length;
-  const max = Math.max(state.drivers.length, state.vehicles.length, state.documents.length, expiring, expired, 1);
+  const missingExpiry = state.documents.filter(doc => alertLevel(doc) === "Sem validade").length;
+  const max = Math.max(state.drivers.length, state.vehicles.length, state.documents.length, expiring, expired, missingExpiry, 1);
   selectors.content.innerHTML = `
     <section class="status-strip">
       ${metric("Total de motoristas", state.drivers.length)}
@@ -592,6 +593,7 @@ function renderDashboard() {
       ${metric("Total de documentos", state.documents.length)}
       ${metric("Documentos a expirar", expiring)}
       ${metric("Documentos expirados", expired)}
+      ${metric("Sem validade", missingExpiry)}
     </section>
     <section class="content-grid">
       <article class="panel">
@@ -602,6 +604,7 @@ function renderDashboard() {
           ${bar("Documentos", state.documents.length, max)}
           ${bar("A expirar", expiring, max)}
           ${bar("Expirados", expired, max)}
+          ${bar("Sem validade", missingExpiry, max)}
         </div>
       </article>
       <article class="panel">

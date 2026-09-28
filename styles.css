@@ -2100,3 +2100,5 @@ textarea:focus {
     padding: 0.85rem;
   }
 }
+
+.qr-code{display:grid;place-items:center;min-height:260px;padding:20px;background:#fff;border:1px solid var(--line);border-radius:14px;margin:12px 0}.qr-code img,.qr-code canvas{max-width:100%;height:auto}.qr-card{width:min(440px,92vw);padding:22px}.qr-card h2{margin:.2rem 0 0}.qr-card .primary-button{width:100%;margin-top:12px}@media print{body>*:not(#qrModal){display:none!important}#qrModal{position:static!important;border:0!important;width:100%!important}#qrModal::backdrop{display:none}.qr-card{width:100%;box-shadow:none}.qr-card .modal-heading,.qr-card .section-copy,.qr-card .primary-button{display:none}.qr-code{border:0}}

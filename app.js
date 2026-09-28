@@ -7,10 +7,10 @@ const state = {
   smartPreview: null,
   requestedVehicleId: null,
   users: [
-    { id: "admin", role: "admin", name: "Administrador Simplicity2Take", email: "admin@simplicity2take.pt", phone: "210000000", password: "admin2026" },
-    { id: "u-joao", role: "driver", name: "João Silva", email: "joao@simplicity2take.pt", phone: "912345678", password: "123456", driverId: "d-joao" },
-    { id: "u-pedro", role: "driver", name: "Pedro Costa", email: "pedro@simplicity2take.pt", phone: "934210987", password: "123456", driverId: "d-pedro" },
-    { id: "u-carlos", role: "driver", name: "Carlos Santos", email: "carlos@simplicity2take.pt", phone: "966870120", password: "123456", driverId: "d-carlos" }
+    { id: "admin", role: "admin", name: "Administrador Simplicity2Take", email: "admin@simplicity2take.pt", phone: "210000000" },
+    { id: "u-joao", role: "driver", name: "João Silva", email: "joao@simplicity2take.pt", phone: "912345678", driverId: "d-joao" },
+    { id: "u-pedro", role: "driver", name: "Pedro Costa", email: "pedro@simplicity2take.pt", phone: "934210987", driverId: "d-pedro" },
+    { id: "u-carlos", role: "driver", name: "Carlos Santos", email: "carlos@simplicity2take.pt", phone: "966870120", driverId: "d-carlos" }
   ],
   drivers: [
     { id: "d-joao", name: "João Silva", email: "joao@simplicity2take.pt", phone: "912345678", status: "Ativo" },
@@ -873,7 +873,7 @@ function emptyCard(message) {
 
 function openModal(type, id = "") {
   state.editing = { type, id };
-  const title = { driver: "motorista", vehicle: "veículo", document: "documento", password: "palavra-passe", "admin-password": "palavra-passe do motorista" }[type];
+  const title = { driver: "motorista", vehicle: "veículo", document: "documento", "admin-password": "palavra-passe do motorista" }[type];
   const action = type === "admin-password" ? "Definir" : id && type !== "document" ? "Editar" : type === "document" ? "Carregar" : "Criar";
   selectors.modalTitle.textContent = `${action} ${title}`;
   selectors.modalFields.innerHTML = modalFields(type, id);

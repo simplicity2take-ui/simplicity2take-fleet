@@ -842,19 +842,22 @@ function modalFields(type, id) {
 
   const doc = state.documents.find(item => item.id === id) || {};
   const selectedDriver = doc.driverId || "";
+  const selectedVehicle = doc.vehicleId || "";
+  const privateDriverDoc = Boolean(selectedDriver);
   return `
     <div class="smartdocs-box span-full">
       <strong>S2T SmartDocs</strong>
-      <p>Carregue um PDF ou imagem. A pré-visualização será preenchida automaticamente para confirmação.</p>
+      <p>Carregue um PDF ou imagem. O documento pode ficar associado a um motorista (privado) ou a um veículo (partilhável com os motoristas autorizados desse veículo).</p>
     </div>
     ${field("file", "Ficheiro original", "", "file", true, 'accept=".pdf,.jpg,.jpeg,.png"')}
     <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
-    ${field("name", "Nome do motorista", doc.name)}
+    ${field("name", "Nome do documento", doc.name)}
     ${selectField("type", "Tipo", documentTypes, doc.type || "Carta de Condução")}
     ${field("number", "Número do documento", doc.number)}
     ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
-    ${selectField("driverId", "Motorista associado", [["", "Sem motorista"], ...state.drivers.map(driver => [driver.id, driver.name])], selectedDriver)}
-    ${checkList("viewerDriverIds", "Quem pode visualizar o documento", state.drivers, doc.viewerDriverIds || (selectedDriver ? [selectedDriver] : []))}
+    ${selectField("driverId", "Motorista associado (privado)", [["", "Sem motorista"], ...state.drivers.map(driver => [driver.id, driver.name])], selectedDriver)}
+    ${selectField("vehicleId", "Veículo associado", [["", "Sem veículo"], ...state.vehicles.map(vehicle => [vehicle.id, vehicle.plate + " — " + vehicle.brand + " " + vehicle.model])], selectedVehicle)}
+    ${checkList("viewerDriverIds", "Visualização adicional (apenas documentos sem motorista)", state.drivers, privateDriverDoc ? [] : (doc.viewerDriverIds || []))}
   `;
 }
 
@@ -1013,6 +1016,10 @@ async function saveDocument(values, viewerDriverIds, id) {
   }
   if (!driveData) throw new Error("Selecione um ficheiro.");
 
+  if (values.driverId && values.vehicleId) {
+    throw new Error("Um documento privado de motorista não pode estar simultaneamente associado a um veículo.");
+  }
+
   const payload = {
     name: values.name,
     document_type: values.type,
@@ -1025,7 +1032,7 @@ async function saveDocument(values, viewerDriverIds, id) {
     mime_type: driveData.mimeType,
     drive_file_id: driveData.fileId,
     drive_url: driveData.webViewLink,
-    vehicle_id: null,
+    vehicle_id: values.vehicleId || null,
     driver_id: values.driverId || null,
     uploaded_by: state.sessionUserId
   };

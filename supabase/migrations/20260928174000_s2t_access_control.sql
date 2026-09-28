@@ -81,10 +81,13 @@ using (
         and coalesce(va.active, true) = true
     )
   )
-  or exists (
-    select 1 from public.document_viewers dv
-    where dv.document_id = documents.id
-      and dv.driver_id = public.s2t_driver_id()
+  or (
+    documents.driver_id is null
+    and exists (
+      select 1 from public.document_viewers dv
+      where dv.document_id = documents.id
+        and dv.driver_id = public.s2t_driver_id()
+    )
   )
 );
 

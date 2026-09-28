@@ -913,35 +913,110 @@ function checkList(name, label, items, selected) {
   `;
 }
 
+function smartDateFromFilename(fileName) {
+  const matches = [
+    fileName.match(/(?:^|[^0-9])(20\\d{2})[-_](0[1-9]|1[0-2])[-_](0[1-9]|[12]\\d|3[01])(?:[^0-9]|$)/),
+    fileName.match(/(?:^|[^0-9])(0[1-9]|[12]\\d|3[01])[-_](0[1-9]|1[0-2])[-_](20\\d{2})(?:[^0-9]|$)/)
+  ];
+  if (matches[0]) return `${matches[0][1]}-${matches[0][2]}-${matches[0][3]}`;
+  if (matches[1]) return `${matches[1][3]}-${matches[1][2]}-${matches[1][1]}`;
+  return "";
+}
+
+function normalizePlate(value) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function findVehicleFromFilename(fileName) {
+  const normalized = normalizePlate(fileName);
+  return state.vehicles.find(vehicle => {
+    const plate = normalizePlate(vehicle.plate);
+    return plate && normalized.includes(plate);
+  }) || null;
+}
+
+function findDriverFromFilename(fileName) {
+  const normalized = normalizeText(fileName);
+  return state.drivers
+    .filter(driver => driver.name)
+    .sort((a, b) => b.name.length - a.name.length)
+    .find(driver => normalized.includes(normalizeText(driver.name))) || null;
+}
+
+function smartDocumentScope(fileName, type, driver, vehicle) {
+  const text = normalizeText(fileName);
+  const privateKeywords = ["contrato", "contratacao", "prestacao", "cartao cidadao", "carta conducao"];
+  if (driver && (type === "Contrato" || privateKeywords.some(keyword => text.includes(keyword)))) return "driver";
+  if (vehicle) return "vehicle";
+  if (driver) return "driver";
+  return "unassigned";
+}
+
+function analyseFileName(fileName) {
+  const text = normalizeText(fileName);
+  const type = documentTypes.find(item => {
+    const normalizedType = normalizeText(item);
+    return text.includes(normalizedType) || text.includes(normalizedType.replaceAll(" ", ""));
+  }) || (
+    text.includes("ipo") ? "IPO" :
+    text.includes("seguro") || text.includes("apolice") ? "Seguro" :
+    text.includes("carta verde") || text.includes("carta-verde") ? "Carta Verde" :
+    text.includes("licenca") || text.includes("tvde") ? "Licença TVDE" :
+    text.includes("cartao cidadao") || text.includes("cc") ? "Cartão de Cidadão" :
+    text.includes("carta conducao") || text.includes("carta") ? "Carta de Condução" :
+    text.includes("dua") || text.includes("livrete") ? "DUA" :
+    "Outros"
+  );
+  const vehicle = findVehicleFromFilename(fileName);
+  const driver = findDriverFromFilename(fileName);
+  const expiryDate = smartDateFromFilename(fileName);
+  const scope = smartDocumentScope(fileName, type, driver, vehicle);
+  return {
+    type,
+    expiryDate,
+    vehicleId: scope === "vehicle" ? vehicle?.id || "" : "",
+    driverId: scope === "driver" ? driver?.id || "" : "",
+    vehicle,
+    driver,
+    scope,
+    name: fileName.replace(/\\.[^.]+$/, "").replace(/[_-]+/g, " ").trim()
+  };
+}
+
+function applySmartPreview(preview) {
+  const setValue = (name, value) => {
+    const input = selectors.modalFields.querySelector(`[name="${name}"]`);
+    if (input && value) input.value = value;
+  };
+  setValue("type", preview.type);
+  setValue("name", preview.name);
+  setValue("expiryDate", preview.expiryDate);
+  setValue("vehicleId", preview.vehicleId);
+  setValue("driverId", preview.driverId);
+  const vehicleLabel = preview.vehicle ? preview.vehicle.plate : "não identificado";
+  const driverLabel = preview.driver ? preview.driver.name : "não identificado";
+  const scopeLabel = preview.scope === "driver" ? "Privado do motorista" : preview.scope === "vehicle" ? "Documento da viatura" : "Sem associação automática";
+  $("#smartPreview").innerHTML = `
+    <strong>S2T SmartDocs — classificação automática</strong>
+    <dl>
+      <dt>Tipo:</dt><dd>${escapeHtml(preview.type)}</dd>
+      <dt>Motorista:</dt><dd>${escapeHtml(driverLabel)}</dd>
+      <dt>Viatura:</dt><dd>${escapeHtml(vehicleLabel)}</dd>
+      <dt>Validade:</dt><dd>${escapeHtml(preview.expiryDate || "não encontrada")}</dd>
+      <dt>Acesso:</dt><dd>${escapeHtml(scopeLabel)}</dd>
+    </dl>
+    <small>Confirma sempre os campos antes de guardar. Um contrato/documento de motorista nunca é associado automaticamente à viatura.</small>
+  `;
+}
+
 function wireSmartDocsUpload() {
   const fileInput = selectors.modalFields.querySelector('input[name="file"]');
   fileInput?.addEventListener("change", () => {
     const file = fileInput.files[0];
     if (!file) return;
     state.smartPreview = analyseFileName(file.name);
-    const preview = $("#smartPreview");
-    preview.innerHTML = `
-      <strong>Documento carregado.</strong>
-      <p>O tipo pode ser sugerido pelo nome do ficheiro. Confirme manualmente o número e a data de validade antes de guardar.</p>
-      <dl>
-        <dt>Tipo sugerido:</dt><dd>${escapeHtml(state.smartPreview.type)}</dd>
-        <dt>Número:</dt><dd>Preencher manualmente</dd>
-        <dt>Validade:</dt><dd>Preencher manualmente</dd>
-      </dl>
-    `;
-    const typeField = selectors.modalFields.querySelector('[name="type"]');
-    if (typeField && state.smartPreview.type) typeField.value = state.smartPreview.type;
-    const nameField = selectors.modalFields.querySelector('[name="name"]');
-    if (nameField && !nameField.value) nameField.value = state.smartPreview.type;
+    applySmartPreview(state.smartPreview);
   });
-}
-
-function analyseFileName(fileName) {
-  const text = fileName.toLowerCase();
-  const type = documentTypes.find(item =>
-    text.includes(item.toLowerCase().replaceAll(" ", "-")) || text.includes(item.toLowerCase())
-  ) || (text.includes("ipo") ? "IPO" : text.includes("seguro") ? "Seguro" : text.includes("licenca") || text.includes("licença") ? "Licença TVDE" : text.includes("cidad") ? "Cartão de Cidadão" : text.includes("carta") ? "Carta de Condução" : "Outros");
-  return { type, number: "", expiryDate: "" };
 }
 
 async function submitModal(event) {

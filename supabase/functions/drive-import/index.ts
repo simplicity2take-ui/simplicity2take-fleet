@@ -113,10 +113,10 @@ Deno.serve(async request => {
       name: metadata.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim(),
       document_type: classification.type,
       expiry_date: classification.expiryDate,
-      file_name: metadata.name,
+      original_file_name: metadata.name,
       mime_type: metadata.mimeType,
       drive_file_id: metadata.id,
-      drive_url: metadata.webViewLink || null,
+      drive_web_view_link: metadata.webViewLink || null,
       vehicle_id: vehicleId,
       driver_id: driverId,
       uploaded_by: user.id

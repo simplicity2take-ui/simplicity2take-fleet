@@ -118,7 +118,17 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLI
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
-const documentTypes = ["Carta de Condução", "Seguro", "IPO", "Licença TVDE", "Cartão de Cidadão"];
+const documentTypes = [
+  "DUA",
+  "Seguro",
+  "Carta Verde",
+  "IPO",
+  "Licença TVDE",
+  "Carta de Condução",
+  "Cartão de Cidadão",
+  "Contrato",
+  "Outros"
+];
 const navByRole = {
   admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["documents", "Documentos", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
   driver: [["vehicles", "Meus Veículos", "VE"], ["documents", "Meus Documentos", "DO"], ["account", "Minha Conta", "EU"]]
@@ -321,6 +331,7 @@ function daysUntil(date) {
 }
 
 function alertLevel(doc) {
+  if (!doc.expiryDate) return "Sem validade";
   const days = daysUntil(doc.expiryDate);
   if (days < 0) return "Expirado";
   if (days <= 3) return "3 dias";
@@ -692,7 +703,7 @@ function documentCard(doc, admin) {
   const level = alertLevel(doc);
   return `
     <article class="data-card">
-      <span class="tag ${level === "Expirado" ? "inactive" : level === "OK" ? "active" : "expiring"}">${escapeHtml(level)}</span>
+      <span class="tag ${level === "Expirado" ? "inactive" : level === "OK" ? "active" : level === "Sem validade" ? "" : "expiring"}">${escapeHtml(level)}</span>
       <h3>${escapeHtml(doc.name)}</h3>
       <div class="meta-line">
         <span>${escapeHtml(doc.type)}</span>
@@ -711,7 +722,7 @@ function documentCard(doc, admin) {
 
 function renderAlerts() {
   selectors.pageTitle.textContent = "Alertas";
-  const alerts = state.documents.filter(doc => alertLevel(doc) !== "OK");
+  const alerts = state.documents.filter(doc => ["Expirado", "3 dias", "7 dias", "15 dias", "30 dias"].includes(alertLevel(doc)));
   selectors.content.innerHTML = `
     ${heading("Alertas automáticos", "30, 15, 7, 3 dias e expirado.", "")}
     <section class="cards-grid">${alerts.map(doc => `

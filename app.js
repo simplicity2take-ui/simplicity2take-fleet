@@ -1214,6 +1214,26 @@ function fileToBase64(file) {
   });
 }
 
+async function openDocument(documentId) {
+  const doc = state.documents.find(item => item.id === documentId);
+  if (!doc) throw new Error("Documento não encontrado.");
+  const { data, error } = await supabaseClient.functions.invoke("document-access", {
+    body: { document_id: documentId }
+  });
+  if (error) throw error;
+  if (!(data instanceof Blob)) throw new Error("Não foi possível abrir o documento.");
+  const url = URL.createObjectURL(data);
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.download = doc.fileName || doc.name || "documento";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 async function savePassword(password) {
   const { error } = await supabaseClient.auth.updateUser({ password });
   if (error) throw error;

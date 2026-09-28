@@ -5,6 +5,7 @@ const state = {
   activeView: "dashboard",
   editing: null,
   smartPreview: null,
+  requestedVehicleId: null,
   users: [
     { id: "admin", role: "admin", name: "Administrador Simplicity2Take", email: "admin@simplicity2take.pt", phone: "210000000", password: "admin2026" },
     { id: "u-joao", role: "driver", name: "João Silva", email: "joao@simplicity2take.pt", phone: "912345678", password: "123456", driverId: "d-joao" },
@@ -282,6 +283,7 @@ async function openRequestedVehicle() {
     showToast("Esta viatura não está atribuída à sua conta.");
     return;
   }
+  state.requestedVehicleId = vehicle.id;
   state.activeView = "vehicles";
   showToast(`Viatura ${vehicle.plate} reconhecida. A carregar os dados autorizados.`);
 }
@@ -300,7 +302,12 @@ function showVehicleQr(vehicleId) {
 
 function driverDocuments() {
   const driverId = currentUser().driverId;
-  return state.documents.filter(doc => doc.viewerDriverIds.includes(driverId));
+  const assignedVehicleIds = new Set(driverVehicles().map(vehicle => vehicle.id));
+  return state.documents.filter(doc =>
+    (doc.driverId === driverId) ||
+    (doc.vehicleId && assignedVehicleIds.has(doc.vehicleId)) ||
+    (!doc.driverId && doc.viewerDriverIds.includes(driverId))
+  );
 }
 
 function driverVehicles() {
@@ -606,15 +613,27 @@ function bar(label, value, max) {
 function renderVehicles() {
   const admin = currentUser().role === "admin";
   const vehicles = admin ? state.vehicles : driverVehicles();
+  const requested = vehicles.find(vehicle => vehicle.id === state.requestedVehicleId);
   selectors.pageTitle.textContent = admin ? "Veículos" : "Meus Veículos";
   selectors.content.innerHTML = `
     ${heading(admin ? "Gestão de veículos" : "Veículos atribuídos", admin ? "Criar, editar e eliminar veículos." : "Consulta dos veículos que lhe foram atribuídos.", admin ? `<button class="primary-button" type="button" data-open="vehicle">Criar veículo</button>` : "")}
+    ${requested ? vehicleAccessPanel(requested, admin) : ""}
     <div class="table-wrap">
       <table>
         <thead><tr><th>Matrícula</th><th>Marca / Modelo</th><th>Ano</th><th>VIN</th><th>Estado</th><th>Motoristas</th><th>Ações</th></tr></thead>
         <tbody>${vehicles.map(vehicle => vehicleRow(vehicle, admin)).join("") || emptyRow("Sem veículos para apresentar.")}</tbody>
       </table>
     </div>
+  `;
+}
+function vehicleAccessPanel(vehicle, admin) {
+  const docs = state.documents.filter(doc => doc.vehicleId === vehicle.id && (admin || driverDocuments().some(item => item.id === doc.id)));
+  return `
+    <article class="panel vehicle-access-panel">
+      <div class="panel-heading"><div><span class="eyebrow">QR da viatura</span><h2>${escapeHtml(vehicle.plate)}</h2><p class="section-copy">${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)} · VIN ${escapeHtml(vehicle.vin || "—")}</p></div><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></div>
+      <h3>Documentos autorizados</h3>
+      <div class="cards-grid">${docs.map(doc => documentCard(doc, admin)).join("") || emptyCard("Não existem documentos autorizados para esta viatura.")}</div>
+    </article>
   `;
 }
 

@@ -1092,7 +1092,7 @@ async function saveVehicle(values, driverIds, id) {
     plate: values.plate.toUpperCase(),
     brand: values.brand,
     model: values.model,
-    year: Number(values.year),
+    vehicle_year: Number(values.year),
     vin: values.vin,
     status: values.status
   };

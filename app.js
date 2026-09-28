@@ -679,7 +679,8 @@ function renderDrivers() {
 }
 
 function driverRow(driver) {
-  const docs = state.documents.filter(doc => doc.viewerDriverIds.includes(driver.id));
+  const assignedVehicleIds = new Set(state.vehicles.filter(vehicle => vehicle.driverIds.includes(driver.id)).map(vehicle => vehicle.id));
+  const docs = state.documents.filter(doc => doc.driverId === driver.id || (doc.vehicleId && assignedVehicleIds.has(doc.vehicleId)) || (!doc.driverId && doc.viewerDriverIds.includes(driver.id)));
   return `
     <tr>
       <td><strong>${escapeHtml(driver.name)}</strong></td>
@@ -784,9 +785,19 @@ function renderSettings() {
         </div>
       </article>
       <article class="panel">
-        <div class="panel-heading"><h2>Preparação futura</h2><span class="tag">Pronto</span></div>
+        <div class="panel-heading"><h2>Integrações</h2><span class="tag">Preparado</span></div>
         <div class="settings-list">
-          ${["Google Drive", "Cartrack", "Gestão de Revisões", "Gestão de Inspeções", "Aplicação Android", "Aplicação iPhone"].map(item => `<div class="settings-row"><strong>${item}</strong><span class="tag">Preparado</span></div>`).join("")}
+          <div class="settings-row"><strong>Google Drive</strong><span class="tag expiring">Configuração pendente</span></div>
+          <div class="settings-row"><strong>S2T SmartDocs</strong><span class="tag active">Ativo no Portal</span></div>
+          <div class="settings-row"><strong>Cartrack</strong><span class="tag">Preparado</span></div>
+          <div class="settings-row"><strong>Gestão de Revisões</strong><span class="tag">Preparado</span></div>
+          <div class="settings-row"><strong>Gestão de Inspeções</strong><span class="tag">Preparado</span></div>
+          <div class="settings-row"><strong>Aplicação Android</strong><span class="tag">Preparado</span></div>
+          <div class="settings-row"><strong>Aplicação iPhone</strong><span class="tag">Preparado</span></div>
+        </div>
+        <div class="integration-note">
+          <strong>Estrutura preparada</strong>
+          <p>O Portal já sabe classificar documentos e separar Motoristas e Veículos. A ligação efetiva ao Google Drive será ativada depois de configurar as credenciais no servidor.</p>
         </div>
       </article>
       <article class="panel recruiter-config">

@@ -6,7 +6,7 @@ const cors = {
 };
 
 function pemToArrayBuffer(pem: string) {
-  const clean = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\s/g, "");
+  const clean = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
   const bin = atob(clean);
   return Uint8Array.from(bin, c => c.charCodeAt(0)).buffer;
 }
@@ -97,7 +97,7 @@ Deno.serve(async (request) => {
     // the current authenticated user is allowed to see.
     const { data: document, error: documentError } = await supabase
       .from("documents")
-      .select("id,name,file_name,file_type,drive_file_id")
+      .select("id,name,original_file_name,mime_type,drive_file_id")
       .eq("id", documentId)
       .maybeSingle();
 
@@ -119,8 +119,8 @@ Deno.serve(async (request) => {
     }
 
     const headers = new Headers(cors);
-    headers.set("content-type", document.file_type || driveResponse.headers.get("content-type") || "application/octet-stream");
-    headers.set("content-disposition", 'inline; filename="' + String(document.file_name || document.name || "documento").replace(/["\\\\]/g, "") + '"');
+    headers.set("content-type", document.mime_type || driveResponse.headers.get("content-type") || "application/octet-stream");
+    headers.set("content-disposition", 'inline; filename="' + String(document.original_file_name || document.name || "documento").replace(/["\\\\]/g, "") + '"');
     headers.set("cache-control", "private, no-store");
 
     return new Response(driveResponse.body, { status: 200, headers });

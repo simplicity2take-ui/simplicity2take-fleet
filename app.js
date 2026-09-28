@@ -259,6 +259,23 @@ function vehicleName(id) {
   return vehicle ? `${vehicle.plate} · ${vehicle.brand} ${vehicle.model}` : "Sem veículo";
 }
 
+function vehicleQrUrl(vehicle) {
+  const token = valueOf(vehicle, "qrToken", "qr_token") || vehicle.id;
+  return `https://fleet.simplicity2take.com/?vehicle=${encodeURIComponent(token)}`;
+}
+
+function showVehicleQr(vehicleId) {
+  const vehicle = state.vehicles.find(item => item.id === vehicleId);
+  if (!vehicle) return;
+  const modal = $("#qrModal");
+  const target = $("#qrCode");
+  target.innerHTML = "";
+  $("#qrTitle").textContent = `QR · ${vehicle.plate}`;
+  $("#qrCaption").textContent = `QR permanente de ${vehicle.plate}. O endereço fica associado à viatura, independentemente do motorista.`;
+  new QRCode(target, { text: vehicleQrUrl(vehicle), width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M });
+  modal.showModal();
+}
+
 function driverDocuments() {
   const driverId = currentUser().driverId;
   return state.documents.filter(doc => doc.viewerDriverIds.includes(driverId));
@@ -587,7 +604,7 @@ function vehicleRow(vehicle, admin) {
       <td>${escapeHtml(vehicle.vin)}</td>
       <td><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></td>
       <td>${vehicle.driverIds.map(driverName).join(", ") || "Sem motorista"}</td>
-      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-edit-vehicle="${vehicle.id}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${vehicle.id}">Eliminar</button></div>` : "Consulta"}</td>
+      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${vehicle.id}">QR</button><button class="mini-button" type="button" data-edit-vehicle="${vehicle.id}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${vehicle.id}">Eliminar</button></div>` : "Consulta"}</td>
     </tr>
   `;
 }
@@ -1109,6 +1126,8 @@ document.addEventListener("click", async event => {
   if (request) { await copyPasswordRequest(); return; }
   const editDriver = event.target.closest("[data-edit-driver]");
   if (editDriver) openModal("driver", editDriver.dataset.editDriver);
+  const qrVehicle = event.target.closest("[data-qr-vehicle]");
+  if (qrVehicle) showVehicleQr(qrVehicle.dataset.qrVehicle);
   const editVehicle = event.target.closest("[data-edit-vehicle]");
   if (editVehicle) openModal("vehicle", editVehicle.dataset.editVehicle);
   const editDocument = event.target.closest("[data-edit-document]");
@@ -1177,6 +1196,8 @@ selectors.form.addEventListener("submit", submitModal);
 $("#logoutButton").addEventListener("click", logout);
 $("#closeModal").addEventListener("click", () => selectors.modal.close());
 $("#cancelModal").addEventListener("click", () => selectors.modal.close());
+$("#closeQrModal").addEventListener("click", () => $("#qrModal").close());
+$("#printQrButton").addEventListener("click", () => window.print());
 
 async function initialise() {
   renderLogin();

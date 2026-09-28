@@ -504,15 +504,37 @@ async function login(identifier, password) {
   submitButton.disabled = true;
   submitButton.textContent = "A entrar…";
   try {
-    const { data, error } = await supabaseClient.auth.signInWithPassword({
-      email: identifier.trim().toLowerCase(),
-      password
-    });
-    if (error || !data.user) throw error || new Error("Sessão inválida.");
+    const value = identifier.trim();
+    let data;
+    let error;
+
+    if (value.includes("@")) {
+      ({ data, error } = await supabaseClient.auth.signInWithPassword({
+        email: value.toLowerCase(),
+        password
+      }));
+    } else {
+      const response = await supabaseClient.functions.invoke("driver-login", {
+        body: { phone: value, password }
+      });
+      if (response.error) throw response.error;
+      const result = response.data;
+      if (!result?.access_token || !result?.refresh_token) {
+        throw new Error(result?.error || "Sessão inválida.");
+      }
+      const sessionResult = await supabaseClient.auth.setSession({
+        access_token: result.access_token,
+        refresh_token: result.refresh_token
+      });
+      data = sessionResult.data;
+      error = sessionResult.error;
+    }
+
+    if (error || !data?.user) throw error || new Error("Sessão inválida.");
     await startAuthenticatedSession(data.user);
   } catch (error) {
     console.error(error);
-    showToast("Email ou palavra-passe inválidos.");
+    showToast("Email/telemóvel ou palavra-passe inválidos.");
   } finally {
     submitButton.disabled = false;
     submitButton.textContent = "Entrar";

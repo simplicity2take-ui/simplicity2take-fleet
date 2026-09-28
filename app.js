@@ -212,7 +212,7 @@ async function loadBackendData() {
     vin: valueOf(row, "vin"),
     qrToken: valueOf(row, "qr_token", "qrToken"),
     status: valueOf(row, "status") || "Ativo",
-    driverIds: assignments.filter(item => item.vehicle_id === row.id && item.active !== false).map(item => item.driver_id),
+    driverIds: assignments.filter(item => item.vehicle_id === row.id && assignmentIsActive(item)).map(item => item.driver_id),
     raw: row
   }));
   state.documents = (documentsResult.data || []).map(row => ({
@@ -252,6 +252,13 @@ async function loadBackendData() {
     raw: row
   }));
   state.backendReady = true;
+}
+
+function assignmentIsActive(assignment) {
+  const today = new Date().toISOString().slice(0, 10);
+  const starts = assignment.active_from || "";
+  const ends = assignment.active_until || "";
+  return (!starts || starts <= today) && (!ends || ends >= today);
 }
 
 function escapeHtml(value) {
@@ -1099,7 +1106,7 @@ async function saveVehicle(values, driverIds, id) {
   if (deleteError) throw deleteError;
   if (driverIds.length) {
     const { error: assignmentError } = await supabaseClient.from("vehicle_assignments").insert(
-      driverIds.map(driverId => ({ vehicle_id: vehicleId, driver_id: driverId, active: true }))
+      driverIds.map(driverId => ({ vehicle_id: vehicleId, driver_id: driverId, active_from: new Date().toISOString().slice(0, 10), active_until: null }))
     );
     if (assignmentError) throw assignmentError;
   }
@@ -1198,190 +1205,3 @@ async function copyPasswordRequest() {
 
 async function saveAdminPassword(driverId, password, confirmation) {
   if (currentUser().role !== "admin") throw new Error("Só o administrador pode definir palavras-passe.");
-  if (!password || password.length < 8) throw new Error("Use pelo menos 8 caracteres.");
-  if (password !== confirmation) throw new Error("As palavras-passe não coincidem.");
-  const { data, error } = await supabaseClient.functions.invoke("admin-reset-password", { body: { driverId, newPassword: password } });
-  if (error) throw error;
-  if (!data?.ok) throw new Error(data?.error || "Não foi possível definir a palavra-passe.");
-  showToast("Palavra-passe definida para o motorista.");
-}
-
-function resetPassword(driverId) {
-  if (currentUser().role !== "admin") { showToast("Só o administrador pode definir palavras-passe."); return; }
-  openModal("admin-password", driverId);
-}
-
-async function deleteById(collection, id, message) {
-  const table = { drivers: "drivers", vehicles: "vehicles", documents: "documents" }[collection];
-  if (!table) return;
-  if (!window.confirm("Confirma que pretende eliminar este registo?")) return;
-  const { error } = await supabaseClient.from(table).delete().eq("id", id);
-  if (error) {
-    showToast(error.message);
-    return;
-  }
-  await loadBackendData();
-  showToast(message);
-  renderApp();
-}
-
-async function openDocument(id, download = false) {
-  const doc = state.documents.find(item => item.id === id);
-  if (!doc?.driveFileId) {
-    showToast("Este documento ainda não está disponível no Google Drive.");
-    return;
-  }
-  showToast("A abrir documento…");
-  const { data, error } = await supabaseClient.functions.invoke("document-access", {
-    body: { document_id: id }
-  });
-  if (error) {
-    console.error(error);
-    showToast("Não foi possível abrir o documento.");
-    return;
-  }
-  let blob = null;
-  if (data instanceof Blob) blob = data;
-  else if (data?.type === "application/json") {
-    try { showToast(JSON.parse(await data.text()).error || "Documento não autorizado."); }
-    catch { showToast("Documento não autorizado."); }
-    return;
-  }
-  if (!blob) { showToast("Resposta inválida do servidor."); return; }
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  if (download) link.download = doc.fileName || "documento";
-  else { link.target = "_blank"; link.rel = "noopener"; }
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
-
-function createDemoPdf(doc) {
-  const text = `Simplicity2Take Fleet\\n${doc.name}\\nTipo: ${doc.type}\\nNumero: ${doc.number}\\nValidade: ${doc.expiryDate}`;
-  const stream = `BT /F1 18 Tf 72 740 Td (${text.replace(/[()]/g, "")}) Tj ET`;
-  const pdf = `%PDF-1.4
-1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj
-2 0 obj <</Type /Pages /Kids [3 0 R] /Count 1>> endobj
-3 0 obj <</Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources <</Font <</F1 4 0 R>>>> /Contents 5 0 R>> endobj
-4 0 obj <</Type /Font /Subtype /Helvetica /BaseFont /Helvetica>> endobj
-5 0 obj <</Length ${stream.length}>> stream
-${stream}
-endstream endobj
-xref
-0 6
-0000000000 65535 f
-trailer <</Root 1 0 R /Size 6>>
-startxref
-0
-%%EOF`;
-  return new Blob([pdf], { type: "application/pdf" });
-}
-
-document.addEventListener("click", async event => {
-  const publicRecruitment = event.target.closest("[data-view-public-recruitment]");
-  if (publicRecruitment) openRecruitment();
-
-  const demo = event.target.closest("[data-demo-login]");
-  if (demo) {
-    const account = state.users.find(user => user.id === demo.dataset.demoLogin);
-    selectors.loginIdentifier.value = account.email || account.phone;
-    selectors.loginPassword.value = account.password;
-  }
-  const nav = event.target.closest("[data-view]");
-  if (nav) setView(nav.dataset.view);
-  const open = event.target.closest("[data-open]");
-  if (open) { if (open.dataset.open === "password" && currentUser().role !== "admin") { await copyPasswordRequest(); return; } openModal(open.dataset.open); }
-  const request = event.target.closest("[data-request-password]");
-  if (request) { await copyPasswordRequest(); return; }
-  const editDriver = event.target.closest("[data-edit-driver]");
-  if (editDriver) openModal("driver", editDriver.dataset.editDriver);
-  const qrVehicle = event.target.closest("[data-qr-vehicle]");
-  if (qrVehicle) showVehicleQr(qrVehicle.dataset.qrVehicle);
-  const editVehicle = event.target.closest("[data-edit-vehicle]");
-  if (editVehicle) openModal("vehicle", editVehicle.dataset.editVehicle);
-  const editDocument = event.target.closest("[data-edit-document]");
-  if (editDocument) openModal("document", editDocument.dataset.editDocument);
-  const docDriver = event.target.closest("[data-doc-driver]");
-  if (docDriver) openModal("document", docDriver.dataset.docDriver);
-  const reset = event.target.closest("[data-reset-password]");
-  if (reset) resetPassword(reset.dataset.resetPassword);
-  const deleteDriver = event.target.closest("[data-delete-driver]");
-  if (deleteDriver) await deleteById("drivers", deleteDriver.dataset.deleteDriver, "Motorista eliminado.");
-  const deleteVehicle = event.target.closest("[data-delete-vehicle]");
-  if (deleteVehicle) await deleteById("vehicles", deleteVehicle.dataset.deleteVehicle, "Veículo eliminado.");
-  const deleteDocument = event.target.closest("[data-delete-document]");
-  if (deleteDocument) await deleteById("documents", deleteDocument.dataset.deleteDocument, "Documento eliminado.");
-  const openDoc = event.target.closest("[data-open-doc]");
-  if (openDoc) openDocument(openDoc.dataset.openDoc, false);
-  const downloadDoc = event.target.closest("[data-download-doc]");
-  if (downloadDoc) openDocument(downloadDoc.dataset.downloadDoc, true);
-
-  const applicationStatus = event.target.closest("[data-application-status]");
-  if (applicationStatus) {
-    const application = state.applications.find(item => item.id === applicationStatus.dataset.applicationStatus);
-    if (application) {
-      const { error } = await supabaseClient.from("applications").update({ status: applicationStatus.dataset.status }).eq("id", application.id);
-      if (error) showToast(error.message);
-      else {
-        await loadBackendData();
-        showToast("Estado da candidatura atualizado.");
-        renderApp();
-      }
-    }
-  }
-});
-
-document.addEventListener("submit", event => {
-  if (event.target.id === "recruiterConfigForm") {
-    event.preventDefault();
-    const data = new FormData(event.target);
-    state.recruitmentConfig.requirements = String(data.get("requirements") || "").split("\n").map(item => item.trim()).filter(Boolean);
-    state.recruitmentConfig.faqs = String(data.get("faqs") || "").split("\n").map(line => {
-      const [q, ...answer] = line.split("|");
-      return { q: q.trim(), a: answer.join("|").trim() };
-    }).filter(item => item.q && item.a);
-    showToast("Configuração do S2T AI Recruiter atualizada.");
-  }
-});
-
-selectors.loginForm.addEventListener("submit", event => {
-  event.preventDefault();
-  login(selectors.loginIdentifier.value, selectors.loginPassword.value);
-});
-$("#workWithUsButton").addEventListener("click", openRecruitment);
-$("#backToLoginButton").addEventListener("click", closeRecruitment);
-selectors.recruiterForm.addEventListener("submit", event => {
-  event.preventDefault();
-  answerRecruiter(selectors.recruiterInput.value);
-  selectors.recruiterInput.value = "";
-});
-selectors.candidateDocuments.addEventListener("change", () => {
-  if (!state.recruiterSession) startRecruiterSession();
-  const files = Array.from(selectors.candidateDocuments.files || []).map(file => file.name);
-  state.recruiterSession.documents = files;
-  addRecruiterMessage("assistant", `Documentos recebidos: ${files.join(", ") || "nenhum"}. ${recruiterSummaryText()}\n\nSe estiver correto, escreva Confirmar.`);
-});
-selectors.form.addEventListener("submit", submitModal);
-$("#logoutButton").addEventListener("click", logout);
-$("#closeModal").addEventListener("click", () => selectors.modal.close());
-$("#cancelModal").addEventListener("click", () => selectors.modal.close());
-$("#closeQrModal").addEventListener("click", () => $("#qrModal").close());
-$("#printQrButton").addEventListener("click", () => window.print());
-
-async function initialise() {
-  renderLogin();
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (!session?.user) return;
-  try {
-    await startAuthenticatedSession(session.user);
-  } catch (error) {
-    console.error(error);
-    await supabaseClient.auth.signOut();
-    showToast("Volte a iniciar sessão.");
-  }
-}
-
-initialise();

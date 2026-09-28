@@ -1255,3 +1255,107 @@ async function saveAdminPassword(driverId, password, confirmation) {
   if (error) throw error;
   showToast("Palavra-passe do motorista alterada.");
 }
+async function handleAdminAction(action) {
+  try {
+    if (action.type === "delete-document") {
+      if (!confirm("Eliminar este documento do portal?")) return;
+      const { error } = await supabaseClient.from("documents").delete().eq("id", action.id);
+      if (error) throw error;
+      await loadBackendData(); renderApp(); showToast("Documento eliminado.");
+    }
+    if (action.type === "delete-vehicle") {
+      if (!confirm("Eliminar esta viatura do portal?")) return;
+      await supabaseClient.from("vehicle_assignments").delete().eq("vehicle_id", action.id);
+      const { error } = await supabaseClient.from("vehicles").delete().eq("id", action.id);
+      if (error) throw error;
+      await loadBackendData(); renderApp(); showToast("Viatura eliminada.");
+    }
+    if (action.type === "delete-driver") {
+      if (!confirm("Desativar este motorista? O histórico documental será preservado.")) return;
+      const { error } = await supabaseClient.from("drivers").update({ status: "Inativo" }).eq("id", action.id);
+      if (error) throw error;
+      await loadBackendData(); renderApp(); showToast("Motorista desativado.");
+    }
+  } catch (error) {
+    console.error(error);
+    showToast(error?.message || "Não foi possível concluir a operação.");
+  }
+}
+
+function printQr() {
+  const title = document.querySelector("#qrTitle")?.textContent || "QR da viatura";
+  const qr = document.querySelector("#qrCode")?.innerHTML || "";
+  const win = window.open("", "_blank", "width=500,height=700");
+  if (!win) { showToast("Permita janelas pop-up para imprimir o QR."); return; }
+  win.document.write("<!doctype html><html><head><title>"+escapeHtml(title)+"</title><style>body{font-family:Arial;text-align:center;padding:40px}img{width:280px;height:280px}</style></head><body><h1>"+escapeHtml(title)+"</h1>"+qr+"<p>Simplicity2Take Portal</p><script>window.onload=()=>window.print()<\\/script></body></html>");
+  win.document.close();
+}
+
+function bindPortalEvents() {
+  selectors.loginForm?.addEventListener("submit", event => {
+    event.preventDefault();
+    login(selectors.loginIdentifier.value, selectors.loginPassword.value);
+  });
+
+  document.addEventListener("click", async event => {
+    const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password]");
+    if (!target) return;
+
+    const view = target.dataset.view;
+    if (view) return setView(view);
+    if (target.dataset.open) return openModal(target.dataset.open);
+    if (target.dataset.qrVehicle) return showVehicleQr(target.dataset.qrVehicle);
+    if (target.dataset.openDoc) {
+      try { await openDocument(target.dataset.openDoc); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível abrir o documento."); }
+      return;
+    }
+    if (target.dataset.editDriver) return openModal("driver", target.dataset.editDriver);
+    if (target.dataset.editVehicle) return openModal("vehicle", target.dataset.editVehicle);
+    if (target.dataset.editDocument) return openModal("document", target.dataset.editDocument);
+    if (target.dataset.resetPassword) return openModal("admin-password", target.dataset.resetPassword);
+    if (target.dataset.deleteDriver) return handleAdminAction({type:"delete-driver",id:target.dataset.deleteDriver});
+    if (target.dataset.deleteVehicle) return handleAdminAction({type:"delete-vehicle",id:target.dataset.deleteVehicle});
+    if (target.dataset.deleteDocument) return handleAdminAction({type:"delete-document",id:target.dataset.deleteDocument});
+    if (target.dataset.requestPassword) return copyPasswordRequest();
+    if (target.id === "logoutButton") return logout();
+    if (target.id === "workWithUsButton") return openRecruitment();
+    if (target.id === "backToLoginButton") return closeRecruitment();
+    if (target.id === "closeModal" || target.id === "cancelModal") return selectors.modal?.close();
+    if (target.id === "closeQrModal") return document.querySelector("#qrModal")?.close();
+    if (target.id === "printQrButton") return printQr();
+  });
+
+  selectors.form?.addEventListener("submit", submitModal);
+  selectors.recruiterForm?.addEventListener("submit", event => {
+    event.preventDefault();
+    answerRecruiter(selectors.recruiterInput.value);
+    selectors.recruiterInput.value = "";
+    selectors.recruiterInput.focus();
+  });
+  selectors.candidateDocuments?.addEventListener("change", event => {
+    const files = [...(event.target.files || [])];
+    state.recruiterSession.documents = files.map(file => file.name);
+    if (files.length) addRecruiterMessage("assistant", `${files.length} documento(s) recebido(s): ${files.map(file => file.name).join(", ")}. Quando estiver pronto, escreva Confirmar.`);
+  });
+
+  supabaseClient.auth.onAuthStateChange((event) => {
+    if (event === "SIGNED_OUT") {
+      state.sessionUserId = null;
+      state.profile = null;
+      selectors.appShell.classList.add("hidden");
+      selectors.loginScreen.classList.remove("hidden");
+    }
+  });
+
+  supabaseClient.auth.getSession().then(async ({ data }) => {
+    if (data.session?.user) {
+      try { await startAuthenticatedSession(data.session.user); }
+      catch (error) { console.error(error); showToast(error?.message || "Não foi possível restaurar a sessão."); }
+    }
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  renderLogin();
+  bindPortalEvents();
+});

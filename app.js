@@ -1150,10 +1150,10 @@ async function saveDocument(values, viewerDriverIds, id) {
     issue_date: null,
     expiry_date: values.expiryDate || null,
     observations: null,
-    file_name: driveData.fileName,
+    original_file_name: driveData.fileName,
     mime_type: driveData.mimeType,
     drive_file_id: driveData.fileId,
-    drive_url: driveData.webViewLink,
+    drive_web_view_link: driveData.webViewLink,
     vehicle_id: values.vehicleId || null,
     driver_id: values.driverId || null,
     uploaded_by: state.sessionUserId

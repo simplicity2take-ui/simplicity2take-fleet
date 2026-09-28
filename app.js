@@ -962,7 +962,7 @@ function analyseFileName(fileName) {
     text.includes("seguro") || text.includes("apolice") ? "Seguro" :
     text.includes("carta verde") || text.includes("carta-verde") ? "Carta Verde" :
     text.includes("licenca") || text.includes("tvde") ? "Licença TVDE" :
-    text.includes("cartao cidadao") || text.includes("cc") ? "Cartão de Cidadão" :
+    text.includes("cartao cidadao") || text.includes("cartao-cidadao") ? "Cartão de Cidadão" :
     text.includes("carta conducao") || text.includes("carta") ? "Carta de Condução" :
     text.includes("dua") || text.includes("livrete") ? "DUA" :
     "Outros"
@@ -1115,6 +1115,9 @@ async function saveDocument(values, viewerDriverIds, id) {
         mimeType: file.type,
         base64,
         folderType: values.driverId ? "drivers" : "documents",
+        folderName: values.driverId
+          ? (state.drivers.find(driver => driver.id === values.driverId)?.name || "Sem nome")
+          : (state.vehicles.find(vehicle => vehicle.id === values.vehicleId)?.plate || "Sem viatura"),
         documentType: values.type
       }
     });

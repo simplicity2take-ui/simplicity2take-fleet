@@ -8,6 +8,7 @@ const state = {
   editing: null,
   smartPreview: null,
   requestedVehicleId: null,
+  documentContext: "company",
   users: [
     { id: "admin", role: "admin", name: "Administrador Simplicity2Take", email: "admin@simplicity2take.pt", phone: "210000000" },
     { id: "u-joao", role: "driver", name: "João Silva", email: "joao@simplicity2take.pt", phone: "912345678", driverId: "d-joao" },
@@ -132,7 +133,7 @@ const documentTypes = [
   "Outros"
 ];
 const navByRole = {
-  admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["documents", "Documentos", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
+  admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["documents", "Documentos da Empresa", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
   driver: [["vehicles", "Meus Veículos", "VE"], ["documents", "Meus Documentos", "DO"], ["account", "Minha Conta", "EU"]]
 };
 
@@ -323,14 +324,13 @@ function showVehicleQr(vehicleId) {
   modal.showModal();
 }
 
+function companyDocuments() {
+  return state.documents.filter(doc => !doc.driverId && !doc.vehicleId);
+}
+
 function driverDocuments() {
   const driverId = currentUser().driverId;
-  const assignedVehicleIds = new Set(driverVehicles().map(vehicle => vehicle.id));
-  return state.documents.filter(doc =>
-    (doc.driverId === driverId) ||
-    (doc.vehicleId && assignedVehicleIds.has(doc.vehicleId)) ||
-    (!doc.driverId && doc.viewerDriverIds.includes(driverId))
-  );
+  return state.documents.filter(doc => doc.driverId === driverId);
 }
 
 function driverVehicles() {
@@ -649,7 +649,7 @@ function renderDashboard() {
       <article class="panel">
         <div class="panel-heading"><h2>S2T SmartDocs</h2><span class="tag">IA preparada</span></div>
         <p class="section-copy">Ao carregar PDF ou imagem, o sistema identifica automaticamente tipo, matrícula, número, apólice e datas para confirmação do Administrador.</p>
-        <button class="primary-button" type="button" data-open="document">Carregar documento</button>
+        <button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>
       </article>
     </section>
   `;
@@ -799,8 +799,7 @@ function renderDrivers() {
 }
 
 function driverRow(driver) {
-  const assignedVehicleIds = new Set(state.vehicles.filter(vehicle => vehicle.driverIds.includes(driver.id)).map(vehicle => vehicle.id));
-  const docs = state.documents.filter(doc => doc.driverId === driver.id || (doc.vehicleId && assignedVehicleIds.has(doc.vehicleId)) || (!doc.driverId && doc.viewerDriverIds.includes(driver.id)));
+  const docs = state.documents.filter(doc => doc.driverId === driver.id);
   return `
     <tr>
       <td><strong>${escapeHtml(driver.name)}</strong></td>
@@ -815,11 +814,15 @@ function driverRow(driver) {
 
 function renderDocuments() {
   const admin = currentUser().role === "admin";
-  const documents = visibleDocuments();
-  selectors.pageTitle.textContent = admin ? "Documentos" : "Meus Documentos";
+  const documents = admin ? companyDocuments() : driverDocuments();
+  selectors.pageTitle.textContent = admin ? "Documentos da Empresa" : "Meus Documentos";
   selectors.content.innerHTML = `
-    ${heading(admin ? "Gestão documental" : "Documentos atribuídos", admin ? "Carregue documentos e defina quem pode visualizar." : "Abra ou descarregue os documentos autorizados.", admin ? `<button class="primary-button" type="button" data-open="document">Carregar documento</button>` : "")}
-    <section class="cards-grid">${documents.map(doc => documentCard(doc, admin)).join("") || emptyCard("Sem documentos para apresentar.")}</section>
+    ${heading(
+      admin ? "Gestão documental da empresa" : "Os meus documentos",
+      admin ? "Aqui ficam apenas os documentos da empresa. Documentos de viaturas e de motoristas são geridos nas respetivas áreas." : "Aqui ficam apenas os teus documentos pessoais/contratuais. Os documentos das viaturas estão em Meus Veículos.",
+      admin ? `<button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>` : ""
+    )}
+    <section class="cards-grid">${documents.map(doc => documentCard(doc, admin)).join("") || emptyCard(admin ? "Ainda não existem documentos da empresa." : "Sem documentos para apresentar.")}</section>
   `;
 }
 
@@ -833,7 +836,7 @@ function documentCard(doc, admin) {
         <span>${escapeHtml(doc.type)}</span>
         <span>${escapeHtml(doc.number || "Sem número")}</span>
         <span>Validade: ${escapeHtml(doc.expiryDate)}</span>
-        <span>${escapeHtml(driverName(doc.driverId))}</span>
+        <span>${doc.driverId ? escapeHtml(driverName(doc.driverId)) : doc.vehicleId ? escapeHtml(vehicleName(doc.vehicleId)) : "Empresa"}</span>
       </div>
       <div class="row-actions">
         <button class="mini-button" type="button" data-open-doc="${doc.id}">Abrir Documento</button>
@@ -955,7 +958,7 @@ function heading(title, copy, actions) {
 }
 
 function emptyRow(message) {
-  return `<tr><td colspan="7">${message}</td></tr>`;
+  return `<tr><td colspan="8">${message}</td></tr>`;
 }
 
 function emptyCard(message) {
@@ -963,7 +966,7 @@ function emptyCard(message) {
 }
 
 function openVehicleDocumentModal(vehicleId, docType = "") {
-  openModal("document");
+  openModal("document", "", { scope: "vehicle" });
   const vehicleSelect = selectors.modalFields.querySelector('[name="vehicleId"]');
   const typeSelect = selectors.modalFields.querySelector('[name="type"]');
   if (vehicleSelect) vehicleSelect.value = vehicleId;
@@ -971,8 +974,12 @@ function openVehicleDocumentModal(vehicleId, docType = "") {
   state.smartPreview = { vehicleId, driverId: "", scope: "vehicle" };
 }
 
-function openModal(type, id = "") {
+function openModal(type, id = "", options = {}) {
   state.editing = { type, id };
+  if (type === "document") {
+    const existing = state.documents.find(item => item.id === id);
+    state.documentContext = options.scope || (existing?.vehicleId ? "vehicle" : existing?.driverId ? "driver" : "company");
+  }
   const title = { driver: "motorista", vehicle: "veículo", document: "documento", "admin-password": "palavra-passe do motorista" }[type];
   const action = type === "admin-password" ? "Definir" : id && type !== "document" ? "Editar" : type === "document" ? "Carregar" : "Criar";
   selectors.modalTitle.textContent = `${action} ${title}`;
@@ -1014,25 +1021,67 @@ function modalFields(type, id) {
   }
 
   const doc = state.documents.find(item => item.id === id) || {};
+  const context = state.documentContext || "company";
   const selectedDriver = doc.driverId || "";
   const selectedVehicle = doc.vehicleId || "";
   const privateDriverDoc = Boolean(selectedDriver);
+
+  if (context === "company") {
+    const companyTypes = [
+      "Certidão Permanente",
+      "Licença / Alvará",
+      "RNAVT",
+      "Seguro da Empresa",
+      "Contrato",
+      "Documento Fiscal",
+      "Fatura / Comprovativo",
+      "Outros"
+    ];
+    return `
+      <div class="smartdocs-box span-full">
+        <strong>Gestão documental da empresa</strong>
+        <p>Este documento fica exclusivamente na área da empresa. Não é associado a motorista nem a viatura.</p>
+      </div>
+      ${field("file", "Ficheiro original", "", "file", true, 'accept=".pdf,.jpg,.jpeg,.png"')}
+      <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
+      ${field("name", "Nome do documento", doc.name)}
+      ${selectField("type", "Tipo", companyTypes, doc.type || "Outros")}
+      ${field("number", "Número do documento", doc.number)}
+      ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
+    `;
+  }
+
+  if (context === "driver") {
+    return `
+      <div class="smartdocs-box span-full">
+        <strong>Documento do motorista</strong>
+        <p>Este documento fica privado e associado exclusivamente ao motorista.</p>
+      </div>
+      ${field("file", "Ficheiro original", "", "file", true, 'accept=".pdf,.jpg,.jpeg,.png"')}
+      <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
+      ${field("name", "Nome do documento", doc.name)}
+      ${selectField("type", "Tipo", documentTypes, doc.type || "Carta de Condução")}
+      ${field("number", "Número do documento", doc.number)}
+      ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
+      ${selectField("driverId", "Motorista associado (privado)", state.drivers.map(driver => [driver.id, driver.name]), selectedDriver)}
+    `;
+  }
+
   return `
     <div class="smartdocs-box span-full">
-      <strong>S2T SmartDocs</strong>
-      <p>Carregue um PDF ou imagem. O documento pode ficar associado a um motorista (privado) ou a um veículo (partilhável com os motoristas autorizados desse veículo).</p>
+      <strong>Documento da viatura</strong>
+      <p>Este documento fica associado exclusivamente à viatura e pode ser consultado pelos motoristas autorizados dessa viatura.</p>
     </div>
     ${field("file", "Ficheiro original", "", "file", true, 'accept=".pdf,.jpg,.jpeg,.png"')}
     <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
     ${field("name", "Nome do documento", doc.name)}
-    ${selectField("type", "Tipo", documentTypes, doc.type || "Carta de Condução")}
+    ${selectField("type", "Tipo", documentTypes, doc.type || "Outros")}
     ${field("number", "Número do documento", doc.number)}
     ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
-    ${selectField("driverId", "Motorista associado (privado)", [["", "Sem motorista"], ...state.drivers.map(driver => [driver.id, driver.name])], selectedDriver, false)}
-    ${selectField("vehicleId", "Veículo associado", [["", "Sem veículo"], ...state.vehicles.map(vehicle => [vehicle.id, vehicle.plate + " — " + vehicle.brand + " " + vehicle.model])], selectedVehicle, false)}
-    ${checkList("viewerDriverIds", "Visualização adicional (apenas documentos sem motorista)", state.drivers, privateDriverDoc ? [] : (doc.viewerDriverIds || []))}
+    ${selectField("vehicleId", "Veículo associado", state.vehicles.map(vehicle => [vehicle.id, vehicle.plate + " — " + vehicle.brand + " " + vehicle.model]), selectedVehicle)}
+    ${checkList("viewerDriverIds", "Visualização adicional (apenas documentos sem motorista)", state.drivers, doc.viewerDriverIds || [])}
   `;
-}
+
 
 function field(name, label, value = "", type = "text", span = false, extra = "", required = true) {
   const requiredAttr = type === "file" || !required ? "" : "required";
@@ -1131,8 +1180,8 @@ function applySmartPreview(preview) {
   setValue("type", preview.type);
   setValue("name", preview.name);
   setValue("expiryDate", preview.expiryDate);
-  setValue("vehicleId", preview.vehicleId);
-  setValue("driverId", preview.driverId);
+  if ((state.documentContext || "company") === "vehicle") setValue("vehicleId", preview.vehicleId);
+  if ((state.documentContext || "company") === "driver") setValue("driverId", preview.driverId);
   const vehicleLabel = preview.vehicle ? preview.vehicle.plate : "não identificado";
   const driverLabel = preview.driver ? preview.driver.name : "não identificado";
   const scopeLabel = preview.scope === "driver" ? "Privado do motorista" : preview.scope === "vehicle" ? "Documento da viatura" : "Sem associação automática";
@@ -1238,6 +1287,8 @@ async function saveVehicle(values, driverIds, id) {
 async function saveDocument(values, viewerDriverIds, id) {
   const file = selectors.modalFields.querySelector('[name="file"]')?.files?.[0];
   const existing = state.documents.find(item => item.id === id);
+  const context = state.documentContext || "company";
+
   let driveData = existing ? {
     fileId: existing.driveFileId,
     fileName: existing.fileName,
@@ -1248,16 +1299,22 @@ async function saveDocument(values, viewerDriverIds, id) {
   if (file) {
     if (file.size > 10 * 1024 * 1024) throw new Error("O ficheiro ultrapassa 10 MB.");
     if (!["application/pdf", "image/jpeg", "image/png"].includes(file.type)) throw new Error("Só são permitidos PDF, JPG e PNG.");
+
     const base64 = await fileToBase64(file);
+    const folderType = context === "vehicle" ? "vehicles" : context === "driver" ? "drivers" : "documents";
+    const folderName = context === "vehicle"
+      ? (state.vehicles.find(vehicle => vehicle.id === values.vehicleId)?.plate || "Sem viatura")
+      : context === "driver"
+        ? (state.drivers.find(driver => driver.id === values.driverId)?.name || "Sem motorista")
+        : "Empresa";
+
     const { data, error } = await supabaseClient.functions.invoke("drive-upload", {
       body: {
         fileName: file.name,
         mimeType: file.type,
         base64,
-        folderType: values.driverId ? "drivers" : (values.vehicleId || state.smartPreview?.vehicleId ? "vehicles" : "documents"),
-        folderName: values.driverId
-          ? (state.drivers.find(driver => driver.id === values.driverId)?.name || "Sem nome")
-          : (state.vehicles.find(vehicle => vehicle.id === values.vehicleId)?.plate || "Sem viatura"),
+        folderType,
+        folderName,
         documentType: values.type
       }
     });
@@ -1265,17 +1322,21 @@ async function saveDocument(values, viewerDriverIds, id) {
     if (!data?.ok) throw new Error(data?.error || "Falha ao guardar no Google Drive.");
     driveData = data;
   }
+
   if (!driveData) throw new Error("Selecione um ficheiro.");
 
-  if (values.driverId && values.vehicleId) {
-    throw new Error("Um documento privado de motorista não pode estar simultaneamente associado a um veículo.");
+  const finalVehicleId = context === "vehicle"
+    ? (values.vehicleId || state.smartPreview?.vehicleId || null)
+    : null;
+  const finalDriverId = context === "driver"
+    ? (values.driverId || state.smartPreview?.driverId || null)
+    : null;
+
+  if (context === "vehicle" && !finalVehicleId) {
+    throw new Error("Selecione a viatura.");
   }
-
-  const detectedVehicleId = state.smartPreview?.vehicleId || "";
-  const finalVehicleId = values.vehicleId || detectedVehicleId || null;
-
-  if (values.driverId && finalVehicleId) {
-    throw new Error("Um documento privado de motorista não pode estar simultaneamente associado a um veículo.");
+  if (context === "driver" && !finalDriverId) {
+    throw new Error("Selecione o motorista.");
   }
 
   const payload = {
@@ -1291,26 +1352,37 @@ async function saveDocument(values, viewerDriverIds, id) {
     drive_file_id: driveData.fileId,
     drive_web_view_link: driveData.webViewLink,
     vehicle_id: finalVehicleId,
-    driver_id: values.driverId || null,
+    driver_id: finalDriverId,
     uploaded_by: state.sessionUserId
   };
+
   const query = id
     ? supabaseClient.from("documents").update(payload).eq("id", id).select().single()
     : supabaseClient.from("documents").insert(payload).select().single();
+
   const { data: saved, error } = await query;
   if (error) throw error;
+
   const documentId = id || saved.id;
   const { error: viewerDeleteError } = await supabaseClient.from("document_viewers").delete().eq("document_id", documentId);
   if (viewerDeleteError) throw viewerDeleteError;
-  if (viewerDriverIds.length) {
+
+  if (context === "vehicle" && viewerDriverIds.length) {
     const { error: viewerError } = await supabaseClient.from("document_viewers").insert(
       viewerDriverIds.map(driverId => ({ document_id: documentId, driver_id: driverId }))
     );
     if (viewerError) throw viewerError;
   }
-  state.activeView = "vehicles";
-  showToast("Documento guardado no Google Drive.");
-}
+
+  state.activeView = context === "vehicle" ? "vehicles" : context === "driver" ? "drivers" : "documents";
+  showToast(
+    context === "vehicle"
+      ? "Documento da viatura guardado no Google Drive."
+      : context === "driver"
+        ? "Documento do motorista guardado no Google Drive."
+        : "Documento da empresa guardado no Google Drive."
+  );
+
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {

@@ -1382,7 +1382,7 @@ async function saveDocument(values, viewerDriverIds, id) {
         ? "Documento do motorista guardado no Google Drive."
         : "Documento da empresa guardado no Google Drive."
   );
-
+}
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {

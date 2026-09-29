@@ -282,11 +282,15 @@ function vehicleName(id) {
 
 function vehicleQrUrl(vehicle) {
   const token = valueOf(vehicle, "qrToken", "qr_token") || vehicle.id;
-  return `https://fleet.simplicity2take.com/?vehicle=${encodeURIComponent(token)}`;
+  return `https://fleet.simplicity2take.com/?vehicle=${encodeURIComponent(token)}&mode=driver`;
 }
 
 function requestedVehicleToken() {
   return new URLSearchParams(window.location.search).get("vehicle")?.trim() || "";
+}
+
+function isVehicleQrMode() {
+  return new URLSearchParams(window.location.search).get("mode") === "driver" && Boolean(requestedVehicleToken());
 }
 
 async function openRequestedVehicle() {
@@ -548,6 +552,10 @@ async function startAuthenticatedSession(user) {
   if (error || !profile) {
     await supabaseClient.auth.signOut();
     throw error || new Error("Perfil não encontrado.");
+  }
+  if (isVehicleQrMode() && profile.role !== "driver") {
+    await supabaseClient.auth.signOut();
+    throw new Error("Este QR é exclusivo para acesso de motorista.");
   }
   if (profile.status && profile.status !== "Ativo") {
     await supabaseClient.auth.signOut();
@@ -1418,6 +1426,12 @@ function bindPortalEvents() {
   });
 
   supabaseClient.auth.getSession().then(async ({ data }) => {
+    if (isVehicleQrMode()) {
+      if (data.session?.user) await supabaseClient.auth.signOut();
+      selectors.loginOptions.innerHTML = '<div class="smartdocs-box"><strong>Acesso de motorista</strong><p>Entre com a conta do motorista autorizado para esta viatura.</p></div>';
+      selectors.loginIdentifier.placeholder = "Email ou telemóvel do motorista";
+      return;
+    }
     if (data.session?.user) {
       try { await startAuthenticatedSession(data.session.user); }
       catch (error) { console.error(error); showToast(error?.message || "Não foi possível restaurar a sessão."); }

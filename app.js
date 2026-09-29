@@ -1246,9 +1246,10 @@ async function openDocument(documentId) {
 
   if (mimeType === "application/pdf") {
     const frame = document.createElement("iframe");
-    frame.src = url;
+    frame.src = url + "#toolbar=1&navpanes=0&scrollbar=1";
     frame.title = doc.fileName || doc.name || "Documento PDF";
     frame.className = "document-viewer-frame";
+    frame.setAttribute("allow", "fullscreen");
     content.appendChild(frame);
   } else if (mimeType.startsWith("image/")) {
     const image = document.createElement("img");

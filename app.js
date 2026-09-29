@@ -1229,16 +1229,40 @@ async function fetchDocumentBlob(documentId) {
 }
 
 async function openDocument(documentId) {
-  const { data } = await fetchDocumentBlob(documentId);
-  const url = URL.createObjectURL(data);
-  const viewer = window.open(url, "_blank");
+  const { doc, data } = await fetchDocumentBlob(documentId);
+  const modal = document.querySelector("#documentViewerModal");
+  const title = document.querySelector("#documentViewerTitle");
+  const content = document.querySelector("#documentViewerContent");
 
-  if (!viewer) {
-    URL.revokeObjectURL(url);
-    throw new Error("Permita janelas pop-up para visualizar o documento.");
+  if (!modal || !title || !content) {
+    throw new Error("Visualizador de documentos indisponível.");
   }
 
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  title.textContent = doc.fileName || doc.name || "Documento";
+  content.replaceChildren();
+
+  const url = URL.createObjectURL(data);
+  const mimeType = data.type || doc.fileType || "";
+
+  if (mimeType === "application/pdf") {
+    const frame = document.createElement("iframe");
+    frame.src = url;
+    frame.title = doc.fileName || doc.name || "Documento PDF";
+    frame.className = "document-viewer-frame";
+    content.appendChild(frame);
+  } else if (mimeType.startsWith("image/")) {
+    const image = document.createElement("img");
+    image.src = url;
+    image.alt = doc.fileName || doc.name || "Documento";
+    image.className = "document-viewer-image";
+    content.appendChild(image);
+  } else {
+    URL.revokeObjectURL(url);
+    throw new Error("Este tipo de documento não pode ser visualizado diretamente.");
+  }
+
+  modal.showModal();
+  modal.addEventListener("close", () => URL.revokeObjectURL(url), { once: true });
 }
 
 async function downloadDocument(documentId) {
@@ -1333,6 +1357,9 @@ function bindPortalEvents() {
     if (target.dataset.downloadDoc) {
       try { await downloadDocument(target.dataset.downloadDoc); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível descarregar o documento."); }
       return;
+    }
+    if (target.id === "closeDocumentViewer") {
+      return document.querySelector("#documentViewerModal")?.close();
     }
     if (target.dataset.editDriver) return openModal("driver", target.dataset.editDriver);
     if (target.dataset.editVehicle) return openModal("vehicle", target.dataset.editVehicle);

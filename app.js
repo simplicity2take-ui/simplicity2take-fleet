@@ -730,6 +730,20 @@ function vehicleAccessPanel(vehicle, admin) {
 }
 
 function vehicleRow(vehicle, admin) {
+  const vehicleDocs = state.documents.filter(doc => doc.vehicleId === vehicle.id);
+  const documentSummary = vehicleDocs.length
+    ? vehicleDocs.map(doc => {
+        const label = doc.type || "Documento";
+        const level = alertLevel(doc);
+        const cls = level === "Expirado" ? "inactive" : level === "OK" ? "active" : level === "Sem validade" ? "" : "expiring";
+        return `
+          <button class="document-mini-link" type="button" data-open-doc="${doc.id}" title="${escapeHtml(doc.name)} — validade: ${escapeHtml(doc.expiryDate || "sem validade")}">
+            <span class="tag ${cls}">${escapeHtml(label)}</span>
+          </button>
+        `;
+      }).join("")
+    : '<span class="section-copy">Sem documentos</span>';
+
   return `
     <tr>
       <td><strong>${escapeHtml(vehicle.plate)}</strong></td>
@@ -738,6 +752,7 @@ function vehicleRow(vehicle, admin) {
       <td>${escapeHtml(vehicle.vin)}</td>
       <td><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></td>
       <td>${vehicle.driverIds.map(driverName).join(", ") || "Sem motorista"}</td>
+      <td><div class="vehicle-document-links">${documentSummary}</div></td>
       <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${vehicle.id}">QR</button><button class="mini-button" type="button" data-edit-vehicle="${vehicle.id}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${vehicle.id}">Eliminar</button></div>` : "Consulta"}</td>
     </tr>
   `;

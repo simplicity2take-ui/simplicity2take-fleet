@@ -1214,23 +1214,44 @@ function fileToBase64(file) {
   });
 }
 
-async function openDocument(documentId) {
+async function fetchDocumentBlob(documentId) {
   const doc = state.documents.find(item => item.id === documentId);
   if (!doc) throw new Error("Documento não encontrado.");
+
   const { data, error } = await supabaseClient.functions.invoke("document-access", {
     body: { document_id: documentId }
   });
+
   if (error) throw error;
-  if (!(data instanceof Blob)) throw new Error("Não foi possível abrir o documento.");
+  if (!(data instanceof Blob)) throw new Error("Não foi possível obter o documento.");
+
+  return { doc, data };
+}
+
+async function openDocument(documentId) {
+  const { data } = await fetchDocumentBlob(documentId);
+  const url = URL.createObjectURL(data);
+  const viewer = window.open(url, "_blank");
+
+  if (!viewer) {
+    URL.revokeObjectURL(url);
+    throw new Error("Permita janelas pop-up para visualizar o documento.");
+  }
+
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+async function downloadDocument(documentId) {
+  const { doc, data } = await fetchDocumentBlob(documentId);
   const url = URL.createObjectURL(data);
   const link = document.createElement("a");
+
   link.href = url;
-  link.target = "_blank";
-  link.rel = "noopener";
   link.download = doc.fileName || doc.name || "documento";
   document.body.appendChild(link);
   link.click();
   link.remove();
+
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
@@ -1298,7 +1319,7 @@ function bindPortalEvents() {
   });
 
   document.addEventListener("click", async event => {
-    const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password]");
+    const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password]");
     if (!target) return;
 
     const view = target.dataset.view;
@@ -1307,6 +1328,10 @@ function bindPortalEvents() {
     if (target.dataset.qrVehicle) return showVehicleQr(target.dataset.qrVehicle);
     if (target.dataset.openDoc) {
       try { await openDocument(target.dataset.openDoc); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível abrir o documento."); }
+      return;
+    }
+    if (target.dataset.downloadDoc) {
+      try { await downloadDocument(target.dataset.downloadDoc); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível descarregar o documento."); }
       return;
     }
     if (target.dataset.editDriver) return openModal("driver", target.dataset.editDriver);

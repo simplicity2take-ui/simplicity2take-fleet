@@ -928,8 +928,8 @@ function modalFields(type, id) {
     ${selectField("type", "Tipo", documentTypes, doc.type || "Carta de Condução")}
     ${field("number", "Número do documento", doc.number)}
     ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
-    ${selectField("driverId", "Motorista associado (privado)", [["", "Sem motorista"], ...state.drivers.map(driver => [driver.id, driver.name])], selectedDriver)}
-    ${selectField("vehicleId", "Veículo associado", [["", "Sem veículo"], ...state.vehicles.map(vehicle => [vehicle.id, vehicle.plate + " — " + vehicle.brand + " " + vehicle.model])], selectedVehicle)}
+    ${selectField("driverId", "Motorista associado (privado)", [["", "Sem motorista"], ...state.drivers.map(driver => [driver.id, driver.name])], selectedDriver, false)}
+    ${selectField("vehicleId", "Veículo associado", [["", "Sem veículo"], ...state.vehicles.map(vehicle => [vehicle.id, vehicle.plate + " — " + vehicle.brand + " " + vehicle.model])], selectedVehicle, false)}
     ${checkList("viewerDriverIds", "Visualização adicional (apenas documentos sem motorista)", state.drivers, privateDriverDoc ? [] : (doc.viewerDriverIds || []))}
   `;
 }
@@ -939,9 +939,9 @@ function field(name, label, value = "", type = "text", span = false, extra = "")
   return `<label class="${span ? "span-full" : ""}">${label}<input name="${name}" type="${type}" value="${type === "file" ? "" : escapeHtml(value)}" ${extra} ${required}></label>`;
 }
 
-function selectField(name, label, options, value) {
+function selectField(name, label, options, value, required = true) {
   const normalized = options.map(option => Array.isArray(option) ? option : [option, option]);
-  return `<label>${label}<select name="${name}" required>${normalized.map(([optionValue, optionLabel]) => `<option value="${escapeHtml(optionValue)}" ${optionValue === value ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`).join("")}</select></label>`;
+  return `<label>${label}<select name="${name}" ${required ? "required" : ""}>${normalized.map(([optionValue, optionLabel]) => `<option value="${escapeHtml(optionValue)}" ${optionValue === value ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`).join("")}</select></label>`;
 }
 
 function checkList(name, label, items, selected) {

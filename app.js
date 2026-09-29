@@ -906,7 +906,7 @@ function modalFields(type, id) {
       field("brand", "Marca", vehicle.brand),
       field("model", "Modelo", vehicle.model),
       field("year", "Ano", vehicle.year, "number"),
-      field("vin", "VIN", vehicle.vin, "text", true),
+      field("vin", "VIN", vehicle.vin, "text", false),
       selectField("status", "Estado", ["Ativo", "Manutenção", "Inativo"], vehicle.status || "Ativo"),
       checkList("driverIds", "Motoristas atribuídos", state.drivers, vehicle.driverIds || [])
     ].join("");

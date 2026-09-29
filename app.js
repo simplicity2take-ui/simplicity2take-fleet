@@ -621,35 +621,68 @@ function renderContent() {
 
 function renderDashboard() {
   selectors.pageTitle.textContent = "Dashboard";
-  const expiring = state.documents.filter(doc => ["30 dias", "15 dias", "7 dias", "3 dias"].includes(alertLevel(doc))).length;
-  const expired = state.documents.filter(doc => alertLevel(doc) === "Expirado").length;
-  const missingExpiry = state.documents.filter(doc => alertLevel(doc) === "Sem validade").length;
-  const max = Math.max(state.drivers.length, state.vehicles.length, state.documents.length, expiring, expired, missingExpiry, 1);
+
+  const companyDocs = companyDocuments();
+  const vehicleDocs = state.documents.filter(doc => Boolean(doc.vehicleId));
+  const driverDocs = state.documents.filter(doc => Boolean(doc.driverId));
+
+  const expiring = state.documents.filter(doc => ["30 dias", "15 dias", "7 dias", "3 dias"].includes(alertLevel(doc)));
+  const expired = state.documents.filter(doc => alertLevel(doc) === "Expirado");
+  const missingExpiry = state.documents.filter(doc => alertLevel(doc) === "Sem validade");
+
+  const max = Math.max(
+    state.drivers.length,
+    state.vehicles.length,
+    companyDocs.length,
+    vehicleDocs.length,
+    driverDocs.length,
+    expiring.length,
+    expired.length,
+    missingExpiry.length,
+    1
+  );
+
   selectors.content.innerHTML = `
     <section class="status-strip">
       ${metric("Total de motoristas", state.drivers.length)}
       ${metric("Total de veículos", state.vehicles.length)}
-      ${metric("Total de documentos", state.documents.length)}
-      ${metric("Documentos a expirar", expiring)}
-      ${metric("Documentos expirados", expired)}
-      ${metric("Sem validade", missingExpiry)}
+      ${metric("Documentos da empresa", companyDocs.length)}
+      ${metric("Documentos das viaturas", vehicleDocs.length)}
+      ${metric("Documentos dos motoristas", driverDocs.length)}
+      ${metric("A expirar", expiring.length)}
+      ${metric("Expirados", expired.length)}
+      ${metric("Sem validade", missingExpiry.length)}
     </section>
+
     <section class="content-grid">
       <article class="panel">
-        <div class="panel-heading"><h2>Resumo operacional</h2><span class="tag active">Administrador</span></div>
+        <div class="panel-heading">
+          <h2>Resumo documental</h2>
+          <span class="tag active">Atualizado</span>
+        </div>
         <div class="bar-chart">
-          ${bar("Motoristas", state.drivers.length, max)}
-          ${bar("Veículos", state.vehicles.length, max)}
-          ${bar("Documentos", state.documents.length, max)}
-          ${bar("A expirar", expiring, max)}
-          ${bar("Expirados", expired, max)}
-          ${bar("Sem validade", missingExpiry, max)}
+          ${bar("Empresa", companyDocs.length, max)}
+          ${bar("Viaturas", vehicleDocs.length, max)}
+          ${bar("Motoristas", driverDocs.length, max)}
+          ${bar("A expirar", expiring.length, max)}
+          ${bar("Expirados", expired.length, max)}
+          ${bar("Sem validade", missingExpiry.length, max)}
         </div>
       </article>
+
       <article class="panel">
-        <div class="panel-heading"><h2>S2T SmartDocs</h2><span class="tag">IA preparada</span></div>
-        <p class="section-copy">Ao carregar PDF ou imagem, o sistema identifica automaticamente tipo, matrícula, número, apólice e datas para confirmação do Administrador.</p>
-        <button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>
+        <div class="panel-heading">
+          <h2>S2T SmartDocs</h2>
+          <span class="tag">IA preparada</span>
+        </div>
+        <p class="section-copy">
+          Carrega um PDF ou imagem e o sistema tenta identificar automaticamente
+          o tipo e a validade. A informação é sempre confirmada pelo Administrador.
+        </p>
+        <div class="row-actions">
+          <button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>
+          <button class="secondary-button" type="button" data-view="alerts">Ver alertas</button>
+        </div>
       </article>
     </section>
   `;

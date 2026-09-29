@@ -1046,8 +1046,8 @@ function modalFields(type, id) {
       <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
       ${field("name", "Nome do documento", doc.name)}
       ${selectField("type", "Tipo", companyTypes, doc.type || "Outros")}
-      ${field("number", "Número do documento", doc.number)}
-      ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
+      ${field("number", "Número do documento (opcional)", doc.number, "text", false)}
+      ${field("expiryDate", "Data de validade", doc.expiryDate, "date", false)}
     `;
   }
 
@@ -1168,7 +1168,7 @@ function analyseFileName(fileName) {
     vehicle,
     driver,
     scope,
-    name: fileName.replace(/\\.[^.]+$/, "").replace(/[_-]+/g, " ").trim()
+    name: fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim()
   };
 }
 

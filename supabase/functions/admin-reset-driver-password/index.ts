@@ -10,7 +10,8 @@ Deno.serve(async req=>{
   const url=Deno.env.get("SUPABASE_URL")!, anon=Deno.env.get("SUPABASE_ANON_KEY")!, service=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if(!service) return json({ok:false,error:"Configuração do servidor incompleta."},503);
   const callerClient=createClient(url,anon,{global:{headers:{Authorization:auth}}});
-  const {data:{user:caller}}=await callerClient.auth.getUser();
+  const accessToken=auth.replace(/^Bearer\s+/i,"").trim();
+  const {data:{user:caller},error:callerError}=await callerClient.auth.getUser(accessToken);
   if(!caller) return json({ok:false,error:"Sessão inválida."},401);
   const admin=createClient(url,service);
   const {data:profile}=await admin.from("profiles").select("role,status").eq("id",caller.id).single();

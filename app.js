@@ -668,8 +668,47 @@ function renderVehicles() {
   const vehicles = admin ? state.vehicles : driverVehicles();
   const requested = vehicles.find(vehicle => vehicle.id === state.requestedVehicleId);
   selectors.pageTitle.textContent = admin ? "Veículos" : "Meus Veículos";
+
+  if (!admin) {
+    selectors.content.innerHTML = `
+      ${heading("Os meus veículos", "Aqui podes consultar os dados e todos os documentos das viaturas que te estão atribuídas.", "")}
+      <section class="cards-grid">
+        ${vehicles.map(vehicle => {
+          const docs = state.documents.filter(doc => doc.vehicleId === vehicle.id);
+          return `
+            <article class="data-card vehicle-driver-card">
+              <div class="panel-heading">
+                <div>
+                  <span class="eyebrow">Viatura atribuída</span>
+                  <h2>${escapeHtml(vehicle.plate)}</h2>
+                  <p class="section-copy">${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)} · ${escapeHtml(vehicle.year || "—")}</p>
+                </div>
+                <span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span>
+              </div>
+              <div class="meta-line">
+                <span>VIN: ${escapeHtml(vehicle.vin || "—")}</span>
+              </div>
+              <div class="vehicle-driver-documents">
+                <div class="panel-heading">
+                  <div>
+                    <h3>Documentos da viatura</h3>
+                    <p class="section-copy">${docs.length} documento(s) disponível(eis)</p>
+                  </div>
+                </div>
+                <div class="cards-grid">
+                  ${docs.map(doc => documentCard(doc, false)).join("") || emptyCard("Ainda não existem documentos disponíveis para esta viatura.")}
+                </div>
+              </div>
+            </article>
+          `;
+        }).join("") || emptyCard("Não tens nenhuma viatura atribuída.")}
+      </section>
+    `;
+    return;
+  }
+
   selectors.content.innerHTML = `
-    ${heading(admin ? "Gestão de veículos" : "Veículos atribuídos", admin ? "Criar, editar e eliminar veículos." : "Consulta dos veículos que lhe foram atribuídos.", admin ? `<button class="primary-button" type="button" data-open="vehicle">Criar veículo</button>` : "")}
+    ${heading("Gestão de veículos", "Criar, editar e eliminar veículos.", `<button class="primary-button" type="button" data-open="vehicle">Criar veículo</button>`)}
     ${requested ? vehicleAccessPanel(requested, admin) : ""}
     <div class="table-wrap">
       <table>

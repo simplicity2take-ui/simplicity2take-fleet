@@ -2265,3 +2265,65 @@ textarea:focus {
 .vehicle-driver-card .vehicle-driver-documents {
   margin-top: 1rem;
 }
+
+
+/* Organização dos documentos por viatura */
+.vehicle-documents-panel {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: #f8fbfd;
+}
+.vehicle-documents-panel.compact {
+  margin-top: 0;
+}
+.vehicle-documents-panel .panel-heading {
+  margin-bottom: 0.75rem;
+}
+.vehicle-document-slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.vehicle-document-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: #fff;
+}
+.vehicle-document-slot.missing {
+  background: #fafafa;
+  border-style: dashed;
+}
+.vehicle-document-slot > div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.vehicle-document-slot small {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vehicle-document-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .vehicle-document-slots {
+    grid-template-columns: 1fr;
+  }
+  .vehicle-document-slot {
+    align-items: flex-start;
+  }
+}

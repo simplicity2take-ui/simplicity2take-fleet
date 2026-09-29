@@ -1320,8 +1320,14 @@ async function saveAdminPassword(driverId, password, confirmation) {
   if (currentUser().role !== "admin") throw new Error("Só o administrador pode definir palavras-passe.");
   if (!password || password.length < 8) throw new Error("Use pelo menos 8 caracteres na palavra-passe.");
   if (password !== confirmation) throw new Error("As palavras-passe não coincidem.");
+  const driver = state.drivers.find(item => item.id === driverId);
   const { error } = await supabaseClient.functions.invoke("admin-reset-driver-password", {
-    body: { driverId, password }
+    body: {
+      driverId,
+      password,
+      email: driver?.email || "",
+      phone: driver?.phone || ""
+    }
   });
   if (error) throw error;
   showToast("Palavra-passe do motorista alterada.");

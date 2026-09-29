@@ -962,6 +962,15 @@ function emptyCard(message) {
   return `<article class="empty-state">${message}</article>`;
 }
 
+function openVehicleDocumentModal(vehicleId, docType = "") {
+  openModal("document");
+  const vehicleSelect = selectors.modalFields.querySelector('[name="vehicleId"]');
+  const typeSelect = selectors.modalFields.querySelector('[name="type"]');
+  if (vehicleSelect) vehicleSelect.value = vehicleId;
+  if (typeSelect && docType) typeSelect.value = docType;
+  state.smartPreview = { vehicleId, driverId: "", scope: "vehicle" };
+}
+
 function openModal(type, id = "") {
   state.editing = { type, id };
   const title = { driver: "motorista", vehicle: "veículo", document: "documento", "admin-password": "palavra-passe do motorista" }[type];
@@ -1482,12 +1491,13 @@ function bindPortalEvents() {
   });
 
   document.addEventListener("click", async event => {
-    const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password]");
+    const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-open-vehicle-doc],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password]");
     if (!target) return;
 
     const view = target.dataset.view;
     if (view) return setView(view);
     if (target.dataset.open) return openModal(target.dataset.open);
+    if (target.dataset.openVehicleDoc) return openVehicleDocumentModal(target.dataset.openVehicleDoc, target.dataset.docType || "");
     if (target.dataset.qrVehicle) return showVehicleQr(target.dataset.qrVehicle);
     if (target.dataset.openDoc) {
       try { await openDocument(target.dataset.openDoc); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível abrir o documento."); }

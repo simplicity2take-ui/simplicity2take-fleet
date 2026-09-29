@@ -1536,10 +1536,49 @@ async function handleAdminAction(action) {
       await loadBackendData(); renderApp(); showToast("Viatura eliminada.");
     }
     if (action.type === "delete-driver") {
+      const driver = state.drivers.find(item => item.id === action.id);
+      if (!driver) return;
+
+      const driverDocs = state.documents.filter(doc => doc.driverId === action.id);
+
+      if (driver.status === "Inativo" && driverDocs.length === 0) {
+        if (!confirm("Eliminar definitivamente este motorista?")) return;
+
+        const { error: assignmentError } = await supabaseClient
+          .from("vehicle_assignments")
+          .delete()
+          .eq("driver_id", action.id);
+        if (assignmentError) throw assignmentError;
+
+        const { error: viewerError } = await supabaseClient
+          .from("document_viewers")
+          .delete()
+          .eq("driver_id", action.id);
+        if (viewerError) throw viewerError;
+
+        const { error } = await supabaseClient
+          .from("drivers")
+          .delete()
+          .eq("id", action.id);
+        if (error) throw error;
+
+        await loadBackendData();
+        renderApp();
+        showToast("Motorista eliminado definitivamente.");
+        return;
+      }
+
       if (!confirm("Desativar este motorista? O histórico documental será preservado.")) return;
-      const { error } = await supabaseClient.from("drivers").update({ status: "Inativo" }).eq("id", action.id);
+
+      const { error } = await supabaseClient
+        .from("drivers")
+        .update({ status: "Inativo" })
+        .eq("id", action.id);
       if (error) throw error;
-      await loadBackendData(); renderApp(); showToast("Motorista desativado.");
+
+      await loadBackendData();
+      renderApp();
+      showToast("Motorista desativado.");
     }
   } catch (error) {
     console.error(error);

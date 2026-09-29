@@ -1,3 +1,5 @@
+const documentBlobCache = new Map();
+
 const state = {
   sessionUserId: null,
   profile: null,
@@ -1218,6 +1220,9 @@ async function fetchDocumentBlob(documentId) {
   const doc = state.documents.find(item => item.id === documentId);
   if (!doc) throw new Error("Documento não encontrado.");
 
+  const cached = documentBlobCache.get(documentId);
+  if (cached) return { doc, data: cached };
+
   const { data, error } = await supabaseClient.functions.invoke("document-access", {
     body: { document_id: documentId }
   });
@@ -1225,11 +1230,11 @@ async function fetchDocumentBlob(documentId) {
   if (error) throw error;
   if (!(data instanceof Blob)) throw new Error("Não foi possível obter o documento.");
 
+  documentBlobCache.set(documentId, data);
   return { doc, data };
 }
 
 async function openDocument(documentId) {
-  const { doc, data } = await fetchDocumentBlob(documentId);
   const modal = document.querySelector("#documentViewerModal");
   const title = document.querySelector("#documentViewerTitle");
   const content = document.querySelector("#documentViewerContent");
@@ -1238,11 +1243,19 @@ async function openDocument(documentId) {
     throw new Error("Visualizador de documentos indisponível.");
   }
 
-  title.textContent = doc.fileName || doc.name || "Documento";
-  content.replaceChildren();
+  const doc = state.documents.find(item => item.id === documentId);
+  title.textContent = doc?.fileName || doc?.name || "Documento";
+  content.innerHTML = '<div class="document-viewer-loading">A abrir documento…</div>';
+  modal.showModal();
 
-  const url = URL.createObjectURL(data);
-  const mimeType = data.type || doc.fileType || "";
+  try {
+    const result = await fetchDocumentBlob(documentId);
+    const data = result.data;
+    title.textContent = result.doc.fileName || result.doc.name || "Documento";
+    content.replaceChildren();
+
+    const url = URL.createObjectURL(data);
+    const mimeType = data.type || result.doc.fileType || "";
 
   if (mimeType === "application/pdf") {
     const frame = document.createElement("iframe");
@@ -1263,7 +1276,11 @@ async function openDocument(documentId) {
   }
 
   modal.showModal();
-  modal.addEventListener("close", () => URL.revokeObjectURL(url), { once: true });
+    modal.addEventListener("close", () => URL.revokeObjectURL(url), { once: true });
+  } catch (error) {
+    if (modal.open) modal.close();
+    throw error;
+  }
 }
 
 async function downloadDocument(documentId) {

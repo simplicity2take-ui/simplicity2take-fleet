@@ -882,16 +882,51 @@ function documentCard(doc, admin) {
 
 function renderAlerts() {
   selectors.pageTitle.textContent = "Alertas";
-  const alerts = state.documents.filter(doc => ["Expirado", "3 dias", "7 dias", "15 dias", "30 dias"].includes(alertLevel(doc)));
+
+  const alerts = state.documents
+    .filter(doc => ["Expirado", "3 dias", "7 dias", "15 dias", "30 dias"].includes(alertLevel(doc)))
+    .sort((a, b) => {
+      const order = { Expirado: 0, "3 dias": 1, "7 dias": 2, "15 dias": 3, "30 dias": 4 };
+      return (order[alertLevel(a)] ?? 9) - (order[alertLevel(b)] ?? 9);
+    });
+
+  const contextLabel = doc =>
+    doc.driverId
+      ? `Motorista: ${driverName(doc.driverId)}`
+      : doc.vehicleId
+        ? `Viatura: ${vehicleName(doc.vehicleId)}`
+        : "Empresa";
+
   selectors.content.innerHTML = `
-    ${heading("Alertas automáticos", "30, 15, 7, 3 dias e expirado.", "")}
-    <section class="cards-grid">${alerts.map(doc => `
-      <article class="data-card">
-        <span class="tag ${alertLevel(doc) === "Expirado" ? "inactive" : "expiring"}">${alertLevel(doc)}</span>
-        <h3>${escapeHtml(doc.name)}</h3>
-        <p class="section-copy">${escapeHtml(doc.type)} termina em ${escapeHtml(doc.expiryDate)}.</p>
-      </article>
-    `).join("") || emptyCard("Sem alertas ativos.")}</section>
+    ${heading(
+      "Alertas documentais",
+      "Documentos expirados e documentos que entram nos períodos de 30, 15, 7 e 3 dias.",
+      ""
+    )}
+    <section class="cards-grid">
+      ${alerts.map(doc => {
+        const level = alertLevel(doc);
+        const severityClass = level === "Expirado" ? "inactive" : "expiring";
+        return `
+          <article class="data-card">
+            <div class="panel-heading">
+              <span class="tag ${severityClass}">${level}</span>
+              <strong>${escapeHtml(contextLabel(doc))}</strong>
+            </div>
+            <h3>${escapeHtml(doc.name)}</h3>
+            <p class="section-copy">${escapeHtml(doc.type)}</p>
+            <div class="meta-line">
+              <span><strong>Validade:</strong> ${escapeHtml(doc.expiryDate || "Sem validade")}</span>
+              <span><strong>Área:</strong> ${doc.driverId ? "Motoristas" : doc.vehicleId ? "Veículos" : "Empresa"}</span>
+            </div>
+            <div class="row-actions">
+              <button class="mini-button" type="button" data-open-document-id="${doc.id}">Abrir documento</button>
+              <button class="mini-button" type="button" data-edit-document-id="${doc.id}">Editar</button>
+            </div>
+          </article>
+        `;
+      }).join("") || emptyCard("Sem alertas ativos.")}
+    </section>
   `;
 }
 

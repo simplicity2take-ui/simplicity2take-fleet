@@ -1081,7 +1081,7 @@ function modalFields(type, id) {
     ${selectField("vehicleId", "Veículo associado", state.vehicles.map(vehicle => [vehicle.id, vehicle.plate + " — " + vehicle.brand + " " + vehicle.model]), selectedVehicle)}
     ${checkList("viewerDriverIds", "Visualização adicional (apenas documentos sem motorista)", state.drivers, doc.viewerDriverIds || [])}
   `;
-
+}
 
 function field(name, label, value = "", type = "text", span = false, extra = "", required = true) {
   const requiredAttr = type === "file" || !required ? "" : "required";

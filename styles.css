@@ -2226,3 +2226,42 @@ textarea:focus {
     min-height: calc(100vh - 4.5rem);
   }
 }
+
+/* Visualização interna de documentos de viaturas */
+.document-viewer-page {
+  display: block;
+  width: min(94%, 900px);
+  height: auto;
+  margin: 1rem auto;
+  background: #ffffff;
+  box-shadow: 0 0.4rem 1.2rem rgba(0, 0, 0, 0.18);
+}
+
+.document-viewer-loading {
+  padding: 2rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+.vehicle-document-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.document-mini-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.document-mini-link .tag {
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.vehicle-driver-card .vehicle-driver-documents {
+  margin-top: 1rem;
+}

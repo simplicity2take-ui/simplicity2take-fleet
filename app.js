@@ -1203,13 +1203,71 @@ function applySmartPreview(preview) {
   `;
 }
 
+async function analysePdfContent(file, preview) {
+  if (file.type !== "application/pdf" || !window.pdfjsLib) return preview;
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: buffer }).promise;
+    let text = "";
+
+    const pagesToRead = Math.min(pdf.numPages, 10);
+    for (let pageNumber = 1; pageNumber <= pagesToRead; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const content = await page.getTextContent();
+      text += " " + content.items.map(item => item.str || "").join(" ");
+    }
+
+    const normalized = normalizeText(text);
+    const dates = [
+      ...[...text.matchAll(/(?:validade|válida até|valido ate|valid until|expiry|expires|expira)[^0-9]{0,40}(\d{1,2})[\/.\-](\d{1,2})[\/.\-](20\d{2})/gi)].map(m => [m[3], m[2], m[1]]),
+      ...[...text.matchAll(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](20\d{2})/g)].map(m => [m[3], m[2], m[1]])
+    ];
+
+    if (!preview.expiryDate && dates.length) {
+      const candidate = dates.find(parts => {
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        const day = Number(parts[2]);
+        return year >= new Date().getFullYear() && month >= 1 && month <= 12 && day >= 1 && day <= 31;
+      });
+      if (candidate) preview.expiryDate = candidate.join("-");
+    }
+
+    if (preview.type === "Outros" || preview.type === "Certidão Permanente") {
+      if (normalized.includes("certidao permanente") || normalized.includes("certidao permanente")) {
+        preview.type = "Certidão Permanente";
+      } else if (normalized.includes("rnavt")) {
+        preview.type = "RNAVT";
+      } else if (normalized.includes("seguro da empresa") || normalized.includes("seguro")) {
+        preview.type = "Seguro da Empresa";
+      } else if (normalized.includes("licenca") || normalized.includes("alvara")) {
+        preview.type = "Licença / Alvará";
+      }
+    }
+
+    preview.contentRead = true;
+    return preview;
+  } catch (error) {
+    console.warn("SmartDocs: não foi possível ler o conteúdo do PDF.", error);
+    return preview;
+  }
+}
+
 function wireSmartDocsUpload() {
   const fileInput = selectors.modalFields.querySelector('input[name="file"]');
-  fileInput?.addEventListener("change", () => {
+  fileInput?.addEventListener("change", async () => {
     const file = fileInput.files[0];
     if (!file) return;
+
     state.smartPreview = analyseFileName(file.name);
     applySmartPreview(state.smartPreview);
+
+    if (file.type === "application/pdf") {
+      const preview = await analysePdfContent(file, state.smartPreview);
+      state.smartPreview = preview;
+      applySmartPreview(preview);
+    }
   });
 }
 

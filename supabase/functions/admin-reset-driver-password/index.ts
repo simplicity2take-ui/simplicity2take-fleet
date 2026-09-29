@@ -13,7 +13,6 @@ Deno.serve(async req=>{
   const accessToken=auth.replace(/^Bearer\s+/i,"").trim();
   const {data:{user:caller},error:callerError}=await callerClient.auth.getUser(accessToken);
   if(!caller) return json({ok:false,error:"Sessão inválida."},401);
-  const admin=createClient(url,service);
   const {data:profile}=await admin.from("profiles").select("role,status").eq("id",caller.id).single();
   if(profile?.role!=="admin"||profile?.status!=="Ativo") return json({ok:false,error:"Apenas o administrador pode alterar palavras-passe."},403);
   const body=await req.json(); const driverId=String(body.driverId||""); const password=String(body.password||"");

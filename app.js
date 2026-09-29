@@ -1235,6 +1235,13 @@ async function saveDocument(values, viewerDriverIds, id) {
     throw new Error("Um documento privado de motorista não pode estar simultaneamente associado a um veículo.");
   }
 
+  const detectedVehicleId = state.smartPreview?.vehicleId || "";
+  const finalVehicleId = values.vehicleId || detectedVehicleId || null;
+
+  if (values.driverId && finalVehicleId) {
+    throw new Error("Um documento privado de motorista não pode estar simultaneamente associado a um veículo.");
+  }
+
   const payload = {
     name: values.name,
     document_type: values.type,
@@ -1247,7 +1254,7 @@ async function saveDocument(values, viewerDriverIds, id) {
     mime_type: driveData.mimeType,
     drive_file_id: driveData.fileId,
     drive_web_view_link: driveData.webViewLink,
-    vehicle_id: values.vehicleId || null,
+    vehicle_id: finalVehicleId,
     driver_id: values.driverId || null,
     uploaded_by: state.sessionUserId
   };

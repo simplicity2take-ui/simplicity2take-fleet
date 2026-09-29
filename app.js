@@ -1046,7 +1046,6 @@ function modalFields(type, id) {
       <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
       ${field("name", "Nome do documento", doc.name)}
       ${selectField("type", "Tipo", companyTypes, doc.type || "Outros")}
-      ${field("number", "Número do documento (opcional)", doc.number, "text", false)}
       ${field("expiryDate", "Data de validade", doc.expiryDate, "date", false)}
     `;
   }
@@ -1061,7 +1060,6 @@ function modalFields(type, id) {
       <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
       ${field("name", "Nome do documento", doc.name)}
       ${selectField("type", "Tipo", documentTypes, doc.type || "Carta de Condução")}
-      ${field("number", "Número do documento", doc.number)}
       ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
       ${selectField("driverId", "Motorista associado (privado)", state.drivers.map(driver => [driver.id, driver.name]), selectedDriver)}
     `;
@@ -1076,7 +1074,6 @@ function modalFields(type, id) {
     <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
     ${field("name", "Nome do documento", doc.name)}
     ${selectField("type", "Tipo", documentTypes, doc.type || "Outros")}
-    ${field("number", "Número do documento", doc.number)}
     ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
     ${selectField("vehicleId", "Veículo associado", state.vehicles.map(vehicle => [vehicle.id, vehicle.plate + " — " + vehicle.brand + " " + vehicle.model]), selectedVehicle)}
     ${checkList("viewerDriverIds", "Visualização adicional (apenas documentos sem motorista)", state.drivers, doc.viewerDriverIds || [])}
@@ -1143,7 +1140,15 @@ function smartDocumentScope(fileName, type, driver, vehicle) {
 
 function analyseFileName(fileName) {
   const text = normalizeText(fileName);
-  const type = documentTypes.find(item => {
+  const companyType =
+    text.includes("certidao permanente") || text.includes("certidao-permanente") || text.includes("c. permanente") || text.includes("c permanente") ? "Certidão Permanente" :
+    text.includes("rnavt") ? "RNAVT" :
+    text.includes("seguro empresa") || text.includes("seguro da empresa") ? "Seguro da Empresa" :
+    text.includes("licenca") || text.includes("alvara") ? "Licença / Alvará" :
+    text.includes("fatura") || text.includes("factura") || text.includes("comprovativo") ? "Fatura / Comprovativo" :
+    text.includes("fiscal") ? "Documento Fiscal" :
+    null;
+  const type = companyType || documentTypes.find(item => {
     const normalizedType = normalizeText(item);
     return text.includes(normalizedType) || text.includes(normalizedType.replaceAll(" ", ""));
   }) || (
@@ -1159,7 +1164,7 @@ function analyseFileName(fileName) {
   const vehicle = findVehicleFromFilename(fileName);
   const driver = findDriverFromFilename(fileName);
   const expiryDate = smartDateFromFilename(fileName);
-  const scope = smartDocumentScope(fileName, type, driver, vehicle);
+  const scope = companyType ? "unassigned" : smartDocumentScope(fileName, type, driver, vehicle);
   return {
     type,
     expiryDate,
@@ -1186,7 +1191,7 @@ function applySmartPreview(preview) {
   const driverLabel = preview.driver ? preview.driver.name : "não identificado";
   const scopeLabel = preview.scope === "driver" ? "Privado do motorista" : preview.scope === "vehicle" ? "Documento da viatura" : "Sem associação automática";
   $("#smartPreview").innerHTML = `
-    <strong>S2T SmartDocs — classificação automática</strong>
+    <strong>S2T SmartDocs — classificação automática pelo nome do ficheiro</strong>
     <dl>
       <dt>Tipo:</dt><dd>${escapeHtml(preview.type)}</dd>
       <dt>Motorista:</dt><dd>${escapeHtml(driverLabel)}</dd>
@@ -1194,7 +1199,7 @@ function applySmartPreview(preview) {
       <dt>Validade:</dt><dd>${escapeHtml(preview.expiryDate || "não encontrada")}</dd>
       <dt>Acesso:</dt><dd>${escapeHtml(scopeLabel)}</dd>
     </dl>
-    <small>Confirma sempre os campos antes de guardar. Um contrato/documento de motorista nunca é associado automaticamente à viatura.</small>
+    <small>O sistema usa o nome do ficheiro para sugerir o tipo e a validade quando consegue identificar esses dados. Confirma sempre antes de guardar.</small>
   `;
 }
 
@@ -1342,7 +1347,7 @@ async function saveDocument(values, viewerDriverIds, id) {
   const payload = {
     name: values.name,
     document_type: values.type,
-    document_number: values.number,
+    document_number: null,
     policy_number: null,
     issue_date: null,
     expiry_date: values.expiryDate || null,

@@ -663,6 +663,45 @@ function bar(label, value, max) {
   return `<div class="bar-row"><span>${label}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(8, (value / max) * 100)}%"></div></div><strong>${value}</strong></div>`;
 }
 
+function vehicleDocumentSlot(vehicle, type, label) {
+  const docs = state.documents.filter(doc => doc.vehicleId === vehicle.id);
+  const doc = docs.find(item => item.type === type) || (type === "Seguro" ? docs.find(item => item.type === "Carta Verde") : null);
+  if (!doc) {
+    return `<div class="vehicle-document-slot missing">
+      <div><strong>${escapeHtml(label)}</strong><small>Não carregado</small></div>
+      ${currentUser().role === "admin" ? `<button class="mini-button" type="button" data-open-vehicle-doc="${vehicle.id}" data-doc-type="${escapeHtml(type)}">+ Documento</button>` : ""}
+    </div>`;
+  }
+  const level = alertLevel(doc);
+  const cls = level === "Expirado" ? "inactive" : level === "OK" ? "active" : level === "Sem validade" ? "" : "expiring";
+  return `<div class="vehicle-document-slot">
+    <div><strong>${escapeHtml(label)}</strong><small>${escapeHtml(doc.name)}</small></div>
+    <div class="vehicle-document-slot-actions">
+      <span class="tag ${cls}">${escapeHtml(level)}</span>
+      <button class="mini-button" type="button" data-open-doc="${doc.id}">Ver</button>
+    </div>
+  </div>`;
+}
+
+function vehicleDocumentsPanel(vehicle, compact = false) {
+  const slots = [
+    ["DUA", "DUA"],
+    ["Seguro", "Seguro / Carta Verde"],
+    ["IPO", "Inspeção (IPO)"],
+    ["Licença TVDE", "Licença TVDE"],
+    ["Outros", "Outros"]
+  ];
+  return `<div class="vehicle-documents-panel ${compact ? "compact" : ""}">
+    <div class="panel-heading">
+      <div><h3>Documentos da viatura</h3><p class="section-copy">Tudo fica associado a esta viatura.</p></div>
+      ${currentUser().role === "admin" ? `<button class="mini-button" type="button" data-open-vehicle-doc="${vehicle.id}">+ Documento</button>` : ""}
+    </div>
+    <div class="vehicle-document-slots">
+      ${slots.map(([type, label]) => vehicleDocumentSlot(vehicle, type, label)).join("")}
+    </div>
+  </div>`;
+}
+
 function renderVehicles() {
   const admin = currentUser().role === "admin";
   const vehicles = admin ? state.vehicles : driverVehicles();
@@ -674,7 +713,6 @@ function renderVehicles() {
       ${heading("Os meus veículos", "Aqui podes consultar os dados e todos os documentos das viaturas que te estão atribuídas.", "")}
       <section class="cards-grid">
         ${vehicles.map(vehicle => {
-          const docs = state.documents.filter(doc => doc.vehicleId === vehicle.id);
           return `
             <article class="data-card vehicle-driver-card">
               <div class="panel-heading">
@@ -688,17 +726,7 @@ function renderVehicles() {
               <div class="meta-line">
                 <span>VIN: ${escapeHtml(vehicle.vin || "—")}</span>
               </div>
-              <div class="vehicle-driver-documents">
-                <div class="panel-heading">
-                  <div>
-                    <h3>Documentos da viatura</h3>
-                    <p class="section-copy">${docs.length} documento(s) disponível(eis)</p>
-                  </div>
-                </div>
-                <div class="cards-grid">
-                  ${docs.map(doc => documentCard(doc, false)).join("") || emptyCard("Ainda não existem documentos disponíveis para esta viatura.")}
-                </div>
-              </div>
+              ${vehicleDocumentsPanel(vehicle)}
             </article>
           `;
         }).join("") || emptyCard("Não tens nenhuma viatura atribuída.")}
@@ -712,7 +740,7 @@ function renderVehicles() {
     ${requested ? vehicleAccessPanel(requested, admin) : ""}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Matrícula</th><th>Marca / Modelo</th><th>Ano</th><th>VIN</th><th>Estado</th><th>Motoristas</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Matrícula</th><th>Marca / Modelo</th><th>Ano</th><th>VIN</th><th>Estado</th><th>Motoristas</th><th>Documentos</th><th>Ações</th></tr></thead>
         <tbody>${vehicles.map(vehicle => vehicleRow(vehicle, admin)).join("") || emptyRow("Sem veículos para apresentar.")}</tbody>
       </table>
     </div>
@@ -723,8 +751,7 @@ function vehicleAccessPanel(vehicle, admin) {
   return `
     <article class="panel vehicle-access-panel">
       <div class="panel-heading"><div><span class="eyebrow">QR da viatura</span><h2>${escapeHtml(vehicle.plate)}</h2><p class="section-copy">${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)} · VIN ${escapeHtml(vehicle.vin || "—")}</p></div><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></div>
-      <h3>Documentos autorizados</h3>
-      <div class="cards-grid">${docs.map(doc => documentCard(doc, admin)).join("") || emptyCard("Não existem documentos autorizados para esta viatura.")}</div>
+      ${vehicleDocumentsPanel(vehicle)}
     </article>
   `;
 }
@@ -1218,7 +1245,7 @@ async function saveDocument(values, viewerDriverIds, id) {
         fileName: file.name,
         mimeType: file.type,
         base64,
-        folderType: values.driverId ? "drivers" : "documents",
+        folderType: values.driverId ? "drivers" : (values.vehicleId || state.smartPreview?.vehicleId ? "vehicles" : "documents"),
         folderName: values.driverId
           ? (state.drivers.find(driver => driver.id === values.driverId)?.name || "Sem nome")
           : (state.vehicles.find(vehicle => vehicle.id === values.vehicleId)?.plate || "Sem viatura"),
@@ -1272,7 +1299,7 @@ async function saveDocument(values, viewerDriverIds, id) {
     );
     if (viewerError) throw viewerError;
   }
-  state.activeView = "documents";
+  state.activeView = "vehicles";
   showToast("Documento guardado no Google Drive.");
 }
 

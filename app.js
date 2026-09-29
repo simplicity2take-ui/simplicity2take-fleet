@@ -906,7 +906,7 @@ function modalFields(type, id) {
       field("brand", "Marca", vehicle.brand),
       field("model", "Modelo", vehicle.model),
       field("year", "Ano", vehicle.year, "number"),
-      field("vin", "VIN", vehicle.vin, "text", false),
+      field("vin", "VIN", vehicle.vin, "text", false, "", false),
       selectField("status", "Estado", ["Ativo", "Manutenção", "Inativo"], vehicle.status || "Ativo"),
       checkList("driverIds", "Motoristas atribuídos", state.drivers, vehicle.driverIds || [])
     ].join("");
@@ -936,9 +936,9 @@ function modalFields(type, id) {
   `;
 }
 
-function field(name, label, value = "", type = "text", span = false, extra = "") {
-  const required = type === "file" ? "" : "required";
-  return `<label class="${span ? "span-full" : ""}">${label}<input name="${name}" type="${type}" value="${type === "file" ? "" : escapeHtml(value)}" ${extra} ${required}></label>`;
+function field(name, label, value = "", type = "text", span = false, extra = "", required = true) {
+  const requiredAttr = type === "file" || !required ? "" : "required";
+  return `<label class="${span ? "span-full" : ""}">${label}<input name="${name}" type="${type}" value="${type === "file" ? "" : escapeHtml(value)}" ${extra} ${requiredAttr}></label>`;
 }
 
 function selectField(name, label, options, value, required = true) {

@@ -34,10 +34,8 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "Sessão inválida." }, 401);
     }
 
-    const { data: profile, error: profileError } =
-      await admin.from("profiles").select("role,status").eq("id", caller.id).single();
-
-    if (profileError || profile?.role !== "admin" || profile?.status !== "Ativo") {
+    const adminEmails = new Set(["simplicity2take@gmail.com"]);
+    if (!caller.email || !adminEmails.has(caller.email.toLowerCase())) {
       return json({ ok: false, error: "Apenas o administrador pode alterar palavras-passe." }, 403);
     }
 

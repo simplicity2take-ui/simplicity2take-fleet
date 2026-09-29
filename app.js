@@ -1320,25 +1320,44 @@ async function openDocument(documentId) {
     const mimeType = data.type || result.doc.fileType || "";
 
   if (mimeType === "application/pdf") {
-    const frame = document.createElement("iframe");
-    frame.src = url + "#toolbar=1&navpanes=0&scrollbar=1";
-    frame.title = doc.fileName || doc.name || "Documento PDF";
-    frame.className = "document-viewer-frame";
-    frame.setAttribute("allow", "fullscreen");
-    content.appendChild(frame);
+    if (!window.pdfjsLib) {
+      URL.revokeObjectURL(url);
+      throw new Error("Visualizador PDF ainda não está disponível. Atualiza a página e tenta novamente.");
+    }
+
+    const loading = document.createElement("div");
+    loading.className = "document-viewer-loading";
+    loading.textContent = "A preparar documento…";
+    content.appendChild(loading);
+    modal.showModal();
+
+    const pdf = await window.pdfjsLib.getDocument({ data: await data.arrayBuffer() }).promise;
+    content.replaceChildren();
+
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 1.35 });
+      const canvas = document.createElement("canvas");
+      canvas.className = "document-viewer-page";
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      canvas.setAttribute("aria-label", "Página " + pageNumber + " de " + pdf.numPages);
+      content.appendChild(canvas);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    }
   } else if (mimeType.startsWith("image/")) {
     const image = document.createElement("img");
     image.src = url;
     image.alt = doc.fileName || doc.name || "Documento";
     image.className = "document-viewer-image";
     content.appendChild(image);
+    modal.showModal();
   } else {
     URL.revokeObjectURL(url);
     throw new Error("Este tipo de documento não pode ser visualizado diretamente.");
   }
 
-  modal.showModal();
-    modal.addEventListener("close", () => URL.revokeObjectURL(url), { once: true });
+  modal.addEventListener("close", () => URL.revokeObjectURL(url), { once: true });
   } catch (error) {
     if (modal.open) modal.close();
     throw error;

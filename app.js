@@ -204,6 +204,9 @@ async function loadBackendData() {
     email: valueOf(row, "email"),
     phone: valueOf(row, "phone"),
     status: valueOf(row, "status") || "Ativo",
+    boltDriverUuid: valueOf(row, "bolt_driver_uuid"),
+    boltPartnerUuid: valueOf(row, "bolt_partner_uuid"),
+    boltLastSyncedAt: valueOf(row, "bolt_last_synced_at"),
     raw: row
   }));
   state.vehicles = (vehiclesResult.data || []).map(row => ({
@@ -215,6 +218,8 @@ async function loadBackendData() {
     vin: valueOf(row, "vin"),
     qrToken: valueOf(row, "qr_token", "qrToken"),
     status: valueOf(row, "status") || "Ativo",
+    boltVehicleUuid: valueOf(row, "bolt_vehicle_uuid"),
+    boltLastSyncedAt: valueOf(row, "bolt_last_synced_at"),
     driverIds: assignments.filter(item => item.vehicle_id === row.id && assignmentIsActive(item)).map(item => item.driver_id),
     raw: row
   }));
@@ -962,10 +967,37 @@ function renderApplications() {
   `;
 }
 
+async function syncBolt() {
+  if (currentUser().role !== "admin") {
+    showToast("Só o administrador pode sincronizar a Bolt.");
+    return;
+  }
+  const button = document.querySelector("[data-bolt-sync]");
+  if (button) { button.disabled = true; button.textContent = "A sincronizar…"; }
+  try {
+    const { data, error } = await supabaseClient.functions.invoke("bolt-sync", { body: {} });
+    if (error) throw error;
+    if (!data?.ok) throw new Error(data?.error || "Não foi possível sincronizar a Bolt.");
+    await loadBackendData();
+    renderApp();
+    showToast(`Bolt sincronizada: ${data.drivers?.received || 0} motoristas e ${data.vehicles?.received || 0} viaturas.`);
+  } catch (error) {
+    console.error(error);
+    showToast(error?.message || "Não foi possível sincronizar a Bolt.");
+  } finally {
+    const currentButton = document.querySelector("[data-bolt-sync]");
+    if (currentButton) { currentButton.disabled = false; currentButton.textContent = "Sincronizar Bolt agora"; }
+  }
+}
+
 function renderSettings() {
   selectors.pageTitle.textContent = "Configurações";
+  const boltDrivers = state.drivers.filter(driver => driver.boltDriverUuid).length;
+  const boltVehicles = state.vehicles.filter(vehicle => vehicle.boltVehicleUuid).length;
+  const lastBoltSync = [...state.drivers, ...state.vehicles].map(item => item.boltLastSyncedAt).filter(Boolean).sort().pop();
+
   selectors.content.innerHTML = `
-    ${heading("Configurações", "Segurança, palavras-passe e integrações futuras.", "")}
+    ${heading("Configurações", "Segurança, palavras-passe e integrações.", "")}
     <section class="content-grid">
       <article class="panel">
         <div class="panel-heading"><h2>Segurança</h2><span class="tag active">Ativo</span></div>
@@ -976,32 +1008,40 @@ function renderSettings() {
         </div>
       </article>
       <article class="panel">
-        <div class="panel-heading"><h2>Integrações</h2><span class="tag">Preparado</span></div>
+        <div class="panel-heading"><h2>Integrações</h2><span class="tag active">Bolt preparada</span></div>
+        <div class="integration-card">
+          <div class="panel-heading">
+            <div>
+              <strong>🟢 Bolt Fleet</strong>
+              <p class="section-copy">Sincronização de motoristas, viaturas e associação motorista ↔ viatura.</p>
+            </div>
+            <span class="tag active">API</span>
+          </div>
+          <div class="settings-list">
+            <div class="settings-row"><strong>Motoristas Bolt no Portal</strong><span>${boltDrivers}</span></div>
+            <div class="settings-row"><strong>Viaturas Bolt no Portal</strong><span>${boltVehicles}</span></div>
+            <div class="settings-row"><strong>Última sincronização</strong><span>${lastBoltSync ? new Date(lastBoltSync).toLocaleString("pt-PT") : "Ainda não executada"}</span></div>
+          </div>
+          <div class="integration-note">
+            <strong>Credenciais seguras no Supabase</strong>
+            <p>O Portal usa a API Fleet Integration da Bolt com OAuth Client Credentials. O Client Secret nunca fica no navegador.</p>
+          </div>
+          <button class="primary-button" type="button" data-bolt-sync>Sincronizar Bolt agora</button>
+        </div>
         <div class="settings-list">
-          <div class="settings-row"><strong>Google Drive</strong><span class="tag expiring">Configuração pendente</span></div>
+          <div class="settings-row"><strong>Google Drive</strong><span class="tag active">Ligado</span></div>
           <div class="settings-row"><strong>S2T SmartDocs</strong><span class="tag active">Ativo no Portal</span></div>
           <div class="settings-row"><strong>Cartrack</strong><span class="tag">Preparado</span></div>
+          <div class="settings-row"><strong>Uber Fleet</strong><span class="tag expiring">Por configurar</span></div>
           <div class="settings-row"><strong>Gestão de Revisões</strong><span class="tag">Preparado</span></div>
           <div class="settings-row"><strong>Gestão de Inspeções</strong><span class="tag">Preparado</span></div>
-          <div class="settings-row"><strong>Aplicação Android</strong><span class="tag">Preparado</span></div>
-          <div class="settings-row"><strong>Aplicação iPhone</strong><span class="tag">Preparado</span></div>
-        </div>
-        <div class="integration-note">
-          <strong>Estrutura preparada</strong>
-          <p>O Portal já sabe classificar documentos e separar Motoristas e Veículos. A ligação efetiva ao Google Drive será ativada depois de configurar as credenciais no servidor.</p>
         </div>
       </article>
       <article class="panel recruiter-config">
         <div class="panel-heading"><h2>S2T AI Recruiter</h2><span class="tag active">Editável</span></div>
         <form id="recruiterConfigForm" class="config-form">
-          <label>
-            Requisitos de recrutamento
-            <textarea name="requirements" rows="5">${escapeHtml(state.recruitmentConfig.requirements.join("\n"))}</textarea>
-          </label>
-          <label>
-            Perguntas frequentes e respostas
-            <textarea name="faqs" rows="8">${escapeHtml(state.recruitmentConfig.faqs.map(item => `${item.q} | ${item.a}`).join("\n"))}</textarea>
-          </label>
+          <label>Requisitos de recrutamento<textarea name="requirements" rows="5">${escapeHtml(state.recruitmentConfig.requirements.join("\n"))}</textarea></label>
+          <label>Perguntas frequentes e respostas<textarea name="faqs" rows="8">${escapeHtml(state.recruitmentConfig.faqs.map(item => `${item.q} | ${item.a}`).join("\n"))}</textarea></label>
           <button class="primary-button" type="submit">Guardar configuração da IA</button>
         </form>
       </article>
@@ -1760,6 +1800,7 @@ function bindPortalEvents() {
     if (target.dataset.deleteVehicle) return handleAdminAction({type:"delete-vehicle",id:target.dataset.deleteVehicle});
     if (target.dataset.deleteDocument) return handleAdminAction({type:"delete-document",id:target.dataset.deleteDocument});
     if (target.dataset.requestPassword) return copyPasswordRequest();
+    if (target.dataset.boltSync !== undefined) return syncBolt();
     if (target.id === "logoutButton") return logout();
     if (target.id === "workWithUsButton") return openRecruitment();
     if (target.id === "backToLoginButton") return closeRecruitment();

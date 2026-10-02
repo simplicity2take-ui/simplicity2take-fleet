@@ -1032,7 +1032,21 @@ function renderSettings() {
           <div class="settings-row"><strong>Google Drive</strong><span class="tag active">Ligado</span></div>
           <div class="settings-row"><strong>S2T SmartDocs</strong><span class="tag active">Ativo no Portal</span></div>
           <div class="settings-row"><strong>Cartrack</strong><span class="tag">Preparado</span></div>
-          <div class="settings-row"><strong>Uber Fleet</strong><span class="tag expiring">Por configurar</span></div>
+          <div class="integration-card">
+            <div class="panel-heading">
+              <div>
+                <strong>Uber Fleet</strong>
+                <p class="section-copy">Importação de motoristas, viaturas e associação motorista ↔ viatura.</p>
+              </div>
+              <span class="tag expiring">Acesso pendente</span>
+            </div>
+            <div class="integration-note">
+              <strong>Aplicação Uber criada: Simplicity2Take Fleet</strong>
+              <p>A Uber ainda não concedeu permissões OAuth Client Credentials. A sincronização só poderá ser ativada depois da aprovação dos scopes de frota.</p>
+              <p>Quando o acesso estiver aprovado, configuraremos as credenciais no Supabase e ativaremos a sincronização segura, sem expor segredos no navegador.</p>
+            </div>
+            <button class="secondary-button" type="button" disabled title="Disponível após autorização da Uber">Sincronização Uber — aguarda autorização</button>
+          </div>
           <div class="settings-row"><strong>Gestão de Revisões</strong><span class="tag">Preparado</span></div>
           <div class="settings-row"><strong>Gestão de Inspeções</strong><span class="tag">Preparado</span></div>
         </div>

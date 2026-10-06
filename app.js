@@ -1096,6 +1096,15 @@ function openVehicleDocumentModal(vehicleId, docType = "") {
   state.smartPreview = { vehicleId, driverId: "", scope: "vehicle" };
 }
 
+function openDriverDocumentModal(driverId, docType = "") {
+  openModal("document", "", { scope: "driver" });
+  const driverSelect = selectors.modalFields.querySelector('[name="driverId"]');
+  const typeSelect = selectors.modalFields.querySelector('[name="type"]');
+  if (driverSelect) driverSelect.value = driverId;
+  if (typeSelect && docType) typeSelect.value = docType;
+  state.smartPreview = { vehicleId: "", driverId, scope: "driver" };
+}
+
 function openModal(type, id = "", options = {}) {
   state.editing = { type, id };
   if (type === "document") {
@@ -1787,14 +1796,20 @@ function bindPortalEvents() {
   });
 
   document.addEventListener("click", async event => {
-    const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-open-vehicle-doc],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password]");
+    const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-open-vehicle-doc],[data-doc-driver],[data-open-document-id],[data-edit-document-id],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password]");
     if (!target) return;
 
     const view = target.dataset.view;
     if (view) return setView(view);
     if (target.dataset.open) return openModal(target.dataset.open);
     if (target.dataset.openVehicleDoc) return openVehicleDocumentModal(target.dataset.openVehicleDoc, target.dataset.docType || "");
+    if (target.dataset.docDriver) return openDriverDocumentModal(target.dataset.docDriver);
     if (target.dataset.qrVehicle) return showVehicleQr(target.dataset.qrVehicle);
+    if (target.dataset.openDocumentId) {
+      try { await openDocument(target.dataset.openDocumentId); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível abrir o documento."); }
+      return;
+    }
+    if (target.dataset.editDocumentId) return openModal("document", target.dataset.editDocumentId);
     if (target.dataset.openDoc) {
       try { await openDocument(target.dataset.openDoc); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível abrir o documento."); }
       return;

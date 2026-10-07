@@ -366,7 +366,8 @@ function visibleDocuments() {
   const assignedVehicleIds = new Set(driverVehicles().map(vehicle => vehicle.id));
   return state.documents.filter(doc =>
     doc.driverId === user.driverId ||
-    (doc.vehicleId && assignedVehicleIds.has(doc.vehicleId))
+    (doc.vehicleId && assignedVehicleIds.has(doc.vehicleId)) ||
+    (doc.vehicleId && doc.viewerDriverIds?.includes(user.driverId))
   );
 }
 

@@ -946,6 +946,28 @@ function renderAlerts() {
   `;
 }
 
+async function syncBolt() {
+  const button = document.querySelector("[data-bolt-sync]");
+  if (button) { button.disabled = true; button.textContent = "A sincronizar Bolt…"; }
+  try {
+    const { data, error } = await supabaseClient.functions.invoke("bolt-sync", { body: {} });
+    if (error) throw error;
+    if (!data?.ok) throw new Error(data?.error || "A sincronização Bolt falhou.");
+    await loadBackendData();
+    renderApp();
+    const drivers = data.drivers || {};
+    const vehicles = data.vehicles || {};
+    const assignments = Number(data.assignmentsUpdated || 0);
+    showToast(`Bolt sincronizada: ${drivers.received || 0} motoristas, ${vehicles.received || 0} viaturas e ${assignments} associações.`);
+  } catch (error) {
+    console.error("Bolt sync error", error);
+    showToast(error?.message || "Não foi possível sincronizar a Bolt.");
+  } finally {
+    const currentButton = document.querySelector("[data-bolt-sync]");
+    if (currentButton) { currentButton.disabled = false; currentButton.textContent = "Sincronizar Bolt agora"; }
+  }
+}
+
 function renderSettings() {
   selectors.pageTitle.textContent = "Configurações";
   const boltDrivers = state.drivers.filter(driver => driver.boltDriverUuid).length;

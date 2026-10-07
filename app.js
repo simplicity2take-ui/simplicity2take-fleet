@@ -112,7 +112,9 @@ const state = {
       ]
     }
   ],
-  recruiterSession: null
+  recruiterSession: null,
+  activityEvents: [],
+  tripRecords: []
 };
 
 const SUPABASE_URL = "https://lmutpimlokagjwngqanx.supabase.co";
@@ -133,7 +135,7 @@ const documentTypes = [
   "Outros"
 ];
 const navByRole = {
-  admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["documents", "Documentos da Empresa", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
+  admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["activity", "Utilização", "UT"], ["documents", "Documentos da Empresa", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
   driver: [["vehicles", "Meus Veículos", "VE"], ["documents", "Meus Documentos", "DO"], ["account", "Minha Conta", "EU"]]
 };
 
@@ -183,16 +185,18 @@ function valueOf(row, ...keys) {
 }
 
 async function loadBackendData() {
-  const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult] = await Promise.all([
+  const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, activityResult, tripsResult] = await Promise.all([
     supabaseClient.from("drivers").select("*"),
     supabaseClient.from("vehicles").select("*"),
     supabaseClient.from("vehicle_assignments").select("*"),
     supabaseClient.from("documents").select("*"),
     supabaseClient.from("document_viewers").select("*"),
-    supabaseClient.from("applications").select("*").order("created_at", { ascending: false })
+    supabaseClient.from("applications").select("*").order("created_at", { ascending: false }),
+    supabaseClient.from("platform_activity_events").select("*").eq("platform", "bolt").order("observed_at", { ascending: false }).limit(5000),
+    supabaseClient.from("platform_trip_records").select("*").eq("platform", "bolt").order("observed_at", { ascending: false }).limit(5000)
   ]);
 
-  const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult].find(result => result.error)?.error;
+  const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, activityResult, tripsResult].find(result => result.error)?.error;
   if (firstError) throw firstError;
 
   const assignments = assignmentsResult.data || [];
@@ -245,6 +249,17 @@ async function loadBackendData() {
     driverId: valueOf(row, "driver_id"),
     viewerDriverIds: viewers.filter(item => item.document_id === row.id).map(item => item.driver_id),
     raw: row
+  }));
+  state.activityEvents = (activityResult.data || []).map(row => ({
+    id: row.id, driverId: row.driver_id, vehicleId: row.vehicle_id,
+    driverUuid: row.platform_driver_uuid, vehicleUuid: row.platform_vehicle_uuid,
+    status: row.status, observedAt: row.observed_at, eventKey: row.event_key
+  }));
+  state.tripRecords = (tripsResult.data || []).map(row => ({
+    id: row.id, sourceTripId: row.source_trip_id, driverId: row.driver_id, vehicleId: row.vehicle_id,
+    driverUuid: row.platform_driver_uuid, vehicleUuid: row.platform_vehicle_uuid, plate: row.vehicle_plate,
+    status: row.order_status, acceptedAt: row.accepted_at, pickupAt: row.pickup_at,
+    dropoffAt: row.dropoff_at, finishedAt: row.finished_at, distance: row.ride_distance_km, observedAt: row.observed_at
   }));
   state.applications = (applicationsResult.data || []).map(row => ({
     id: row.id,
@@ -631,6 +646,7 @@ function renderContent() {
     applications: renderApplications,
     alerts: renderAlerts,
     settings: renderSettings,
+    activity: renderActivity,
     account: renderAccount
   };
   views[state.activeView]();
@@ -990,6 +1006,148 @@ function renderAlerts() {
       }).join("") || emptyCard(admin ? "Não existem documentos com alerta neste momento." : "Não existem alertas nos teus documentos ou nas tuas viaturas.")}
     </section>
   `;
+}
+
+
+function activityStateLabel(status) {
+  const s = String(status || "").toLowerCase();
+  if (/(trip|ride|busy|accepted|pickup|arrived|drop|passenger|serving)/.test(s)) return "Em serviço";
+  if (/(online|available|idle|waiting|ready)/.test(s)) return "Online sem serviço";
+  if (/(offline|inactive|logged.?out|suspended)/.test(s)) return "Fora de serviço";
+  return status ? String(status) : "Sem dados";
+}
+
+function activityStateClass(status) {
+  const label = activityStateLabel(status);
+  if (label === "Em serviço") return "active";
+  if (label === "Online sem serviço") return "expiring";
+  return label === "Fora de serviço" ? "inactive" : "";
+}
+
+function localDay(iso) {
+  if (!iso) return "";
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+}
+
+function boltActivitySummary(days = 7) {
+  const cutoff = Date.now() - days * 86400000;
+  const events = state.activityEvents.filter(e => e.observedAt && new Date(e.observedAt).getTime() >= cutoff).sort((a,b) => new Date(a.observedAt) - new Date(b.observedAt));
+  const trips = state.tripRecords.filter(t => {
+    const ts = t.finishedAt || t.acceptedAt || t.observedAt;
+    return ts && new Date(ts).getTime() >= cutoff;
+  });
+  const latestByVehicle = new Map();
+  for (const event of state.activityEvents.slice().sort((a,b) => new Date(b.observedAt) - new Date(a.observedAt))) {
+    if (event.vehicleId && !latestByVehicle.has(event.vehicleId)) latestByVehicle.set(event.vehicleId, event);
+  }
+  let onlineMinutes = 0, serviceMinutes = 0;
+  const grouped = new Map();
+  const byKey = new Map();
+  for (const event of events) {
+    const key = event.vehicleId || event.driverId || event.vehicleUuid || event.driverUuid || "unknown";
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(event);
+  }
+  for (const list of byKey.values()) {
+    for (let i = 0; i < list.length; i++) {
+      const current = list[i], next = list[i + 1];
+      const start = new Date(current.observedAt).getTime();
+      const end = Math.min(next ? new Date(next.observedAt).getTime() : Date.now(), Date.now());
+      const minutes = Math.max(0, Math.min((end - start) / 60000, 24 * 60));
+      const label = activityStateLabel(current.status), day = localDay(current.observedAt);
+      if (!grouped.has(day)) grouped.set(day, { onlineMinutes: 0, serviceMinutes: 0, trips: 0, distance: 0 });
+      const bucket = grouped.get(day);
+      if (label === "Em serviço") { serviceMinutes += minutes; bucket.serviceMinutes += minutes; }
+      if (label === "Em serviço" || label === "Online sem serviço") { onlineMinutes += minutes; bucket.onlineMinutes += minutes; }
+    }
+  }
+  for (const trip of trips) {
+    const day = localDay(trip.finishedAt || trip.acceptedAt || trip.observedAt);
+    if (!grouped.has(day)) grouped.set(day, { onlineMinutes: 0, serviceMinutes: 0, trips: 0, distance: 0 });
+    const bucket = grouped.get(day), status = String(trip.status || "").toLowerCase();
+    if (!status || /(complete|finished|success|done|completed|drop)/.test(status)) bucket.trips += 1;
+    const distance = Number(trip.distance);
+    if (Number.isFinite(distance)) bucket.distance += distance;
+  }
+  return { events, trips, latestByVehicle, onlineMinutes, serviceMinutes, grouped };
+}
+
+function renderActivity() {
+  selectors.pageTitle.textContent = "Utilização da Frota";
+  const summary = boltActivitySummary(7);
+  const completed = trip => {
+    const status = String(trip.status || "").toLowerCase();
+    return !status || /(complete|finished|success|done|completed|drop)/.test(status);
+  };
+  const completedTrips = summary.trips.filter(completed).length;
+  const totalDistance = summary.trips.filter(completed).reduce((sum, trip) => {
+    const value = Number(trip.distance); return Number.isFinite(value) ? sum + value : sum;
+  }, 0);
+  const rows = state.vehicles.map(vehicle => {
+    const latest = summary.latestByVehicle.get(vehicle.id);
+    const trips = summary.trips.filter(trip => trip.vehicleId === vehicle.id && completed(trip));
+    const distance = trips.reduce((sum, trip) => {
+      const value = Number(trip.distance); return Number.isFinite(value) ? sum + value : sum;
+    }, 0);
+    return { vehicle, latest, trips: trips.length, distance };
+  });
+  const dayRows = [...summary.grouped.entries()].sort((a,b) => b[0].localeCompare(a[0])).slice(0, 7);
+
+  selectors.content.innerHTML = `
+    ${heading("Utilização da frota", "Bolt: estado, atividade e viagens. Os quilómetros reais da viatura serão cruzados depois com o Cartrack.", '<button class="primary-button" type="button" data-bolt-activity-sync>Atualizar atividade Bolt</button>')}
+    <section class="status-strip">
+      ${metric("Eventos Bolt", summary.events.length)}
+      ${metric("Viagens realizadas", completedTrips)}
+      ${metric("Distância de viagens", totalDistance ? totalDistance.toFixed(1) : "0")}
+      ${metric("Horas online", (summary.onlineMinutes / 60).toFixed(1))}
+      ${metric("Horas em serviço", (summary.serviceMinutes / 60).toFixed(1))}
+    </section>
+    <section class="content-grid">
+      <article class="panel">
+        <div class="panel-heading"><h2>Estado atual das viaturas</h2><span class="tag active">Bolt</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Viatura</th><th>Motorista</th><th>Estado Bolt</th><th>Viagens</th><th>Distância</th></tr></thead>
+          <tbody>${rows.map(row => `
+            <tr>
+              <td><strong>${escapeHtml(row.vehicle.plate)}</strong><br><span class="section-copy">${escapeHtml(row.vehicle.brand)} ${escapeHtml(row.vehicle.model)}</span></td>
+              <td>${escapeHtml(row.vehicle.driverIds.map(driverName).join(", ") || "Sem motorista")}</td>
+              <td>${row.latest ? `<span class="tag ${activityStateClass(row.latest.status)}">${escapeHtml(activityStateLabel(row.latest.status))}</span>` : '<span class="section-copy">Sem dados</span>'}</td>
+              <td>${row.trips}</td><td>${row.distance ? row.distance.toFixed(1) : "0"}</td>
+            </tr>`).join("") || emptyRow("Sem viaturas.")}
+          </tbody>
+        </table></div>
+      </article>
+      <article class="panel">
+        <div class="panel-heading"><h2>Resumo diário</h2><span class="tag">Últimos 7 dias</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Dia</th><th>Online</th><th>Em serviço</th><th>Viagens</th><th>Distância</th></tr></thead>
+          <tbody>${dayRows.map(([day, value]) => `
+            <tr><td><strong>${escapeHtml(day)}</strong></td><td>${(value.onlineMinutes / 60).toFixed(1)} h</td><td>${(value.serviceMinutes / 60).toFixed(1)} h</td><td>${value.trips}</td><td>${value.distance ? value.distance.toFixed(1) : "0"}</td></tr>
+          `).join("") || emptyRow("Ainda não existem dados de atividade Bolt.")}
+          </tbody>
+        </table></div>
+        <p class="section-copy" style="margin-top:14px">A distância aqui é a distância de viagem devolvida pela API Bolt. Não a tratamos como quilometragem total da viatura até validarmos a unidade e o cruzamento com o Cartrack.</p>
+      </article>
+    </section>
+  `;
+}
+
+async function syncBoltActivity() {
+  const button = document.querySelector("[data-bolt-activity-sync]");
+  if (button) { button.disabled = true; button.textContent = "A recolher atividade Bolt…"; }
+  try {
+    const { data, error } = await supabaseClient.functions.invoke("bolt-activity-sync", { body: { days: 7 } });
+    if (error) throw error;
+    if (!data?.ok) throw new Error(data?.error || "A sincronização da atividade Bolt falhou.");
+    await loadBackendData(); renderApp();
+    showToast(`Atividade Bolt atualizada: ${data.eventsPrepared ?? 0} estados e ${data.tripsPrepared ?? 0} viagens processados.`);
+  } catch (error) {
+    console.error("Bolt activity sync error", error);
+    showToast(error?.message || "Não foi possível atualizar a atividade Bolt.");
+  } finally {
+    const currentButton = document.querySelector("[data-bolt-activity-sync]");
+    if (currentButton) { currentButton.disabled = false; currentButton.textContent = "Atualizar atividade Bolt"; }
+  }
 }
 
 async function syncBolt() {
@@ -1851,7 +2009,7 @@ function bindPortalEvents() {
   });
 
   document.addEventListener("click", async event => {
-    const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-open-vehicle-doc],[data-doc-driver],[data-open-document-id],[data-edit-document-id],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password]");
+    const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-open-vehicle-doc],[data-doc-driver],[data-open-document-id],[data-edit-document-id],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password],[data-bolt-activity-sync]");
     if (!target) return;
 
     const view = target.dataset.view;
@@ -1885,6 +2043,7 @@ function bindPortalEvents() {
     if (target.dataset.deleteDocument) return handleAdminAction({type:"delete-document",id:target.dataset.deleteDocument});
     if (target.dataset.requestPassword) return copyPasswordRequest();
     if (target.dataset.boltSync !== undefined) return syncBolt();
+    if (target.dataset.boltActivitySync !== undefined) return syncBoltActivity();
     if (target.dataset.uberSync !== undefined) return syncUber();
     if (target.id === "logoutButton") return logout();
     if (target.id === "workWithUsButton") return openRecruitment();

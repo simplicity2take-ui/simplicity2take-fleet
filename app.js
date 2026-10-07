@@ -114,7 +114,9 @@ const state = {
   ],
   recruiterSession: null,
   activityEvents: [],
-  tripRecords: []
+  tripRecords: [],
+  cartrackVehicles: [],
+  cartrackSnapshots: []
 };
 
 const SUPABASE_URL = "https://lmutpimlokagjwngqanx.supabase.co";
@@ -185,7 +187,7 @@ function valueOf(row, ...keys) {
 }
 
 async function loadBackendData() {
-  const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, activityResult, tripsResult] = await Promise.all([
+  const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult] = await Promise.all([
     supabaseClient.from("drivers").select("*"),
     supabaseClient.from("vehicles").select("*"),
     supabaseClient.from("vehicle_assignments").select("*"),
@@ -193,10 +195,12 @@ async function loadBackendData() {
     supabaseClient.from("document_viewers").select("*"),
     supabaseClient.from("applications").select("*").order("created_at", { ascending: false }),
     supabaseClient.from("platform_activity_events").select("*").eq("platform", "bolt").order("observed_at", { ascending: false }).limit(5000),
-    supabaseClient.from("platform_trip_records").select("*").eq("platform", "bolt").order("observed_at", { ascending: false }).limit(5000)
+    supabaseClient.from("platform_trip_records").select("*").eq("platform", "bolt").order("observed_at", { ascending: false }).limit(5000),
+    supabaseClient.from("cartrack_vehicles").select("*").order("registration"),
+    supabaseClient.from("cartrack_vehicle_snapshots").select("*").order("observed_at", { ascending: false }).limit(5000)
   ]);
 
-  const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, activityResult, tripsResult].find(result => result.error)?.error;
+  const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult].find(result => result.error)?.error;
   if (firstError) throw firstError;
 
   const assignments = assignmentsResult.data || [];
@@ -254,6 +258,25 @@ async function loadBackendData() {
     id: row.id, driverId: row.driver_id, vehicleId: row.vehicle_id,
     driverUuid: row.platform_driver_uuid, vehicleUuid: row.platform_vehicle_uuid,
     status: row.status, observedAt: row.observed_at, eventKey: row.event_key
+  }));
+  state.cartrackVehicles = (cartrackVehiclesResult.data || []).map(row => ({
+    registration: row.registration,
+    vehicleId: row.vehicle_id,
+    odometerKm: row.odometer_km,
+    speedKmh: row.speed_kmh,
+    ignition: row.ignition,
+    idling: row.idling,
+    eventTs: row.event_ts,
+    lastSyncedAt: row.last_synced_at
+  }));
+  state.cartrackSnapshots = (cartrackSnapshotsResult.data || []).map(row => ({
+    registration: row.registration,
+    vehicleId: row.vehicle_id,
+    observedAt: row.observed_at,
+    odometerKm: row.odometer_km,
+    speedKmh: row.speed_kmh,
+    ignition: row.ignition,
+    idling: row.idling
   }));
   state.tripRecords = (tripsResult.data || []).map(row => ({
     id: row.id, sourceTripId: row.source_trip_id, driverId: row.driver_id, vehicleId: row.vehicle_id,
@@ -1086,6 +1109,7 @@ function renderActivity() {
   const rows = state.vehicles.map(vehicle => {
     const latest = summary.latestByVehicle.get(vehicle.id);
     const trips = summary.trips.filter(trip => trip.vehicleId === vehicle.id && completed(trip));
+    const cartrack = (state.cartrackVehicles || []).find(item => String(item.registration || "").toUpperCase() === String(vehicle.plate || "").toUpperCase());
     const distance = trips.reduce((sum, trip) => {
       const value = Number(trip.distance); return Number.isFinite(value) ? sum + value : sum;
     }, 0);
@@ -1094,7 +1118,7 @@ function renderActivity() {
   const dayRows = [...summary.grouped.entries()].sort((a,b) => b[0].localeCompare(a[0])).slice(0, 7);
 
   selectors.content.innerHTML = `
-    ${heading("Utilização da frota", "Bolt: estado, atividade e viagens. Os quilómetros reais da viatura serão cruzados depois com o Cartrack.", '<button class="primary-button" type="button" data-bolt-activity-sync>Atualizar atividade Bolt</button>')}
+    ${heading("Utilização da frota", "Bolt: estado e viagens. Cartrack: movimento e quilometragem real da viatura.", '<button class="secondary-button" type="button" data-cartrack-sync>Sincronizar Cartrack</button><button class="primary-button" type="button" data-bolt-activity-sync>Atualizar atividade Bolt</button>')}
     <section class="status-strip">
       ${metric("Eventos Bolt", summary.events.length)}
       ${metric("Viagens realizadas", completedTrips)}
@@ -1106,12 +1130,13 @@ function renderActivity() {
       <article class="panel">
         <div class="panel-heading"><h2>Estado atual das viaturas</h2><span class="tag active">Bolt</span></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Viatura</th><th>Motorista</th><th>Estado Bolt</th><th>Viagens</th><th>Distância</th></tr></thead>
+          <thead><tr><th>Viatura</th><th>Motorista</th><th>Estado Bolt</th><th>Cartrack</th><th>Viagens</th><th>Distância</th></tr></thead>
           <tbody>${rows.map(row => `
             <tr>
               <td><strong>${escapeHtml(row.vehicle.plate)}</strong><br><span class="section-copy">${escapeHtml(row.vehicle.brand)} ${escapeHtml(row.vehicle.model)}</span></td>
               <td>${escapeHtml(row.vehicle.driverIds.map(driverName).join(", ") || "Sem motorista")}</td>
               <td>${row.latest ? `<span class="tag ${activityStateClass(row.latest.status)}">${escapeHtml(activityStateLabel(row.latest.status))}</span>` : '<span class="section-copy">Sem dados</span>'}</td>
+              <td>${cartrack ? ((cartrack.idling === true ? "Parado" : cartrack.speedKmh > 0 ? "Em movimento" : "Sem estado") + " · " + (cartrack.odometerKm != null ? Number(cartrack.odometerKm).toFixed(1) + " km" : "sem km")) : '<span class="section-copy">Sem dados</span>'}</td>
               <td>${row.trips}</td><td>${row.distance ? row.distance.toFixed(1) : "0"}</td>
             </tr>`).join("") || emptyRow("Sem viaturas.")}
           </tbody>
@@ -1126,10 +1151,28 @@ function renderActivity() {
           `).join("") || emptyRow("Ainda não existem dados de atividade Bolt.")}
           </tbody>
         </table></div>
-        <p class="section-copy" style="margin-top:14px">A distância aqui é a distância de viagem devolvida pela API Bolt. Não a tratamos como quilometragem total da viatura até validarmos a unidade e o cruzamento com o Cartrack.</p>
+        <p class="section-copy" style="margin-top:14px">A quilometragem mostrada como Cartrack vem do odómetro da telemática. A distância Bolt continua separada e não é tratada como quilometragem total da viatura.</p>
       </article>
     </section>
   `;
+}
+
+async function syncCartrack() {
+  const button = document.querySelector("[data-cartrack-sync]");
+  if (button) { button.disabled = true; button.textContent = "A sincronizar Cartrack…"; }
+  try {
+    const { data, error } = await supabaseClient.functions.invoke("cartrack-sync", { body: {} });
+    if (error) throw error;
+    if (!data?.success) throw new Error(data?.error || "A sincronização Cartrack falhou.");
+    await loadBackendData(); renderApp();
+    showToast("Cartrack ligada: " + (data.vehiclesSaved ?? 0) + " viaturas e " + (data.snapshotsSaved ?? 0) + " estados recebidos.");
+  } catch (error) {
+    console.error("Cartrack sync error", error);
+    showToast(error?.message || "Não foi possível ligar à Cartrack.");
+  } finally {
+    const currentButton = document.querySelector("[data-cartrack-sync]");
+    if (currentButton) { currentButton.disabled = false; currentButton.textContent = "Sincronizar Cartrack"; }
+  }
 }
 
 async function syncBoltActivity() {
@@ -1238,7 +1281,7 @@ function renderSettings() {
         <div class="settings-list">
           <div class="settings-row"><strong>Google Drive</strong><span class="tag active">Ligado</span></div>
           <div class="settings-row"><strong>S2T SmartDocs</strong><span class="tag active">Ativo no Portal</span></div>
-          <div class="settings-row"><strong>Cartrack</strong><span class="tag">Preparado</span></div>
+          <div class="settings-row"><strong>Cartrack</strong><span class="tag active">Ligado</span></div>
           <div class="integration-card">
             <div class="panel-heading">
               <div>
@@ -2044,6 +2087,7 @@ function bindPortalEvents() {
     if (target.dataset.requestPassword) return copyPasswordRequest();
     if (target.dataset.boltSync !== undefined) return syncBolt();
     if (target.dataset.boltActivitySync !== undefined) return syncBoltActivity();
+    if (target.dataset.cartrackSync !== undefined) return syncCartrack();
     if (target.dataset.uberSync !== undefined) return syncUber();
     if (target.id === "logoutButton") return logout();
     if (target.id === "workWithUsButton") return openRecruitment();

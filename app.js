@@ -1118,7 +1118,7 @@ function renderActivity() {
   const dayRows = [...summary.grouped.entries()].sort((a,b) => b[0].localeCompare(a[0])).slice(0, 7);
 
   selectors.content.innerHTML = `
-    ${heading("Utilização da frota", "Bolt: estado e viagens. Cartrack: movimento e quilometragem real da viatura.", '<button class="secondary-button" type="button" data-cartrack-sync>Sincronizar Cartrack</button><button class="primary-button" type="button" data-bolt-activity-sync>Atualizar atividade Bolt</button>')}
+    ${heading("Utilização da frota", "Bolt: estado e viagens. Cartrack: movimento e quilometragem real da viatura.", '<button class="primary-button" type="button" data-bolt-activity-sync>Atualizar atividade Bolt</button>')}
     <section class="status-strip">
       ${metric("Eventos Bolt", summary.events.length)}
       ${metric("Viagens realizadas", completedTrips)}
@@ -1281,7 +1281,24 @@ function renderSettings() {
         <div class="settings-list">
           <div class="settings-row"><strong>Google Drive</strong><span class="tag active">Ligado</span></div>
           <div class="settings-row"><strong>S2T SmartDocs</strong><span class="tag active">Ativo no Portal</span></div>
-          <div class="settings-row"><strong>Cartrack</strong><span class="tag active">Ligado</span></div>
+          <div class="integration-card">
+            <div class="panel-heading">
+              <div>
+                <strong>Cartrack</strong>
+                <p class="section-copy">Sincronização segura da lista de viaturas, estado atual e odómetro da telemática.</p>
+              </div>
+              <span class="tag active">API</span>
+            </div>
+            <div class="settings-list">
+              <div class="settings-row"><strong>Viaturas Cartrack no Portal</strong><span>${state.cartrackVehicles.length}</span></div>
+              <div class="settings-row"><strong>Última sincronização</strong><span>${state.cartrackVehicles.length ? new Date(Math.max(...state.cartrackVehicles.map(item => new Date(item.lastSyncedAt || 0).getTime()))).toLocaleString("pt-PT") : "Ainda não executada"}</span></div>
+            </div>
+            <div class="integration-note">
+              <strong>Dados utilizados</strong>
+              <p>Apenas viaturas, odómetro atual e estado atual (movimento/parado). Não usamos localização, percursos ou telemetria histórica.</p>
+            </div>
+            <button class="secondary-button" type="button" data-cartrack-sync>Sincronizar Cartrack</button>
+          </div>
           <div class="integration-card">
             <div class="panel-heading">
               <div>

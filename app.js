@@ -360,7 +360,14 @@ function alertLevel(doc) {
 }
 
 function visibleDocuments() {
-  return currentUser().role === "admin" ? state.documents : driverDocuments();
+  const user = currentUser();
+  if (user.role === "admin") return state.documents;
+
+  const assignedVehicleIds = new Set(driverVehicles().map(vehicle => vehicle.id));
+  return state.documents.filter(doc =>
+    doc.driverId === user.driverId ||
+    (doc.vehicleId && assignedVehicleIds.has(doc.vehicleId) && (!doc.driverId || doc.viewerDriverIds.includes(user.driverId)))
+  );
 }
 
 function showToast(message) {
@@ -888,12 +895,14 @@ function documentCard(doc, admin) {
 function renderAlerts() {
   selectors.pageTitle.textContent = "Alertas";
 
-  const alerts = state.documents
+  const alerts = visibleDocuments()
     .filter(doc => ["Expirado", "3 dias", "7 dias", "15 dias", "30 dias"].includes(alertLevel(doc)))
     .sort((a, b) => {
       const order = { Expirado: 0, "3 dias": 1, "7 dias": 2, "15 dias": 3, "30 dias": 4 };
       return (order[alertLevel(a)] ?? 9) - (order[alertLevel(b)] ?? 9);
     });
+
+  const admin = currentUser().role === "admin";
 
   const contextLabel = doc =>
     doc.driverId
@@ -905,7 +914,9 @@ function renderAlerts() {
   selectors.content.innerHTML = `
     ${heading(
       "Alertas documentais",
-      "Documentos expirados e documentos que entram nos períodos de 30, 15, 7 e 3 dias.",
+      admin
+        ? "Documentos expirados e documentos que entram nos períodos de 30, 15, 7 e 3 dias."
+        : "Alertas apenas dos teus documentos e das viaturas que te estão atribuídas.",
       ""
     )}
     <section class="cards-grid">
@@ -926,68 +937,13 @@ function renderAlerts() {
             </div>
             <div class="row-actions">
               <button class="mini-button" type="button" data-open-document-id="${doc.id}">Abrir documento</button>
-              <button class="mini-button" type="button" data-edit-document-id="${doc.id}">Editar</button>
+              ${admin ? `<button class="mini-button" type="button" data-edit-document-id="${doc.id}">Editar</button>` : ""}
             </div>
           </article>
         `;
-      }).join("") || emptyCard("Sem alertas ativos.")}
+      }).join("") || emptyCard(admin ? "Não existem documentos com alerta neste momento." : "Não existem alertas nos teus documentos ou nas tuas viaturas.")}
     </section>
   `;
-}
-
-function renderApplications() {
-  selectors.pageTitle.textContent = "Candidaturas";
-  selectors.content.innerHTML = `
-    ${heading("S2T AI Recruiter", "Candidaturas recolhidas automaticamente pelo assistente.", `<button class="secondary-button" type="button" data-view-public-recruitment>Ver página pública</button>`)}
-    <section class="cards-grid">
-      ${state.applications.map(application => `
-        <article class="data-card application-card">
-          <span class="tag ${application.status === "Aceite" ? "active" : application.status === "Recusada" ? "inactive" : "expiring"}">${escapeHtml(application.status)}</span>
-          <h3>${escapeHtml(application.candidate.name || "Candidato sem nome")}</h3>
-          <p class="section-copy">${escapeHtml(application.summary)}</p>
-          <div class="meta-line">
-            <span>${escapeHtml(application.candidate.phone || "Sem telemóvel")}</span>
-            <span>${escapeHtml(application.candidate.email || "Sem email")}</span>
-            <span>TVDE: ${escapeHtml(application.candidate.tvdeCertificate || "Não indicado")}</span>
-          </div>
-          <h4>Documentos enviados</h4>
-          <ul>${(application.documents.length ? application.documents : ["Sem documentos enviados"]).map(doc => `<li>${escapeHtml(doc)}</li>`).join("")}</ul>
-          <h4>Conversa</h4>
-          <div class="conversation-mini">
-            ${application.conversation.map(message => `<p><strong>${message.role === "assistant" ? "IA" : "Candidato"}:</strong> ${escapeHtml(message.text)}</p>`).join("")}
-          </div>
-          <div class="row-actions">
-            <button class="mini-button" type="button" data-application-status="${application.id}" data-status="Em análise">Em análise</button>
-            <button class="mini-button" type="button" data-application-status="${application.id}" data-status="Aceite">Aceite</button>
-            <button class="danger-button" type="button" data-application-status="${application.id}" data-status="Recusada">Recusada</button>
-          </div>
-        </article>
-      `).join("") || emptyCard("Ainda não existem candidaturas.")}
-    </section>
-  `;
-}
-
-async function syncBolt() {
-  if (currentUser().role !== "admin") {
-    showToast("Só o administrador pode sincronizar a Bolt.");
-    return;
-  }
-  const button = document.querySelector("[data-bolt-sync]");
-  if (button) { button.disabled = true; button.textContent = "A sincronizar…"; }
-  try {
-    const { data, error } = await supabaseClient.functions.invoke("bolt-sync", { body: {} });
-    if (error) throw error;
-    if (!data?.ok) throw new Error(data?.error || "Não foi possível sincronizar a Bolt.");
-    await loadBackendData();
-    renderApp();
-    showToast(`Bolt sincronizada: ${data.drivers?.received || 0} motoristas e ${data.vehicles?.received || 0} viaturas.`);
-  } catch (error) {
-    console.error(error);
-    showToast(error?.message || "Não foi possível sincronizar a Bolt.");
-  } finally {
-    const currentButton = document.querySelector("[data-bolt-sync]");
-    if (currentButton) { currentButton.disabled = false; currentButton.textContent = "Sincronizar Bolt agora"; }
-  }
 }
 
 function renderSettings() {

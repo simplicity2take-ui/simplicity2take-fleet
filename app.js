@@ -207,6 +207,8 @@ async function loadBackendData() {
     boltDriverUuid: valueOf(row, "bolt_driver_uuid"),
     boltPartnerUuid: valueOf(row, "bolt_partner_uuid"),
     boltLastSyncedAt: valueOf(row, "bolt_last_synced_at"),
+    uberDriverUuid: valueOf(row, "uber_driver_uuid"),
+    uberLastSyncedAt: valueOf(row, "uber_last_synced_at"),
     raw: row
   }));
   state.vehicles = (vehiclesResult.data || []).map(row => ({
@@ -220,6 +222,9 @@ async function loadBackendData() {
     status: valueOf(row, "status") || "Ativo",
     boltVehicleUuid: valueOf(row, "bolt_vehicle_uuid"),
     boltLastSyncedAt: valueOf(row, "bolt_last_synced_at"),
+    uberVehicleUuid: valueOf(row, "uber_vehicle_uuid"),
+    uberVehicleEncryptedUuid: valueOf(row, "uber_vehicle_encrypted_uuid"),
+    uberLastSyncedAt: valueOf(row, "uber_last_synced_at"),
     driverIds: assignments.filter(item => item.vehicle_id === row.id && assignmentIsActive(item)).map(item => item.driver_id),
     raw: row
   }));
@@ -1009,11 +1014,36 @@ async function syncBolt() {
   }
 }
 
+async function syncUber() {
+  const button = document.querySelector("[data-uber-sync]");
+  if (button) { button.disabled = true; button.textContent = "A sincronizar Uber…"; }
+  try {
+    const { data, error } = await supabaseClient.functions.invoke("uber-sync", { body: {} });
+    if (error) throw error;
+    if (!data?.ok) throw new Error(data?.error || "A sincronização Uber falhou.");
+    await loadBackendData();
+    renderApp();
+    const drivers = data.drivers || {};
+    const vehicles = data.vehicles || {};
+    const assignments = Number(data.assignmentsUpdated || 0);
+    showToast(`Uber sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas ativos, ${vehicles.active ?? vehicles.received ?? 0} viaturas ativas e ${assignments} associações.`);
+  } catch (error) {
+    console.error("Uber sync error", error);
+    showToast(error?.message || "Não foi possível sincronizar a Uber.");
+  } finally {
+    const currentButton = document.querySelector("[data-uber-sync]");
+    if (currentButton) { currentButton.disabled = false; currentButton.textContent = "Sincronizar Uber agora"; }
+  }
+}
+
 function renderSettings() {
   selectors.pageTitle.textContent = "Configurações";
   const boltDrivers = state.drivers.filter(driver => driver.boltDriverUuid).length;
   const boltVehicles = state.vehicles.filter(vehicle => vehicle.boltVehicleUuid).length;
   const lastBoltSync = [...state.drivers, ...state.vehicles].map(item => item.boltLastSyncedAt).filter(Boolean).sort().pop();
+  const uberDrivers = state.drivers.filter(driver => driver.uberDriverUuid).length;
+  const uberVehicles = state.vehicles.filter(vehicle => vehicle.uberVehicleUuid).length;
+  const lastUberSync = [...state.drivers, ...state.vehicles].map(item => item.uberLastSyncedAt).filter(Boolean).sort().pop();
 
   selectors.content.innerHTML = `
     ${heading("Configurações", "Segurança, palavras-passe e integrações.", "")}
@@ -1059,12 +1089,18 @@ function renderSettings() {
               </div>
               <span class="tag expiring">Acesso pendente</span>
             </div>
-            <div class="integration-note">
-              <strong>Aplicação Uber criada: Simplicity2Take Fleet</strong>
-              <p>A Uber ainda não concedeu permissões OAuth Client Credentials. A sincronização só poderá ser ativada depois da aprovação dos scopes de frota.</p>
-              <p>Quando o acesso estiver aprovado, configuraremos as credenciais no Supabase e ativaremos a sincronização segura, sem expor segredos no navegador.</p>
+            <div class="settings-list">
+              <div class="settings-row"><strong>Motoristas Uber no Portal</strong><span>${uberDrivers}</span></div>
+              <div class="settings-row"><strong>Viaturas Uber no Portal</strong><span>${uberVehicles}</span></div>
+              <div class="settings-row"><strong>Última sincronização</strong><span>${lastUberSync ? new Date(lastUberSync).toLocaleString("pt-PT") : "Ainda não executada"}</span></div>
+              <div class="settings-row"><strong>Backend de sincronização</strong><span class="tag active">Preparado</span></div>
             </div>
-            <button class="secondary-button" type="button" disabled title="Disponível após autorização da Uber">Sincronização Uber — aguarda autorização</button>
+            <div class="integration-note">
+              <strong>Aplicação Uber: Simplicity2Take Fleet</strong>
+              <p>O backend seguro da Uber já está preparado no Supabase. A única dependência externa é a autorização dos scopes Fleet e a configuração segura do Client ID/Client Secret.</p>
+              <p>Não vamos usar localização, viagens, ganhos, pagamentos ou telemetria.</p>
+            </div>
+            <button class="secondary-button" type="button" data-uber-sync disabled title="Disponível após autorização e configuração das credenciais Uber">Sincronização Uber — aguarda autorização</button>
           </div>
           <div class="settings-row"><strong>Gestão de Revisões</strong><span class="tag">Preparado</span></div>
           <div class="settings-row"><strong>Gestão de Inspeções</strong><span class="tag">Preparado</span></div>
@@ -1849,6 +1885,7 @@ function bindPortalEvents() {
     if (target.dataset.deleteDocument) return handleAdminAction({type:"delete-document",id:target.dataset.deleteDocument});
     if (target.dataset.requestPassword) return copyPasswordRequest();
     if (target.dataset.boltSync !== undefined) return syncBolt();
+    if (target.dataset.uberSync !== undefined) return syncUber();
     if (target.id === "logoutButton") return logout();
     if (target.id === "workWithUsButton") return openRecruitment();
     if (target.id === "backToLoginButton") return closeRecruitment();

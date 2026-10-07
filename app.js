@@ -892,6 +892,47 @@ function documentCard(doc, admin) {
   `;
 }
 
+
+function renderApplications() {
+  selectors.pageTitle.textContent = "Candidaturas";
+  const applications = state.applications || [];
+
+  selectors.content.innerHTML = `
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>Candidaturas</h2>
+          <p>Pedidos recebidos pelo S2T AI Recruiter.</p>
+        </div>
+        <span class="tag">${applications.length} candidatura(s)</span>
+      </div>
+      <div class="application-list">
+        ${applications.length ? applications.map(application => {
+          const candidate = application.candidate || {};
+          return `
+            <article class="application-card">
+              <div>
+                <strong>${escapeHtml(candidate.name || "Candidato sem nome")}</strong>
+                <div class="muted">${escapeHtml(candidate.email || "")} · ${escapeHtml(candidate.phone || "")}</div>
+                <p>${escapeHtml(application.summary || "Candidatura recebida.")}</p>
+              </div>
+              <div class="application-meta">
+                <span class="tag">${escapeHtml(application.status || "Nova")}</span>
+                <small>${escapeHtml(candidate.availability || "Disponibilidade não indicada")}</small>
+              </div>
+            </article>
+          `;
+        }).join("") : `
+          <div class="empty-state">
+            <strong>Sem candidaturas</strong>
+            <p>Ainda não existem candidaturas para análise.</p>
+          </div>
+        `}
+      </div>
+    </section>
+  `;
+}
+
 function renderAlerts() {
   selectors.pageTitle.textContent = "Alertas";
 

@@ -958,7 +958,7 @@ async function syncBolt() {
     const drivers = data.drivers || {};
     const vehicles = data.vehicles || {};
     const assignments = Number(data.assignmentsUpdated || 0);
-    showToast(`Bolt sincronizada: ${drivers.received || 0} motoristas, ${vehicles.received || 0} viaturas e ${assignments} associações.`);
+    showToast(`Bolt sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas ativos, ${vehicles.active ?? vehicles.received ?? 0} viaturas ativas e ${assignments} associações.`);
   } catch (error) {
     console.error("Bolt sync error", error);
     showToast(error?.message || "Não foi possível sincronizar a Bolt.");

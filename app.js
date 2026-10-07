@@ -1100,7 +1100,7 @@ function renderSettings() {
               <p>O backend seguro da Uber já está preparado no Supabase. A única dependência externa é a autorização dos scopes Fleet e a configuração segura do Client ID/Client Secret.</p>
               <p>Não vamos usar localização, viagens, ganhos, pagamentos ou telemetria.</p>
             </div>
-            <button class="secondary-button" type="button" data-uber-sync disabled title="Disponível após autorização e configuração das credenciais Uber">Sincronização Uber — aguarda autorização</button>
+            <button class="secondary-button" type="button" data-uber-sync title="Sincronizar a frota Uber agora">Sincronizar Uber agora</button>
           </div>
           <div class="settings-row"><strong>Gestão de Revisões</strong><span class="tag">Preparado</span></div>
           <div class="settings-row"><strong>Gestão de Inspeções</strong><span class="tag">Preparado</span></div>

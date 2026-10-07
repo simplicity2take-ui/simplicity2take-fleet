@@ -1097,6 +1097,7 @@ function boltActivitySummary(days = 7) {
 
 function renderActivity() {
   selectors.pageTitle.textContent = "Utilização da Frota";
+
   const summary = boltActivitySummary(7);
   const completed = trip => {
     const status = String(trip.status || "").toLowerCase();
@@ -1104,54 +1105,84 @@ function renderActivity() {
   };
   const completedTrips = summary.trips.filter(completed).length;
   const totalDistance = summary.trips.filter(completed).reduce((sum, trip) => {
-    const value = Number(trip.distance); return Number.isFinite(value) ? sum + value : sum;
+    const value = Number(trip.distance);
+    return Number.isFinite(value) ? sum + value : sum;
   }, 0);
+
+  const cartrackByPlate = new Map((state.cartrackVehicles || []).map(item => [
+    String(item.registration || "").toUpperCase(),
+    item
+  ]));
+
   const rows = state.vehicles.map(vehicle => {
     const latest = summary.latestByVehicle.get(vehicle.id);
     const trips = summary.trips.filter(trip => trip.vehicleId === vehicle.id && completed(trip));
-    const cartrack = (state.cartrackVehicles || []).find(item => String(item.registration || "").toUpperCase() === String(vehicle.plate || "").toUpperCase());
+    const cartrack = cartrackByPlate.get(String(vehicle.plate || "").toUpperCase());
     const distance = trips.reduce((sum, trip) => {
-      const value = Number(trip.distance); return Number.isFinite(value) ? sum + value : sum;
+      const value = Number(trip.distance);
+      return Number.isFinite(value) ? sum + value : sum;
     }, 0);
-    return { vehicle, latest, trips: trips.length, distance };
+    return { vehicle, latest, trips: trips.length, distance, cartrack };
   });
-  const dayRows = [...summary.grouped.entries()].sort((a,b) => b[0].localeCompare(a[0])).slice(0, 7);
+
+  const dayRows = [...summary.grouped.entries()]
+    .sort((a,b) => b[0].localeCompare(a[0]))
+    .slice(0, 7);
+
+  const cartrackRows = rows.filter(row => row.cartrack);
+  const statusLabel = item => item?.idling === true
+    ? "Parado"
+    : Number(item?.speedKmh) > 0
+      ? "Em movimento"
+      : item?.ignition === true
+        ? "Ligado"
+        : "Sem estado";
 
   selectors.content.innerHTML = `
-    ${heading("Utilização da frota", "Bolt: estado e viagens. Cartrack: movimento e quilometragem real da viatura.", '<button class="primary-button" type="button" data-bolt-activity-sync>Atualizar atividade Bolt</button>')}
+    ${heading("Utilização da frota", "Cartrack: estado atual e quilometragem real. Bolt: atividade e viagens quando disponíveis.", '<button class="primary-button" type="button" data-bolt-activity-sync>Atualizar atividade Bolt</button>')}
+
     <section class="status-strip">
+      ${metric("Viaturas Cartrack", cartrackRows.length)}
       ${metric("Eventos Bolt", summary.events.length)}
-      ${metric("Viagens realizadas", completedTrips)}
-      ${metric("Distância de viagens", totalDistance ? totalDistance.toFixed(1) : "0")}
-      ${metric("Horas online", (summary.onlineMinutes / 60).toFixed(1))}
-      ${metric("Horas em serviço", (summary.serviceMinutes / 60).toFixed(1))}
+      ${metric("Viagens Bolt", completedTrips)}
+      ${metric("Distância Bolt", totalDistance ? totalDistance.toFixed(1) : "0")}
     </section>
+
     <section class="content-grid">
       <article class="panel">
-        <div class="panel-heading"><h2>Estado atual das viaturas</h2><span class="tag active">Bolt</span></div>
+        <div class="panel-heading">
+          <h2>Estado atual das viaturas</h2>
+          <span class="tag active">Cartrack</span>
+        </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Viatura</th><th>Motorista</th><th>Estado Bolt</th><th>Cartrack</th><th>Viagens</th><th>Distância</th></tr></thead>
-          <tbody>${rows.map(row => `
-            <tr>
-              <td><strong>${escapeHtml(row.vehicle.plate)}</strong><br><span class="section-copy">${escapeHtml(row.vehicle.brand)} ${escapeHtml(row.vehicle.model)}</span></td>
-              <td>${escapeHtml(row.vehicle.driverIds.map(driverName).join(", ") || "Sem motorista")}</td>
-              <td>${row.latest ? `<span class="tag ${activityStateClass(row.latest.status)}">${escapeHtml(activityStateLabel(row.latest.status))}</span>` : '<span class="section-copy">Sem dados</span>'}</td>
-              <td>${cartrack ? ((cartrack.idling === true ? "Parado" : cartrack.speedKmh > 0 ? "Em movimento" : "Sem estado") + " · " + (cartrack.odometerKm != null ? Number(cartrack.odometerKm).toFixed(1) + " km" : "sem km")) : '<span class="section-copy">Sem dados</span>'}</td>
-              <td>${row.trips}</td><td>${row.distance ? row.distance.toFixed(1) : "0"}</td>
-            </tr>`).join("") || emptyRow("Sem viaturas.")}
+          <thead><tr><th>Viatura</th><th>Estado</th><th>Odómetro</th><th>Velocidade</th><th>Atualizado</th></tr></thead>
+          <tbody>
+            ${cartrackRows.map(row => {
+              const item = row.cartrack;
+              return `
+                <tr>
+                  <td><strong>${escapeHtml(row.vehicle.plate)}</strong><br><span class="section-copy">${escapeHtml(row.vehicle.brand)} ${escapeHtml(row.vehicle.model)}</span></td>
+                  <td><span class="tag active">${escapeHtml(statusLabel(item))}</span></td>
+                  <td>${item.odometerKm != null ? Number(item.odometerKm).toFixed(1) + " km" : "—"}</td>
+                  <td>${item.speedKmh != null ? Number(item.speedKmh).toFixed(1) + " km/h" : "—"}</td>
+                  <td>${item.eventTs ? new Date(item.eventTs).toLocaleString("pt-PT") : "—"}</td>
+                </tr>`;
+            }).join("") || emptyRow("Ainda não existem dados Cartrack.")}
           </tbody>
         </table></div>
+        <p class="section-copy" style="margin-top:14px">O odómetro Cartrack é a quilometragem da telemática. A distância Bolt é apresentada separadamente e não é usada como quilometragem total.</p>
       </article>
+
       <article class="panel">
-        <div class="panel-heading"><h2>Resumo diário</h2><span class="tag">Últimos 7 dias</span></div>
+        <div class="panel-heading"><h2>Atividade Bolt</h2><span class="tag">Últimos 7 dias</span></div>
         <div class="table-wrap"><table>
           <thead><tr><th>Dia</th><th>Online</th><th>Em serviço</th><th>Viagens</th><th>Distância</th></tr></thead>
-          <tbody>${dayRows.map(([day, value]) => `
-            <tr><td><strong>${escapeHtml(day)}</strong></td><td>${(value.onlineMinutes / 60).toFixed(1)} h</td><td>${(value.serviceMinutes / 60).toFixed(1)} h</td><td>${value.trips}</td><td>${value.distance ? value.distance.toFixed(1) : "0"}</td></tr>
-          `).join("") || emptyRow("Ainda não existem dados de atividade Bolt.")}
+          <tbody>
+            ${dayRows.map(([day, value]) => `
+              <tr><td><strong>${escapeHtml(day)}</strong></td><td>${(value.onlineMinutes / 60).toFixed(1)} h</td><td>${(value.serviceMinutes / 60).toFixed(1)} h</td><td>${value.trips}</td><td>${value.distance ? value.distance.toFixed(1) : "0"}</td></tr>
+            `).join("") || emptyRow("Ainda não existem dados de atividade Bolt.")}
           </tbody>
         </table></div>
-        <p class="section-copy" style="margin-top:14px">A quilometragem mostrada como Cartrack vem do odómetro da telemática. A distância Bolt continua separada e não é tratada como quilometragem total da viatura.</p>
       </article>
     </section>
   `;

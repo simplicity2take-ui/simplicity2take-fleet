@@ -216,6 +216,9 @@ async function loadBackendData() {
     boltPartnerUuid: valueOf(row, "bolt_partner_uuid"),
     boltLastSyncedAt: valueOf(row, "bolt_last_synced_at"),
     uberDriverUuid: valueOf(row, "uber_driver_uuid"),
+    uberStatus: valueOf(row, "uber_status"),
+    uberRealtimeStatus: valueOf(row, "uber_realtime_status"),
+    uberLastOnlineAt: valueOf(row, "uber_last_online_at"),
     uberLastSyncedAt: valueOf(row, "uber_last_synced_at"),
     raw: row
   }));
@@ -1268,6 +1271,26 @@ async function syncUber() {
   }
 }
 
+async function importUberReport(type, input, periodStart = "", periodEnd = "") {
+  const file = input?.files?.[0];
+  if (!file) throw new Error("Selecione um ficheiro CSV.");
+  const text = await file.text();
+  const query = new URLSearchParams({ type });
+  if (periodStart) query.set("period_start", periodStart);
+  if (periodEnd) query.set("period_end", periodEnd);
+  const { data, error } = await supabaseClient.functions.invoke("uber-report-import?" + query.toString(), {
+    body: text,
+    headers: { "Content-Type": "text/csv" }
+  });
+  if (error) throw error;
+  if (!data?.ok) throw new Error(data?.error || "Não foi possível importar o relatório Uber.");
+  await loadBackendData();
+  renderApp();
+  showToast(type === "status"
+    ? `Uber: ${data.result?.matched ?? 0} atualizados, ${data.result?.created ?? 0} novos.`
+    : `Atividade Uber: ${data.result?.saved ?? 0} registos importados.`);
+}
+
 function renderSettings() {
   selectors.pageTitle.textContent = "Configurações";
   const boltDrivers = state.drivers.filter(driver => driver.boltDriverUuid).length;
@@ -1345,9 +1368,23 @@ function renderSettings() {
               <div class="settings-row"><strong>Backend de sincronização</strong><span class="tag active">Preparado</span></div>
             </div>
             <div class="integration-note">
-              <strong>Aplicação Uber: Simplicity2Take Fleet</strong>
-              <p>O backend seguro da Uber já está preparado no Supabase. A única dependência externa é a autorização dos scopes Fleet e a configuração segura do Client ID/Client Secret.</p>
-              <p>Não vamos usar localização, viagens, ganhos, pagamentos ou telemetria.</p>
+              <strong>Fleet Hub / Relatórios</strong>
+              <p>O relatório <strong>Estado do motorista</strong> atualiza o estado Uber e o UUID de cada motorista. O relatório <strong>Atividade do motorista</strong> guarda viagens e tempos do período.</p>
+              <p>O importador usa o UUID Uber e, quando necessário, email/telefone para fazer a correspondência sem duplicar motoristas.</p>
+            </div>
+            <div class="settings-list">
+              <label class="file-upload-row">Estado do motorista (CSV)
+                <input id="uberStatusCsv" type="file" accept=".csv,text/csv">
+              </label>
+              <button class="secondary-button" type="button" data-uber-import-status>Importar estado Uber</button>
+              <label class="file-upload-row">Atividade do motorista (CSV)
+                <input id="uberActivityCsv" type="file" accept=".csv,text/csv">
+              </label>
+              <div class="settings-row">
+                <label>Período inicial <input id="uberActivityStart" type="date"></label>
+                <label>Período final <input id="uberActivityEnd" type="date"></label>
+              </div>
+              <button class="secondary-button" type="button" data-uber-import-activity>Importar atividade Uber</button>
             </div>
             <button class="secondary-button" type="button" data-uber-sync title="Sincronizar a frota Uber agora">Sincronizar Uber agora</button>
           </div>
@@ -2136,6 +2173,19 @@ function bindPortalEvents() {
     if (target.dataset.boltSync !== undefined) return syncBolt();
     if (target.dataset.boltActivitySync !== undefined) return syncBoltActivity();
     if (target.dataset.cartrackSync !== undefined) return syncCartrack();
+    if (target.dataset.uberImportStatus !== undefined) {
+      try { await importUberReport("status", document.querySelector("#uberStatusCsv")); }
+      catch (error) { console.error(error); showToast(error?.message || "Não foi possível importar o estado Uber."); }
+      return;
+    }
+    if (target.dataset.uberImportActivity !== undefined) {
+      try {
+        await importUberReport("activity", document.querySelector("#uberActivityCsv"),
+          document.querySelector("#uberActivityStart")?.value || "",
+          document.querySelector("#uberActivityEnd")?.value || "");
+      } catch (error) { console.error(error); showToast(error?.message || "Não foi possível importar a atividade Uber."); }
+      return;
+    }
     if (target.dataset.uberSync !== undefined) return syncUber();
     if (target.id === "logoutButton") return logout();
     if (target.id === "workWithUsButton") return openRecruitment();

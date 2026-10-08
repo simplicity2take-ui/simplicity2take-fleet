@@ -1274,13 +1274,23 @@ async function syncUber() {
   }
 }
 
+function inferUberReportPeriod(fileName) {
+  const match = String(fileName || "").match(/(20\\d{6})-(20\\d{6})/);
+  if (!match) return { start: "", end: "" };
+  const iso = value => `${value.slice(0,4)}-${value.slice(4,6)}-${value.slice(6,8)}`;
+  return { start: iso(match[1]), end: iso(match[2]) };
+}
+
 async function importUberReport(type, input, periodStart = "", periodEnd = "") {
   const file = input?.files?.[0];
   if (!file) throw new Error("Selecione um ficheiro CSV.");
+  const inferred = inferUberReportPeriod(file.name);
   const text = await file.text();
   const query = new URLSearchParams({ type });
-  if (periodStart) query.set("period_start", periodStart);
-  if (periodEnd) query.set("period_end", periodEnd);
+  const start = periodStart || inferred.start;
+  const end = periodEnd || inferred.end;
+  if (start) query.set("period_start", start);
+  if (end) query.set("period_end", end);
   const { data, error } = await supabaseClient.functions.invoke("uber-report-import?" + query.toString(), {
     body: text,
     headers: { "Content-Type": "text/csv" }
@@ -1289,9 +1299,9 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "") {
   if (!data?.ok) throw new Error(data?.error || "Não foi possível importar o relatório Uber.");
   await loadBackendData();
   renderApp();
-  showToast(type === "status"
-    ? `Uber: ${data.result?.matched ?? 0} atualizados, ${data.result?.created ?? 0} novos.`
-    : `Atividade Uber: ${data.result?.saved ?? 0} registos importados.`);
+  const saved = data.result?.saved ?? 0;
+  if (type === "status") showToast(`Uber: ${data.result?.matched ?? 0} atualizados, ${data.result?.created ?? 0} novos.`);
+  else showToast(`Relatório Uber importado: ${saved} registos.`);
 }
 
 function renderSettings() {
@@ -1380,14 +1390,43 @@ function renderSettings() {
                 <input id="uberStatusCsv" type="file" accept=".csv,text/csv">
               </label>
               <button class="secondary-button" type="button" data-uber-import-status>Importar estado Uber</button>
+
               <label class="file-upload-row">Atividade do motorista (CSV)
                 <input id="uberActivityCsv" type="file" accept=".csv,text/csv">
               </label>
-              <div class="settings-row">
-                <label>Período inicial <input id="uberActivityStart" type="date"></label>
-                <label>Período final <input id="uberActivityEnd" type="date"></label>
-              </div>
               <button class="secondary-button" type="button" data-uber-import-activity>Importar atividade Uber</button>
+
+              <label class="file-upload-row">Atividades de viagem (CSV)
+                <input id="uberTripActivityCsv" type="file" accept=".csv,text/csv">
+              </label>
+              <button class="secondary-button" type="button" data-uber-import-trip-activity>Importar atividades de viagem</button>
+
+              <label class="file-upload-row">Desempenho do veículo (CSV)
+                <input id="uberVehiclePerformanceCsv" type="file" accept=".csv,text/csv">
+              </label>
+              <button class="secondary-button" type="button" data-uber-import-vehicle-performance>Importar desempenho do veículo</button>
+
+              <label class="file-upload-row">Tempo e distância do veículo (CSV)
+                <input id="uberVehicleTimeDistanceCsv" type="file" accept=".csv,text/csv">
+              </label>
+              <button class="secondary-button" type="button" data-uber-import-vehicle-time-distance>Importar tempo e distância do veículo</button>
+
+              <label class="file-upload-row">Tempo e distância do motorista (CSV)
+                <input id="uberDriverTimeDistanceCsv" type="file" accept=".csv,text/csv">
+              </label>
+              <button class="secondary-button" type="button" data-uber-import-driver-time-distance>Importar tempo e distância do motorista</button>
+
+              <label class="file-upload-row">Qualidade do motorista (CSV)
+                <input id="uberDriverQualityCsv" type="file" accept=".csv,text/csv">
+              </label>
+              <button class="secondary-button" type="button" data-uber-import-driver-quality>Importar qualidade do motorista</button>
+
+              <label class="file-upload-row">Pagamentos de motorista (CSV)
+                <input id="uberDriverPaymentsCsv" type="file" accept=".csv,text/csv">
+              </label>
+              <button class="secondary-button" type="button" data-uber-import-driver-payments>Importar pagamentos de motorista</button>
+
+              <p class="section-copy">O período é lido automaticamente do nome do ficheiro quando estiver no formato AAAAMMDD-AAAAMMDD.</p>
             </div>
             <button class="secondary-button" type="button" data-uber-sync title="Sincronizar a frota Uber agora">Sincronizar Uber agora</button>
           </div>
@@ -2176,18 +2215,22 @@ function bindPortalEvents() {
     if (target.dataset.boltSync !== undefined) return syncBolt();
     if (target.dataset.boltActivitySync !== undefined) return syncBoltActivity();
     if (target.dataset.cartrackSync !== undefined) return syncCartrack();
-    if (target.dataset.uberImportStatus !== undefined) {
-      try { await importUberReport("status", document.querySelector("#uberStatusCsv")); }
-      catch (error) { console.error(error); showToast(error?.message || "Não foi possível importar o estado Uber."); }
-      return;
-    }
-    if (target.dataset.uberImportActivity !== undefined) {
-      try {
-        await importUberReport("activity", document.querySelector("#uberActivityCsv"),
-          document.querySelector("#uberActivityStart")?.value || "",
-          document.querySelector("#uberActivityEnd")?.value || "");
-      } catch (error) { console.error(error); showToast(error?.message || "Não foi possível importar a atividade Uber."); }
-      return;
+    const uberReportActions = {
+      uberImportStatus: ["status", "#uberStatusCsv", "Não foi possível importar o estado Uber."],
+      uberImportActivity: ["activity", "#uberActivityCsv", "Não foi possível importar a atividade Uber."],
+      uberImportTripActivity: ["activity", "#uberTripActivityCsv", "Não foi possível importar as atividades de viagem."],
+      uberImportVehiclePerformance: ["vehicle_performance", "#uberVehiclePerformanceCsv", "Não foi possível importar o desempenho do veículo."],
+      uberImportVehicleTimeDistance: ["vehicle_time_distance", "#uberVehicleTimeDistanceCsv", "Não foi possível importar o tempo e distância do veículo."],
+      uberImportDriverTimeDistance: ["driver_time_distance", "#uberDriverTimeDistanceCsv", "Não foi possível importar o tempo e distância do motorista."],
+      uberImportDriverQuality: ["driver_quality", "#uberDriverQualityCsv", "Não foi possível importar a qualidade do motorista."],
+      uberImportDriverPayments: ["driver_payments", "#uberDriverPaymentsCsv", "Não foi possível importar os pagamentos de motorista."]
+    };
+    for (const [key, [type, selector, message]] of Object.entries(uberReportActions)) {
+      if (target.dataset[key] !== undefined) {
+        try { await importUberReport(type, document.querySelector(selector)); }
+        catch (error) { console.error(error); showToast(error?.message || message); }
+        return;
+      }
     }
     if (target.dataset.uberSync !== undefined) return syncUber();
     if (target.id === "logoutButton") return logout();

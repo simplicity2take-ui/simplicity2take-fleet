@@ -43,7 +43,7 @@
 
   async function load() {
     const [drivers, vehicles, assignments, snapshots] = await Promise.all([
-      client.from("drivers").select("id,full_name,name,uber_driver_uuid,uber_realtime_status,uber_status"),
+      client.from("drivers").select("id,name,uber_driver_uuid,uber_realtime_status,uber_status"),
       client.from("vehicles").select("id,plate,brand,model"),
       client.from("vehicle_assignments").select("vehicle_id,driver_id,active_from,active_until"),
       client.from("cartrack_vehicle_snapshots").select("registration,vehicle_id,observed_at,odometer_km").order("observed_at", { ascending: true }).limit(10000)
@@ -124,7 +124,7 @@
           <tbody>
             ${vehicleState.map(row => `<tr>
               <td><strong>${esc(row.v.plate)}</strong><br><span class="section-copy">${esc(row.v.brand)} ${esc(row.v.model)}</span></td>
-              <td>${esc(row.driver?.full_name || row.driver?.name || "Sem motorista")}</td>
+              <td>${esc(row.driver?.name || "Sem motorista")}</td>
               <td><span class="tag ${statusClass(row.label)}">${esc(row.label)}</span></td>
             </tr>`).join("") || "<tr><td colspan=\"3\">Sem viaturas.</td></tr>"}
           </tbody>

@@ -1396,11 +1396,6 @@ function renderSettings() {
               </label>
               <button class="secondary-button" type="button" data-uber-import-activity>Importar atividade Uber</button>
 
-              <label class="file-upload-row">Atividades de viagem (CSV)
-                <input id="uberTripActivityCsv" type="file" accept=".csv,text/csv">
-              </label>
-              <button class="secondary-button" type="button" data-uber-import-trip-activity>Importar atividades de viagem</button>
-
               <label class="file-upload-row">Desempenho do veículo (CSV)
                 <input id="uberVehiclePerformanceCsv" type="file" accept=".csv,text/csv">
               </label>
@@ -2218,7 +2213,6 @@ function bindPortalEvents() {
     const uberReportActions = {
       uberImportStatus: ["status", "#uberStatusCsv", "Não foi possível importar o estado Uber."],
       uberImportActivity: ["activity", "#uberActivityCsv", "Não foi possível importar a atividade Uber."],
-      uberImportTripActivity: ["activity", "#uberTripActivityCsv", "Não foi possível importar as atividades de viagem."],
       uberImportVehiclePerformance: ["vehicle_performance", "#uberVehiclePerformanceCsv", "Não foi possível importar o desempenho do veículo."],
       uberImportVehicleTimeDistance: ["vehicle_time_distance", "#uberVehicleTimeDistanceCsv", "Não foi possível importar o tempo e distância do veículo."],
       uberImportDriverTimeDistance: ["driver_time_distance", "#uberDriverTimeDistanceCsv", "Não foi possível importar o tempo e distância do motorista."],

@@ -123,7 +123,7 @@
           <tbody>
             ${vehicleState.map(row => `<tr>
               <td><strong>${esc(row.v.plate)}</strong><br><span class="section-copy">${esc(row.v.brand)} ${esc(row.v.model)}</span></td>
-              <td>${esc(row.driver?.name || "Sem motorista")}</td>
+              <td>${esc(row.driver?.full_name || row.driver?.name || "Sem motorista")}</td>
               <td><span class="tag ${statusClass(row.label)}">${esc(row.label)}</span></td>
             </tr>`).join("") || "<tr><td colspan=\"3\">Sem viaturas.</td></tr>"}
           </tbody>

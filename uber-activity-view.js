@@ -42,19 +42,20 @@
     : label === "Fora de serviço" ? "inactive" : "";
 
   async function load() {
-    const [drivers, vehicles, assignments, snapshots] = await Promise.all([
+    const [drivers, vehicles, assignments] = await Promise.all([
       client.from("drivers").select("id,name,uber_driver_uuid,uber_realtime_status,uber_status"),
       client.from("vehicles").select("id,plate,brand,model"),
-      client.from("vehicle_assignments").select("vehicle_id,driver_id,active_from,active_until"),
-      client.from("cartrack_vehicle_snapshots").select("registration,vehicle_id,observed_at,odometer_km").order("observed_at", { ascending: true }).limit(10000)
+      client.from("vehicle_assignments").select("vehicle_id,driver_id,active_from,active_until")
     ]);
-    const error = [drivers,vehicles,assignments,snapshots].find(x => x.error)?.error;
+    const error = [drivers,vehicles,assignments].find(x => x.error)?.error;
     if (error) throw error;
+    const snapshots = await client.from("cartrack_vehicle_snapshots")
+      .select("*").order("observed_at", { ascending: true }).limit(10000);
+    const snapshotRows = snapshots.error ? [] : (snapshots.data || []);
 
     const driverRows = drivers.data || [];
     const vehicleRows = vehicles.data || [];
     const assignmentRows = assignments.data || [];
-    const snapshotRows = snapshots.data || [];
     const today = new Date().toISOString().slice(0,10);
 
     const current = { service:0, online:0, offline:0, unknown:0 };
@@ -146,9 +147,13 @@
     const title = document.querySelector("#pageTitle")?.textContent?.trim();
     if (title !== "Utilização da Frota") return;
     const key = title + "|" + period;
-    if (!force && key === lastRenderKey) return;
-    lastRenderKey = key;
-    try { await load(); } catch (error) { console.error("S2T activity panel", error); }
+    if (!force && key === lastRenderKey && document.querySelector("#s2tUberActivityPanel")) return;
+    try {
+      await load();
+      lastRenderKey = key;
+    } catch (error) {
+      console.error("S2T activity panel", error);
+    }
   }
 
   const observer = new MutationObserver(() => renderWhenReady(false));

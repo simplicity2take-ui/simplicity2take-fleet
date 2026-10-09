@@ -43,19 +43,17 @@
 
   async function load() {
     const [drivers, vehicles, assignments] = await Promise.all([
-      client.from("drivers").select("id,name,uber_driver_uuid,uber_realtime_status,uber_status"),
-      client.from("vehicles").select("id,plate,brand,model"),
-      client.from("vehicle_assignments").select("vehicle_id,driver_id,active_from,active_until")
+      client.from("drivers").select("*"),
+      client.from("vehicles").select("*"),
+      client.from("vehicle_assignments").select("*")
     ]);
-    const error = [drivers,vehicles,assignments].find(x => x.error)?.error;
-    if (error) throw error;
+    const driverRows = drivers.error ? [] : (drivers.data || []);
+    const vehicleRows = vehicles.error ? [] : (vehicles.data || []);
+    const assignmentRows = assignments.error ? [] : (assignments.data || []);
     const snapshots = await client.from("cartrack_vehicle_snapshots")
       .select("*").order("observed_at", { ascending: true }).limit(10000);
     const snapshotRows = snapshots.error ? [] : (snapshots.data || []);
 
-    const driverRows = drivers.data || [];
-    const vehicleRows = vehicles.data || [];
-    const assignmentRows = assignments.data || [];
     const today = new Date().toISOString().slice(0,10);
 
     const current = { service:0, online:0, offline:0, unknown:0 };

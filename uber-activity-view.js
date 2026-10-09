@@ -156,8 +156,8 @@
 
   const observer = new MutationObserver(() => renderWhenReady(false));
   window.addEventListener("load", () => {
-    const target = document.querySelector("#content") || document.body;
-    observer.observe(target, { childList:true, subtree:true });
+    // Observe the whole app: the page title changes outside #content during navigation.
+    observer.observe(document.body, { childList:true, subtree:true, characterData:true });
     renderWhenReady(true);
   });
 })();

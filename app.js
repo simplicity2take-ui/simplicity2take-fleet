@@ -200,7 +200,7 @@ async function loadBackendData() {
     supabaseClient.from("cartrack_vehicle_snapshots").select("*").order("observed_at", { ascending: false }).limit(5000)
   ]);
 
-  const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult].find(result => result.error)?.error;
+  const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult].find(result => result.error)?.error;
   if (firstError) throw firstError;
 
   const assignments = assignmentsResult.data || [];

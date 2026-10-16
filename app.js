@@ -381,7 +381,12 @@ function companyDocuments() {
 
 function driverDocuments() {
   const driverId = currentUser().driverId;
-  return state.documents.filter(doc => doc.driverId === driverId);
+  const assignedVehicleIds = new Set(driverVehicles().map(vehicle => vehicle.id));
+  return state.documents.filter(doc =>
+    (Boolean(driverId) && doc.driverId === driverId) ||
+    (Boolean(doc.vehicleId) && assignedVehicleIds.has(doc.vehicleId)) ||
+    (Boolean(driverId) && !doc.driverId && (doc.viewerDriverIds || []).includes(driverId))
+  );
 }
 
 function driverVehicles() {
@@ -915,7 +920,7 @@ function renderDocuments() {
   selectors.content.innerHTML = `
     ${heading(
       admin ? "Gestão documental da empresa" : "Os meus documentos",
-      admin ? "Aqui ficam apenas os documentos da empresa. Documentos de viaturas e de motoristas são geridos nas respetivas áreas." : "Aqui ficam apenas os teus documentos pessoais/contratuais. Os documentos das viaturas estão em Meus Veículos.",
+      admin ? "Aqui ficam apenas os documentos da empresa. Documentos de viaturas e de motoristas são geridos nas respetivas áreas." : "Aqui ficam os teus documentos pessoais, os documentos das viaturas atribuídas e os documentos da empresa partilhados contigo.",
       admin ? `<button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>` : ""
     )}
     <section class="cards-grid">${documents.map(doc => documentCard(doc, admin)).join("") || emptyCard(admin ? "Ainda não existem documentos da empresa." : "Sem documentos para apresentar.")}</section>
@@ -2251,6 +2256,7 @@ function bindPortalEvents() {
 
   supabaseClient.auth.onAuthStateChange((event) => {
     if (event === "SIGNED_OUT") {
+      documentBlobCache.clear();
       state.sessionUserId = null;
       state.profile = null;
       selectors.appShell.classList.add("hidden");

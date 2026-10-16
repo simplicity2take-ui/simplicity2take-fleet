@@ -631,6 +631,7 @@ async function startAuthenticatedSession(user) {
 
 async function logout() {
   await supabaseClient.auth.signOut();
+  documentBlobCache.clear();
   state.sessionUserId = null;
   state.profile = null;
   selectors.appShell.classList.add("hidden");

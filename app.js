@@ -413,12 +413,7 @@ function alertLevel(doc) {
 function visibleDocuments() {
   const user = currentUser();
   if (user.role === "admin") return state.documents;
-
-  const assignedVehicleIds = new Set(driverVehicles().map(vehicle => vehicle.id));
-  return state.documents.filter(doc =>
-    doc.driverId === user.driverId ||
-    (doc.vehicleId && assignedVehicleIds.has(doc.vehicleId))
-  );
+  return driverDocuments();
 }
 
 function showToast(message) {

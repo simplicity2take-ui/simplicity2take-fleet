@@ -296,6 +296,34 @@ Deno.serve(async (req) => {
           }
         }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
       }
+      // Enforce the same safety checks on the server, not only in the UI.
+      // Authenticated clients must not be able to bypass the preview/confirmation guard.
+      const eligibleForImport = driverRows.filter((r: any) =>
+        String(r["UUID do motorista"] || "").trim() &&
+        ["ACTIVE", "ACCEPTED"].includes(String(r["Estado"] || "").trim().toUpperCase())
+      );
+      const existingForImport = await getRestRows("drivers?select=id,email,phone,uber_driver_uuid&limit=1000");
+      const seenImportUuids = new Set<string>();
+      let importDuplicateUuidRows = 0;
+      let importAmbiguousMatches = 0;
+      for (const row of eligibleForImport as any[]) {
+        const uuid = String(row["UUID do motorista"] || "").trim();
+        if (seenImportUuids.has(uuid)) importDuplicateUuidRows++;
+        seenImportUuids.add(uuid);
+        const email = String(row["E-mail do motorista"] || "").trim().toLowerCase();
+        const phone = normalizePhone(row["Telemóvel"] || "");
+        const candidates = (existingForImport as any[]).filter(driver =>
+          (uuid && driver.uber_driver_uuid === uuid) ||
+          (email && String(driver.email || "").trim().toLowerCase() === email) ||
+          (phone && normalizePhone(driver.phone || "") === phone)
+        );
+        if (new Set(candidates.map(driver => String(driver.id))).size > 1) importAmbiguousMatches++;
+      }
+      if (importAmbiguousMatches > 0 || importDuplicateUuidRows > 0) {
+        throw new Error("Importação bloqueada no servidor: " + importAmbiguousMatches +
+          " correspondências ambíguas e " + importDuplicateUuidRows +
+          " linhas com UUID repetido. Reveja o CSV e corrija os conflitos antes de voltar a tentar.");
+      }
       const normalized = driverRows.map(r => ({
         uber_driver_uuid: r["UUID do motorista"],
         status: r["Estado"],

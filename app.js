@@ -463,6 +463,17 @@ function openRecruitment() {
 }
 
 function closeRecruitment() {
+  // Clear candidate contact details, conversation and selected file objects when leaving the public application flow.
+  state.recruiterSession = {
+    candidate: {},
+    documents: [],
+    files: [],
+    conversation: [],
+    submitted: false
+  };
+  if (selectors.candidateDocuments) selectors.candidateDocuments.value = "";
+  if (selectors.recruiterInput) selectors.recruiterInput.value = "";
+  if (selectors.recruiterChatLog) selectors.recruiterChatLog.replaceChildren();
   selectors.recruitmentScreen.classList.add("hidden");
   selectors.loginScreen.classList.remove("hidden");
 }

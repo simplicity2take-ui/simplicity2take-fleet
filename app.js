@@ -2103,10 +2103,21 @@ async function handleAdminAction(action) {
     }
     if (action.type === "delete-vehicle") {
       if (!confirm("Eliminar esta viatura do portal?")) return;
-      await supabaseClient.from("vehicle_assignments").delete().eq("vehicle_id", action.id);
-      const { error } = await supabaseClient.from("vehicles").delete().eq("id", action.id);
+      const { error: assignmentError } = await supabaseClient
+        .from("vehicle_assignments")
+        .delete()
+        .eq("vehicle_id", action.id);
+      if (assignmentError) throw assignmentError;
+
+      const { error } = await supabaseClient
+        .from("vehicles")
+        .delete()
+        .eq("id", action.id);
       if (error) throw error;
-      await loadBackendData(); renderApp(); showToast("Viatura eliminada.");
+
+      await loadBackendData();
+      renderApp();
+      showToast("Viatura eliminada.");
     }
     if (action.type === "delete-driver") {
       const driver = state.drivers.find(item => item.id === action.id);

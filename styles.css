@@ -926,6 +926,18 @@ dialog .modal-card {
   gap: 0.65rem;
 }
 
+.warning-note {
+  margin: 0.75rem 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #f2cf8a;
+  border-left: 4px solid var(--warning);
+  border-radius: 0.4rem;
+  background: #fff8e8;
+  color: #75420e;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
 .settings-row {
   display: flex;
   align-items: center;

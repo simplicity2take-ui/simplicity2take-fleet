@@ -330,6 +330,15 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, match => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[match]);
 }
 
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(String(value ?? ""));
+    return url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
 function makeId(prefix) {
   return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -1024,7 +1033,8 @@ function renderApplications() {
                     <strong>Documentos</strong>
                     <ul>${application.documents.map(doc => {
                       const item = typeof doc === "string" ? { name: doc, url: "" } : doc;
-                      return `<li>${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.name)}</a>` : escapeHtml(item.name)}</li>`;
+                      const safeUrl = safeExternalUrl(item.url);
+                      return `<li>${safeUrl ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.name)}</a>` : escapeHtml(item.name)}</li>`;
                     }).join("")}</ul>
                   </div>
                 ` : ""}

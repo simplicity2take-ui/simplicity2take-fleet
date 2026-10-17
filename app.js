@@ -303,7 +303,11 @@ async function loadBackendData() {
       availability: valueOf(row, "availability"),
       schedulePreference: valueOf(row, "schedule_preference")
     },
-    documents: applicationDocuments.filter(doc => doc.application_id === row.id).map(doc => doc.original_file_name),
+    documents: applicationDocuments.filter(doc => doc.application_id === row.id).map(doc => ({
+      name: doc.original_file_name || "Documento",
+      url: doc.drive_web_view_link || "",
+      mimeType: doc.mime_type || ""
+    })),
     status: valueOf(row, "status") || "Nova",
     summary: valueOf(row, "ai_summary", "summary") || "Candidatura recebida.",
     conversation: applicationMessages.filter(message => message.application_id === row.id).map(message => ({
@@ -1015,6 +1019,21 @@ function renderApplications() {
                 <strong>${escapeHtml(candidate.name || "Candidato sem nome")}</strong>
                 <div class="muted">${escapeHtml(candidate.email || "")} · ${escapeHtml(candidate.phone || "")}</div>
                 <p>${escapeHtml(application.summary || "Candidatura recebida.")}</p>
+                ${(application.documents || []).length ? `
+                  <div class="application-documents">
+                    <strong>Documentos</strong>
+                    <ul>${application.documents.map(doc => {
+                      const item = typeof doc === "string" ? { name: doc, url: "" } : doc;
+                      return `<li>${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.name)}</a>` : escapeHtml(item.name)}</li>`;
+                    }).join("")}</ul>
+                  </div>
+                ` : ""}
+                ${(application.conversation || []).length ? `
+                  <details class="application-conversation">
+                    <summary>Ver conversa (${application.conversation.length} mensagens)</summary>
+                    <ol>${application.conversation.map(message => `<li><strong>${escapeHtml(message.role === "candidate" ? "Candidato" : message.role === "admin" ? "Administrador" : "S2T AI Recruiter")}:</strong> ${escapeHtml(message.text || "")}</li>`).join("")}</ol>
+                  </details>
+                ` : ""}
               </div>
               <div class="application-meta">
                 <span class="tag">${escapeHtml(application.status || "Nova")}</span>

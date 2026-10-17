@@ -1422,7 +1422,7 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
       `Viagens concluídas: ${result.completedTrips ?? 0}`,
       "",
       "Esta pré-visualização não guardou nem alterou dados."
-    ].join("\\n"));
+    ].join("\n"));
     return data;
   }
   await loadBackendData();

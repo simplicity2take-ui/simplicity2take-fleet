@@ -1234,6 +1234,11 @@ function renderActivity() {
     .slice(0, periodDays);
 
   const cartrackRows = rows.filter(row => row.cartrack);
+  const cartrackIsStale = item => {
+    const syncedAt = item?.lastSyncedAt ? new Date(item.lastSyncedAt).getTime() : 0;
+    return !Number.isFinite(syncedAt) || syncedAt <= 0 || Date.now() - syncedAt > 30 * 60 * 1000;
+  };
+  const staleCartrackRows = cartrackRows.filter(row => cartrackIsStale(row.cartrack));
   const statusLabel = item => item?.idling === true
     ? "Parado"
     : Number(item?.speedKmh) > 0
@@ -1247,6 +1252,7 @@ function renderActivity() {
 
     <section class="status-strip">
       ${metric("Viaturas Cartrack", cartrackRows.length)}
+      ${metric("Cartrack desatualizada", staleCartrackRows.length)}
       ${metric("Eventos Bolt", summary.events.length)}
       ${metric("Viagens Bolt", completedTrips)}
       ${metric("Distância Bolt (km)", totalDistance ? totalDistance.toFixed(1) : "0")}
@@ -1255,26 +1261,27 @@ function renderActivity() {
     <section class="content-grid">
       <article class="panel">
         <div class="panel-heading">
-          <h2>Estado atual das viaturas</h2>
-          <span class="tag active">Cartrack</span>
+          <h2>Última leitura das viaturas</h2>
+          <span class="tag ${staleCartrackRows.length ? "expiring" : "active"}">${staleCartrackRows.length ? "Há dados antigos" : "Dados recentes"}</span>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Viatura</th><th>Estado</th><th>Odómetro</th><th>Velocidade</th><th>Atualizado</th></tr></thead>
+          <thead><tr><th>Viatura</th><th>Estado Cartrack</th><th>Odómetro</th><th>Velocidade</th><th>Última leitura</th><th>Sincronização</th></tr></thead>
           <tbody>
             ${cartrackRows.map(row => {
               const item = row.cartrack;
               return `
                 <tr>
                   <td><strong>${escapeHtml(row.vehicle.plate)}</strong><br><span class="section-copy">${escapeHtml(row.vehicle.brand)} ${escapeHtml(row.vehicle.model)}</span></td>
-                  <td><span class="tag active">${escapeHtml(statusLabel(item))}</span></td>
+                  <td><span class="tag ${cartrackIsStale(item) ? "expiring" : "active"}">${escapeHtml(statusLabel(item))}</span></td>
                   <td>${item.odometerKm != null ? Number(item.odometerKm).toFixed(1) + " km" : "—"}</td>
                   <td>${item.speedKmh != null ? Number(item.speedKmh).toFixed(1) + " km/h" : "—"}</td>
                   <td>${item.eventTs ? new Date(item.eventTs).toLocaleString("pt-PT") : "—"}</td>
+                  <td><span class="tag ${cartrackIsStale(item) ? "expiring" : "active"}">${cartrackIsStale(item) ? "Desatualizada" : "Recente"}</span><br><span class="section-copy">${item.lastSyncedAt ? new Date(item.lastSyncedAt).toLocaleString("pt-PT") : "Sem sincronização"}</span></td>
                 </tr>`;
             }).join("") || emptyRow("Ainda não existem dados Cartrack.")}
           </tbody>
         </table></div>
-        <p class="section-copy" style="margin-top:14px">O odómetro Cartrack é a quilometragem da telemática. A distância Bolt é apresentada separadamente e não é usada como quilometragem total.</p>
+        <p class="section-copy" style="margin-top:14px">A indicação “Recente” exige uma sincronização nos últimos 30 minutos. Se estiver desatualizada, o estado apresentado é apenas a última leitura guardada, não a situação em tempo real. O odómetro Cartrack é telemático; a distância Bolt é apresentada separadamente.</p>
       </article>
 
       <article class="panel">

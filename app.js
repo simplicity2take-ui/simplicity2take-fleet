@@ -2297,7 +2297,7 @@ function bindPortalEvents() {
   });
 
   selectors.form?.addEventListener("submit", submitModal);
-  selectors.recruiterForm?.addEventListener("submit", event => {
+  selectors.recruiterForm?.addEventListener("submit", async event => {
     event.preventDefault();
     const submitButton = selectors.recruiterForm.querySelector('button[type="submit"]');
     submitButton.disabled = true;

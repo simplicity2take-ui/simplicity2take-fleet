@@ -291,8 +291,8 @@ async function loadBackendData() {
     id: row.id,
     candidate: {
       name: valueOf(row, "candidate_name", "full_name", "name"),
-      phone: valueOf(row, "phone"),
-      email: valueOf(row, "email"),
+      phone: valueOf(row, "candidate_phone", "phone"),
+      email: valueOf(row, "candidate_email", "email"),
       tvdeCertificate: valueOf(row, "tvde_certificate"),
       drivingLicense: valueOf(row, "driving_license"),
       tvdeExperience: valueOf(row, "tvde_experience"),
@@ -301,7 +301,7 @@ async function loadBackendData() {
     },
     documents: [],
     status: valueOf(row, "status") || "Nova",
-    summary: valueOf(row, "summary") || "Candidatura recebida.",
+    summary: valueOf(row, "ai_summary", "summary") || "Candidatura recebida.",
     conversation: valueOf(row, "conversation") || [],
     raw: row
   }));

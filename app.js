@@ -1406,7 +1406,20 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
   if (!data?.ok) throw new Error(data?.error || "Não foi possível importar o relatório Uber.");
   if (dryRun) {
     const result = data.result || {};
-    alert([
+    const lines = type === "status" ? [
+      "PRÉ-VISUALIZAÇÃO — ESTADO DOS MOTORISTAS UBER",
+      "",
+      `Linhas no CSV: ${result.totalRows ?? 0}`,
+      `Linha(s) da própria empresa ignorada(s): ${result.organizationRowsSkipped ?? 0}`,
+      `Motoristas elegíveis (ACTIVE/ACCEPTED): ${result.eligibleRows ?? 0}`,
+      `Correspondências com motoristas existentes: ${result.matchedExisting ?? 0}`,
+      `Novos registos que seriam criados: ${result.wouldCreate ?? 0}`,
+      `Correspondências ambíguas (rever antes de importar): ${result.ambiguousMatches ?? 0}`,
+      `Linhas ignoradas por estado/UUID: ${result.skippedRows ?? 0}`,
+      `UUIDs repetidos no CSV: ${result.duplicateUuidRows ?? 0}`,
+      "",
+      "Esta pré-visualização não guardou nem alterou dados."
+    ] : [
       "PRÉ-VISUALIZAÇÃO — VIAGENS UBER",
       "",
       `Linhas no CSV: ${result.totalRows ?? 0}`,
@@ -1422,13 +1435,14 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
       `Viagens concluídas: ${result.completedTrips ?? 0}`,
       "",
       "Esta pré-visualização não guardou nem alterou dados."
-    ].join("\n"));
+    ];
+    alert(lines.join("\\n"));
     return data;
   }
   await loadBackendData();
   renderApp();
   const saved = data.result?.saved ?? 0;
-  if (type === "status") showToast(`Uber: ${data.result?.matched ?? 0} atualizados, ${data.result?.created ?? 0} novos.`);
+  if (type === "status") showToast(`Uber: ${data.result?.matched ?? 0} atualizados, ${data.result?.created ?? 0} novos; ${data.result?.organizationRowsSkipped ?? 0} linha(s) da empresa ignorada(s).`);
   else if (type === "trip_activity") showToast(`Uber: ${saved} viagens importadas; ${data.result?.linkedDrivers ?? 0} ligadas a motoristas e ${data.result?.linkedVehicles ?? 0} a viaturas; ${data.result?.duplicateRowsInCsv ?? 0} linhas repetidas ignoradas.`);
   else showToast(`Relatório Uber importado: ${saved} registos.`);
 }
@@ -1523,6 +1537,7 @@ function renderSettings() {
                 <input id="uberStatusCsv" type="file" accept=".csv,text/csv">
               </label>
               <button class="secondary-button" type="button" data-uber-import-status>Importar estado Uber</button>
+              <button class="secondary-button" type="button" data-uber-preview-status>Pré-visualizar estado Uber (sem guardar)</button>
 
               <label class="file-upload-row">Atividade do motorista (CSV)
                 <input id="uberActivityCsv" type="file" accept=".csv,text/csv">
@@ -2370,6 +2385,7 @@ function bindPortalEvents() {
     if (target.dataset.cartrackSync !== undefined) return syncCartrack();
     const uberReportActions = {
       uberImportStatus: ["status", "#uberStatusCsv", "Não foi possível importar o estado Uber."],
+      uberPreviewStatus: ["status", "#uberStatusCsv", "Não foi possível pré-visualizar o estado Uber.", true],
       uberImportActivity: ["activity", "#uberActivityCsv", "Não foi possível importar a atividade Uber."],
       uberImportTripActivity: ["trip_activity", "#uberTripActivityCsv", "Não foi possível importar as viagens Uber."],
       uberPreviewTripActivity: ["trip_activity", "#uberTripActivityCsv", "Não foi possível pré-visualizar as viagens Uber.", true],

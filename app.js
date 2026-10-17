@@ -333,7 +333,8 @@ function escapeHtml(value) {
 function safeExternalUrl(value) {
   try {
     const url = new URL(String(value ?? ""));
-    return url.protocol === "https:" ? url.href : "";
+    const trustedHosts = new Set(["drive.google.com", "docs.google.com"]);
+    return url.protocol === "https:" && trustedHosts.has(url.hostname.toLowerCase()) ? url.href : "";
   } catch {
     return "";
   }

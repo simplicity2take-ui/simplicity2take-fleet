@@ -114,6 +114,7 @@ const state = {
   ],
   recruiterSession: null,
   activityEvents: [],
+  activityPeriodDays: 7,
   tripRecords: [],
   cartrackVehicles: [],
   cartrackSnapshots: []
@@ -1198,7 +1199,10 @@ function boltActivitySummary(days = 7) {
 function renderActivity() {
   selectors.pageTitle.textContent = "Utilização da Frota";
 
-  const summary = boltActivitySummary(7);
+  const periodDays = [1, 7, 30].includes(Number(state.activityPeriodDays)) ? Number(state.activityPeriodDays) : 7;
+  state.activityPeriodDays = periodDays;
+  const periodLabel = periodDays === 1 ? "Últimas 24 horas" : `Últimos ${periodDays} dias`;
+  const summary = boltActivitySummary(periodDays);
   const completed = trip => {
     const status = String(trip.status || "").toLowerCase();
     return !status || /(complete|finished|success|done|completed|drop)/.test(status);
@@ -1227,7 +1231,7 @@ function renderActivity() {
 
   const dayRows = [...summary.grouped.entries()]
     .sort((a,b) => b[0].localeCompare(a[0]))
-    .slice(0, 7);
+    .slice(0, periodDays);
 
   const cartrackRows = rows.filter(row => row.cartrack);
   const statusLabel = item => item?.idling === true
@@ -1239,13 +1243,13 @@ function renderActivity() {
         : "Sem estado";
 
   selectors.content.innerHTML = `
-    ${heading("Utilização da frota", "Cartrack: estado atual e quilometragem real. Bolt: atividade e viagens quando disponíveis.", '<button class="primary-button" type="button" data-bolt-activity-sync>Atualizar atividade Bolt</button>')}
+    ${heading("Utilização da frota", "Cartrack: estado atual e quilometragem real. Bolt: atividade e viagens no período selecionado.", `<div class="row-actions"><button class="${periodDays === 1 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="1">24 horas</button><button class="${periodDays === 7 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="7">7 dias</button><button class="${periodDays === 30 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="30">30 dias</button><button class="secondary-button" type="button" data-bolt-activity-sync>Atualizar Bolt</button></div>`)}
 
     <section class="status-strip">
       ${metric("Viaturas Cartrack", cartrackRows.length)}
       ${metric("Eventos Bolt", summary.events.length)}
       ${metric("Viagens Bolt", completedTrips)}
-      ${metric("Distância Bolt", totalDistance ? totalDistance.toFixed(1) : "0")}
+      ${metric("Distância Bolt (km)", totalDistance ? totalDistance.toFixed(1) : "0")}
     </section>
 
     <section class="content-grid">
@@ -1274,7 +1278,7 @@ function renderActivity() {
       </article>
 
       <article class="panel">
-        <div class="panel-heading"><h2>Atividade Bolt</h2><span class="tag">Últimos 7 dias</span></div>
+        <div class="panel-heading"><h2>Atividade Bolt</h2><span class="tag">${escapeHtml(periodLabel)}</span></div>
         <div class="table-wrap"><table>
           <thead><tr><th>Dia</th><th>Online</th><th>Em serviço</th><th>Viagens</th><th>Distância</th></tr></thead>
           <tbody>
@@ -1310,7 +1314,7 @@ async function syncBoltActivity() {
   const button = document.querySelector("[data-bolt-activity-sync]");
   if (button) { button.disabled = true; button.textContent = "A recolher atividade Bolt…"; }
   try {
-    const { data, error } = await supabaseClient.functions.invoke("bolt-activity-sync", { body: { days: 7 } });
+    const { data, error } = await supabaseClient.functions.invoke("bolt-activity-sync", { body: { days: state.activityPeriodDays || 7 } });
     if (error) throw error;
     if (!data?.ok) throw new Error(data?.error || "A sincronização da atividade Bolt falhou.");
     await loadBackendData(); renderApp();
@@ -2316,6 +2320,11 @@ function bindPortalEvents() {
     if (target.dataset.deleteDocument) return handleAdminAction({type:"delete-document",id:target.dataset.deleteDocument});
     if (target.dataset.requestPassword) return copyPasswordRequest();
     if (target.dataset.boltSync !== undefined) return syncBolt();
+    if (target.dataset.activityDays !== undefined) {
+      const days = Number(target.dataset.activityDays);
+      if ([1, 7, 30].includes(days)) { state.activityPeriodDays = days; renderActivity(); }
+      return;
+    }
     if (target.dataset.boltActivitySync !== undefined) return syncBoltActivity();
     if (target.dataset.cartrackSync !== undefined) return syncCartrack();
     const uberReportActions = {

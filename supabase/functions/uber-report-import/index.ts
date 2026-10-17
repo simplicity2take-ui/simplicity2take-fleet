@@ -258,6 +258,7 @@ Deno.serve(async (req) => {
         );
         const skippedRows = driverRows.length - eligibleRows.length;
         const seenUuids = new Set<string>();
+        const matchedDriverIds = new Set<string>();
         let duplicateUuidRows = 0, matchedExisting = 0, wouldCreate = 0, ambiguousMatches = 0;
         const existingDrivers = await getRestRows("drivers?select=id,email,phone,uber_driver_uuid&limit=1000");
         for (const row of eligibleRows as any[]) {
@@ -272,12 +273,17 @@ Deno.serve(async (req) => {
             (phone && normalizePhone(driver.phone || "") === phone)
           );
           const candidateIds = new Set(candidates.map(driver => String(driver.id)));
-          // A UUID match does not make conflicting email/phone matches safe:
-          // the RPC can update the UUID-matched record with another driver's contact details.
+          // A UUID match does not make conflicting email/phone matches safe.
+          // Also prevent two distinct report rows from claiming the same internal driver.
           if (candidateIds.size > 1) {
             ambiguousMatches++;
           } else if (candidateIds.size === 1) {
-            matchedExisting++;
+            const matchedId = Array.from(candidateIds)[0];
+            if (matchedDriverIds.has(matchedId)) ambiguousMatches++;
+            else {
+              matchedDriverIds.add(matchedId);
+              matchedExisting++;
+            }
           } else {
             wouldCreate++;
           }
@@ -304,6 +310,7 @@ Deno.serve(async (req) => {
       );
       const existingForImport = await getRestRows("drivers?select=id,email,phone,uber_driver_uuid&limit=1000");
       const seenImportUuids = new Set<string>();
+      const seenImportDriverIds = new Set<string>();
       let importDuplicateUuidRows = 0;
       let importAmbiguousMatches = 0;
       for (const row of eligibleForImport as any[]) {
@@ -317,7 +324,14 @@ Deno.serve(async (req) => {
           (email && String(driver.email || "").trim().toLowerCase() === email) ||
           (phone && normalizePhone(driver.phone || "") === phone)
         );
-        if (new Set(candidates.map(driver => String(driver.id))).size > 1) importAmbiguousMatches++;
+        const candidateIds = new Set(candidates.map(driver => String(driver.id)));
+        if (candidateIds.size > 1) {
+          importAmbiguousMatches++;
+        } else if (candidateIds.size === 1) {
+          const matchedId = Array.from(candidateIds)[0];
+          if (seenImportDriverIds.has(matchedId)) importAmbiguousMatches++;
+          else seenImportDriverIds.add(matchedId);
+        }
       }
       if (importAmbiguousMatches > 0 || importDuplicateUuidRows > 0) {
         throw new Error("Importação bloqueada no servidor: " + importAmbiguousMatches +

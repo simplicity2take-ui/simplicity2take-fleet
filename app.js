@@ -2293,7 +2293,7 @@ function bindPortalEvents() {
   });
 
   document.addEventListener("click", async event => {
-    const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-open-vehicle-doc],[data-doc-driver],[data-open-document-id],[data-edit-document-id],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password],[data-bolt-activity-sync]");
+    const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-open-vehicle-doc],[data-doc-driver],[data-open-document-id],[data-edit-document-id],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password],[data-bolt-activity-sync],[data-cartrack-sync],[data-bolt-sync]");
     if (!target) return;
 
     const view = target.dataset.view;

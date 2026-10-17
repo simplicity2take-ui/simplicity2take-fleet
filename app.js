@@ -2367,6 +2367,7 @@ function bindPortalEvents() {
     if (target.id === "workWithUsButton") return openRecruitment();
     if (target.id === "backToLoginButton") return closeRecruitment();
     if (target.id === "closeModal" || target.id === "cancelModal") return selectors.modal?.close();
+    if (target.id === "closeUberTripPreview" || target.id === "closeUberTripPreviewButton") return document.querySelector("#uberTripPreviewModal")?.close();
     if (target.id === "closeQrModal") return document.querySelector("#qrModal")?.close();
     if (target.id === "printQrButton") return printQr();
   });

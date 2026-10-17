@@ -1436,7 +1436,7 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
       "",
       "Esta pré-visualização não guardou nem alterou dados."
     ];
-    alert(lines.join("\\n"));
+    alert(lines.join("\n"));
     return data;
   }
   await loadBackendData();

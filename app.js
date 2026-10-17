@@ -1531,6 +1531,7 @@ function renderSettings() {
               <strong>Fleet Hub / Relatórios</strong>
               <p>O relatório <strong>Estado do motorista</strong> atualiza o estado Uber e o UUID de cada motorista. O relatório <strong>Atividade do motorista</strong> guarda viagens e tempos do período.</p>
               <p>O importador usa o UUID Uber e, quando necessário, email/telefone para fazer a correspondência sem duplicar motoristas.</p>
+              <p class="warning-note"><strong>Antes de importar:</strong> os registos que correspondam a motoristas existentes podem também atualizar o nome, email e telefone com os valores do relatório Uber. Pré-visualiza primeiro e confirma os dados antes de importar.</p>
             </div>
             <div class="settings-list">
               <label class="file-upload-row">Estado do motorista (CSV)

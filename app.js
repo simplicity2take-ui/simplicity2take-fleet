@@ -187,20 +187,22 @@ function valueOf(row, ...keys) {
 }
 
 async function loadBackendData() {
-  const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult] = await Promise.all([
+  const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult] = await Promise.all([
     supabaseClient.from("drivers").select("*"),
     supabaseClient.from("vehicles").select("*"),
     supabaseClient.from("vehicle_assignments").select("*"),
     supabaseClient.from("documents").select("*"),
     supabaseClient.from("document_viewers").select("*"),
     supabaseClient.from("applications").select("*").order("created_at", { ascending: false }),
+    supabaseClient.from("application_documents").select("*"),
+    supabaseClient.from("application_messages").select("*").order("created_at", { ascending: true }),
     supabaseClient.from("platform_activity_events").select("*").eq("platform", "bolt").order("observed_at", { ascending: false }).limit(5000),
     supabaseClient.from("platform_trip_records").select("*").eq("platform", "bolt").order("observed_at", { ascending: false }).limit(5000),
     supabaseClient.from("cartrack_vehicles").select("*").order("registration"),
     supabaseClient.from("cartrack_vehicle_snapshots").select("*").order("observed_at", { ascending: false }).limit(5000)
   ]);
 
-  const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult].find(result => result.error)?.error;
+  const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult].find(result => result.error)?.error;
   if (firstError) throw firstError;
 
   const assignments = assignmentsResult.data || [];
@@ -287,6 +289,8 @@ async function loadBackendData() {
     status: row.order_status, acceptedAt: row.accepted_at, pickupAt: row.pickup_at,
     dropoffAt: row.dropoff_at, finishedAt: row.finished_at, distance: row.ride_distance_km, observedAt: row.observed_at
   }));
+  const applicationDocuments = applicationDocumentsResult.data || [];
+  const applicationMessages = applicationMessagesResult.data || [];
   state.applications = (applicationsResult.data || []).map(row => ({
     id: row.id,
     candidate: {
@@ -299,10 +303,13 @@ async function loadBackendData() {
       availability: valueOf(row, "availability"),
       schedulePreference: valueOf(row, "schedule_preference")
     },
-    documents: [],
+    documents: applicationDocuments.filter(doc => doc.application_id === row.id).map(doc => doc.original_file_name),
     status: valueOf(row, "status") || "Nova",
     summary: valueOf(row, "ai_summary", "summary") || "Candidatura recebida.",
-    conversation: valueOf(row, "conversation") || [],
+    conversation: applicationMessages.filter(message => message.application_id === row.id).map(message => ({
+      role: message.sender_role === "candidate" ? "candidate" : message.sender_role === "admin" ? "admin" : "assistant",
+      text: message.message
+    })),
     raw: row
   }));
   state.backendReady = true;
@@ -450,6 +457,7 @@ function startRecruiterSession() {
   state.recruiterSession = {
     candidate: {},
     documents: [],
+    files: [],
     conversation: [],
     submitted: false
   };
@@ -477,7 +485,7 @@ function nextRecruiterField() {
   return recruiterFields.find(([key]) => !state.recruiterSession.candidate[key]);
 }
 
-function answerRecruiter(input) {
+async function answerRecruiter(input) {
   const text = input.trim();
   if (!text || state.recruiterSession.submitted) return;
   addRecruiterMessage("candidate", text);
@@ -491,7 +499,7 @@ function answerRecruiter(input) {
   }
 
   if (text.toLowerCase() === "confirmar") {
-    submitRecruiterApplication();
+    await submitRecruiterApplication();
     return;
   }
 
@@ -540,23 +548,64 @@ Preferência de horário: ${c.schedulePreference}
 Documentos: ${state.recruiterSession.documents.join(", ") || "sem documentos enviados"}`;
 }
 
-function submitRecruiterApplication() {
+async function submitRecruiterApplication() {
   const missing = nextRecruiterField();
   if (missing) {
     addRecruiterMessage("assistant", `Ainda falta indicar: ${missing[1]}.`);
     return;
   }
-  const application = {
-    id: makeId("app"),
-    candidate: { ...state.recruiterSession.candidate },
-    documents: [...state.recruiterSession.documents],
-    status: "Nova",
-    summary: recruiterSummaryText().replace(/\n/g, " · "),
-    conversation: [...state.recruiterSession.conversation]
-  };
-  state.applications.unshift(application);
-  state.recruiterSession.submitted = true;
-  addRecruiterMessage("assistant", "Candidatura submetida. O Administrador irá analisar o resumo, documentos e conversa.");
+
+  const files = state.recruiterSession.files || [];
+  if (files.length > 3) {
+    addRecruiterMessage("assistant", "Pode enviar no máximo 3 documentos.");
+    return;
+  }
+  for (const file of files) {
+    if (!["application/pdf", "image/jpeg", "image/png"].includes(file.type)) {
+      addRecruiterMessage("assistant", "Só são permitidos documentos PDF, JPG ou PNG.");
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      addRecruiterMessage("assistant", "Cada documento deve ter no máximo 4 MB.");
+      return;
+    }
+  }
+
+  addRecruiterMessage("assistant", "A submeter a candidatura e a guardar os documentos em segurança…");
+  try {
+    const uploadedFiles = await Promise.all(files.map(async file => ({
+      fileName: file.name,
+      mimeType: file.type,
+      base64: await fileToBase64(file)
+    })));
+    const conversation = state.recruiterSession.conversation.slice(0, -1);
+    const { data, error } = await supabaseClient.functions.invoke("public-application-submit", {
+      body: {
+        candidate: { ...state.recruiterSession.candidate },
+        files: uploadedFiles,
+        conversation
+      }
+    });
+    if (error) throw error;
+    if (!data?.ok || !data?.applicationId) {
+      throw new Error(data?.error || "Não foi possível confirmar a candidatura.");
+    }
+
+    const application = {
+      id: data.applicationId,
+      candidate: { ...state.recruiterSession.candidate },
+      documents: files.map(file => file.name),
+      status: "Nova",
+      summary: recruiterSummaryText().replace(/\n/g, " · "),
+      conversation
+    };
+    state.applications.unshift(application);
+    state.recruiterSession.submitted = true;
+    addRecruiterMessage("assistant", "Candidatura submetida com sucesso. Os dados e documentos foram guardados para análise pelo Administrador.");
+  } catch (error) {
+    console.error("Erro ao submeter candidatura:", error);
+    addRecruiterMessage("assistant", error?.message || "Não foi possível submeter a candidatura. Os dados continuam nesta sessão; tente novamente.");
+  }
 }
 
 function renderLogin() {
@@ -2250,14 +2299,26 @@ function bindPortalEvents() {
   selectors.form?.addEventListener("submit", submitModal);
   selectors.recruiterForm?.addEventListener("submit", event => {
     event.preventDefault();
-    answerRecruiter(selectors.recruiterInput.value);
-    selectors.recruiterInput.value = "";
-    selectors.recruiterInput.focus();
+    const submitButton = selectors.recruiterForm.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    try {
+      await answerRecruiter(selectors.recruiterInput.value);
+      selectors.recruiterInput.value = "";
+    } finally {
+      submitButton.disabled = false;
+      selectors.recruiterInput.focus();
+    }
   });
   selectors.candidateDocuments?.addEventListener("change", event => {
     const files = [...(event.target.files || [])];
-    state.recruiterSession.documents = files.map(file => file.name);
-    if (files.length) addRecruiterMessage("assistant", `${files.length} documento(s) recebido(s): ${files.map(file => file.name).join(", ")}. Quando estiver pronto, escreva Confirmar.`);
+    state.recruiterSession.files = files.slice(0, 3);
+    state.recruiterSession.documents = state.recruiterSession.files.map(file => file.name);
+    if (files.length > 3) addRecruiterMessage("assistant", "Só pode selecionar até 3 documentos. Foram considerados os primeiros 3.");
+    if (state.recruiterSession.files.some(file => file.size > 4 * 1024 * 1024)) {
+      addRecruiterMessage("assistant", "Cada documento deve ter no máximo 4 MB.");
+    } else if (files.length) {
+      addRecruiterMessage("assistant", `${state.recruiterSession.files.length} documento(s) selecionado(s): ${state.recruiterSession.documents.join(", ")}. Os ficheiros serão carregados quando confirmar a candidatura.`);
+    }
   });
 
   supabaseClient.auth.onAuthStateChange((event) => {

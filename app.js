@@ -836,7 +836,7 @@ function vehicleDocumentSlot(vehicle, type, label) {
   if (!doc) {
     return `<div class="vehicle-document-slot missing">
       <div><strong>${escapeHtml(label)}</strong><small>Não carregado</small></div>
-      ${currentUser().role === "admin" ? `<button class="mini-button" type="button" data-open-vehicle-doc="${vehicle.id}" data-doc-type="${escapeHtml(type)}">+ Documento</button>` : ""}
+      ${currentUser().role === "admin" ? `<button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}" data-doc-type="${escapeHtml(type)}">+ Documento</button>` : ""}
     </div>`;
   }
   const level = alertLevel(doc);
@@ -845,7 +845,7 @@ function vehicleDocumentSlot(vehicle, type, label) {
     <div><strong>${escapeHtml(label)}</strong><small>${escapeHtml(doc.name)}</small></div>
     <div class="vehicle-document-slot-actions">
       <span class="tag ${cls}">${escapeHtml(level)}</span>
-      <button class="mini-button" type="button" data-open-doc="${doc.id}">Ver</button>
+      <button class="mini-button" type="button" data-open-doc="${escapeHtml(doc.id)}">Ver</button>
     </div>
   </div>`;
 }
@@ -861,7 +861,7 @@ function vehicleDocumentsPanel(vehicle, compact = false) {
   return `<div class="vehicle-documents-panel ${compact ? "compact" : ""}">
     <div class="panel-heading">
       <div><h3>Documentos da viatura</h3><p class="section-copy">Tudo fica associado a esta viatura.</p></div>
-      ${currentUser().role === "admin" ? `<button class="mini-button" type="button" data-open-vehicle-doc="${vehicle.id}">+ Documento</button>` : ""}
+      ${currentUser().role === "admin" ? `<button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}">+ Documento</button>` : ""}
     </div>
     <div class="vehicle-document-slots">
       ${slots.map(([type, label]) => vehicleDocumentSlot(vehicle, type, label)).join("")}
@@ -931,7 +931,7 @@ function vehicleRow(vehicle, admin) {
         const level = alertLevel(doc);
         const cls = level === "Expirado" ? "inactive" : level === "OK" ? "active" : level === "Sem validade" ? "" : "expiring";
         return `
-          <button class="document-mini-link" type="button" data-open-doc="${doc.id}" title="${escapeHtml(doc.name)} — validade: ${escapeHtml(doc.expiryDate || "sem validade")}">
+          <button class="document-mini-link" type="button" data-open-doc="${escapeHtml(doc.id)}" title="${escapeHtml(doc.name)} — validade: ${escapeHtml(doc.expiryDate || "sem validade")}">
             <span class="tag ${cls}">${escapeHtml(label)}</span>
           </button>
         `;
@@ -947,7 +947,7 @@ function vehicleRow(vehicle, admin) {
       <td><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></td>
       <td>${escapeHtml(vehicle.driverIds.map(driverName).join(", ") || "Sem motorista")}</td>
       <td><div class="vehicle-document-links">${documentSummary}</div></td>
-      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${vehicle.id}">QR</button><button class="mini-button" type="button" data-edit-vehicle="${vehicle.id}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${vehicle.id}">Eliminar</button></div>` : "Consulta"}</td>
+      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${escapeHtml(vehicle.id)}">QR</button><button class="mini-button" type="button" data-edit-vehicle="${escapeHtml(vehicle.id)}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${escapeHtml(vehicle.id)}">Eliminar</button></div>` : "Consulta"}</td>
     </tr>
   `;
 }
@@ -977,7 +977,7 @@ function driverRow(driver) {
         ? `<span class="tag ${activityStateClass(driver.uberRealtimeStatus || driver.uberStatus)}">${escapeHtml(activityStateLabel(driver.uberRealtimeStatus || driver.uberStatus))}</span>`
         : '<span class="tag">Sem Uber</span>'}</td>
       <td><span class="tag">${docs.length} docs</span></td>
-      <td><div class="row-actions"><button class="mini-button" type="button" data-doc-driver="${driver.id}">Documento</button><button class="mini-button" type="button" data-edit-driver="${driver.id}">Editar</button><button class="mini-button" type="button" data-reset-password="${driver.id}">Definir passe</button><button class="danger-button" type="button" data-delete-driver="${driver.id}">Eliminar</button></div></td>
+      <td><div class="row-actions"><button class="mini-button" type="button" data-doc-driver="${escapeHtml(driver.id)}">Documento</button><button class="mini-button" type="button" data-edit-driver="${escapeHtml(driver.id)}">Editar</button><button class="mini-button" type="button" data-reset-password="${escapeHtml(driver.id)}">Definir passe</button><button class="danger-button" type="button" data-delete-driver="${escapeHtml(driver.id)}">Eliminar</button></div></td>
     </tr>
   `;
 }
@@ -1009,9 +1009,9 @@ function documentCard(doc, admin) {
         <span>${doc.driverId ? escapeHtml(driverName(doc.driverId)) : doc.vehicleId ? escapeHtml(vehicleName(doc.vehicleId)) : "Empresa"}</span>
       </div>
       <div class="row-actions">
-        <button class="mini-button" type="button" data-open-doc="${doc.id}">Abrir Documento</button>
-        <button class="mini-button" type="button" data-download-doc="${doc.id}">Download</button>
-        ${admin ? `<button class="mini-button" type="button" data-edit-document="${doc.id}">Editar</button><button class="danger-button" type="button" data-delete-document="${doc.id}">Eliminar</button>` : ""}
+        <button class="mini-button" type="button" data-open-doc="${escapeHtml(doc.id)}">Abrir Documento</button>
+        <button class="mini-button" type="button" data-download-doc="${escapeHtml(doc.id)}">Download</button>
+        ${admin ? `<button class="mini-button" type="button" data-edit-document="${escapeHtml(doc.id)}">Editar</button><button class="danger-button" type="button" data-delete-document="${escapeHtml(doc.id)}">Eliminar</button>` : ""}
       </div>
     </article>
   `;
@@ -1118,8 +1118,8 @@ function renderAlerts() {
               <span><strong>Área:</strong> ${doc.driverId ? "Motoristas" : doc.vehicleId ? "Veículos" : "Empresa"}</span>
             </div>
             <div class="row-actions">
-              <button class="mini-button" type="button" data-open-document-id="${doc.id}">Abrir documento</button>
-              ${admin ? `<button class="mini-button" type="button" data-edit-document-id="${doc.id}">Editar</button>` : ""}
+              <button class="mini-button" type="button" data-open-document-id="${escapeHtml(doc.id)}">Abrir documento</button>
+              ${admin ? `<button class="mini-button" type="button" data-edit-document-id="${escapeHtml(doc.id)}">Editar</button>` : ""}
             </div>
           </article>
         `;
@@ -1694,7 +1694,7 @@ function checkList(name, label, items, selected) {
   return `
     <fieldset class="check-list span-full">
       <legend>${label}</legend>
-      ${items.map(item => `<label><input type="checkbox" name="${name}" value="${item.id}" ${selected.includes(item.id) ? "checked" : ""}>${escapeHtml(item.name)}</label>`).join("")}
+      ${items.map(item => `<label><input type="checkbox" name="${name}" value="${escapeHtml(item.id)}" ${selected.includes(item.id) ? "checked" : ""}>${escapeHtml(item.name)}</label>`).join("")}
     </fieldset>
   `;
 }

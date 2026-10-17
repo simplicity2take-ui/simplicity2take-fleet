@@ -598,7 +598,7 @@ async function submitRecruiterApplication() {
     const application = {
       id: data.applicationId,
       candidate: { ...state.recruiterSession.candidate },
-      documents: files.map(file => file.name),
+      documents: Array.isArray(data.documents) && data.documents.length ? data.documents : files.map(file => file.name),
       status: "Nova",
       summary: recruiterSummaryText().replace(/\n/g, " · "),
       conversation

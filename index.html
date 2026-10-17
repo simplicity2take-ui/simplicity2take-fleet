@@ -116,6 +116,22 @@
       </form>
     </dialog>
 
+    <dialog id="uberTripPreviewModal">
+      <div class="modal-card">
+        <div class="modal-heading">
+          <div>
+            <p class="eyebrow">Relatório Uber</p>
+            <h2>Pré-visualização das viagens</h2>
+          </div>
+          <button class="icon-button" type="button" id="closeUberTripPreview" aria-label="Fechar">×</button>
+        </div>
+        <div id="uberTripPreviewContent" class="settings-list"></div>
+        <menu class="modal-actions">
+          <button class="primary-button" type="button" id="closeUberTripPreviewButton">Fechar</button>
+        </menu>
+      </div>
+    </dialog>
+
     <dialog id="qrModal">
       <div class="qr-card">
         <div class="modal-heading">
@@ -147,7 +163,7 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-    <script src="./app.js?v=v23-uber-trip-dashboard-counts-20261017"></script>
+    <script src="./app.js?v=v24-uber-csv-preview-20261017"></script>
     <script src="./uber-activity-view.js?v=v6-activity-20261009"></script>
   </body>
 </html>

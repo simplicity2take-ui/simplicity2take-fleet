@@ -2088,55 +2088,58 @@ async function openDocument(documentId) {
   content.innerHTML = '<div class="document-viewer-loading">A abrir documento…</div>';
   modal.showModal();
 
+  let objectUrl = null;
+  let objectUrlHandledByClose = false;
+
   try {
     const result = await fetchDocumentBlob(documentId);
     const data = result.data;
     title.textContent = result.doc.fileName || result.doc.name || "Documento";
     content.replaceChildren();
 
-    const url = URL.createObjectURL(data);
+    objectUrl = URL.createObjectURL(data);
     const mimeType = data.type || result.doc.fileType || "";
 
-  if (mimeType === "application/pdf") {
-    if (!window.pdfjsLib) {
-      URL.revokeObjectURL(url);
-      throw new Error("Visualizador PDF ainda não está disponível. Atualiza a página e tenta novamente.");
+    if (mimeType === "application/pdf") {
+      if (!window.pdfjsLib) {
+        throw new Error("Visualizador PDF ainda não está disponível. Atualiza a página e tenta novamente.");
+      }
+
+      const loading = document.createElement("div");
+      loading.className = "document-viewer-loading";
+      loading.textContent = "A preparar documento…";
+      content.appendChild(loading);
+      modal.showModal();
+
+      const pdf = await window.pdfjsLib.getDocument({ data: await data.arrayBuffer() }).promise;
+      content.replaceChildren();
+
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        const page = await pdf.getPage(pageNumber);
+        const viewport = page.getViewport({ scale: 1.35 });
+        const canvas = document.createElement("canvas");
+        canvas.className = "document-viewer-page";
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        canvas.setAttribute("aria-label", "Página " + pageNumber + " de " + pdf.numPages);
+        content.appendChild(canvas);
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      }
+    } else if (mimeType.startsWith("image/")) {
+      const image = document.createElement("img");
+      image.src = objectUrl;
+      image.alt = doc.fileName || doc.name || "Documento";
+      image.className = "document-viewer-image";
+      content.appendChild(image);
+      modal.showModal();
+    } else {
+      throw new Error("Este tipo de documento não pode ser visualizado diretamente.");
     }
 
-    const loading = document.createElement("div");
-    loading.className = "document-viewer-loading";
-    loading.textContent = "A preparar documento…";
-    content.appendChild(loading);
-    modal.showModal();
-
-    const pdf = await window.pdfjsLib.getDocument({ data: await data.arrayBuffer() }).promise;
-    content.replaceChildren();
-
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-      const page = await pdf.getPage(pageNumber);
-      const viewport = page.getViewport({ scale: 1.35 });
-      const canvas = document.createElement("canvas");
-      canvas.className = "document-viewer-page";
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-      canvas.setAttribute("aria-label", "Página " + pageNumber + " de " + pdf.numPages);
-      content.appendChild(canvas);
-      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-    }
-  } else if (mimeType.startsWith("image/")) {
-    const image = document.createElement("img");
-    image.src = url;
-    image.alt = doc.fileName || doc.name || "Documento";
-    image.className = "document-viewer-image";
-    content.appendChild(image);
-    modal.showModal();
-  } else {
-    URL.revokeObjectURL(url);
-    throw new Error("Este tipo de documento não pode ser visualizado diretamente.");
-  }
-
-  modal.addEventListener("close", () => URL.revokeObjectURL(url), { once: true });
+    modal.addEventListener("close", () => URL.revokeObjectURL(objectUrl), { once: true });
+    objectUrlHandledByClose = true;
   } catch (error) {
+    if (objectUrl && !objectUrlHandledByClose) URL.revokeObjectURL(objectUrl);
     if (modal.open) modal.close();
     throw error;
   }

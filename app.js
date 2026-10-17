@@ -1393,6 +1393,39 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
   const inferred = inferUberReportPeriod(file.name);
   const text = await file.text();
   const inferredPeriod = { start: periodStart || inferred.start, end: periodEnd || inferred.end };
+  if (type === "trip_activity" && !dryRun) {
+    const previewQuery = new URLSearchParams({ type, dry_run: "true" });
+    if (inferredPeriod.start) previewQuery.set("period_start", inferredPeriod.start);
+    if (inferredPeriod.end) previewQuery.set("period_end", inferredPeriod.end);
+    const { data: previewData, error: previewError } = await supabaseClient.functions.invoke("uber-report-import?" + previewQuery.toString(), {
+      body: text,
+      headers: { "Content-Type": "text/csv" }
+    });
+    if (previewError) throw previewError;
+    if (!previewData?.ok) throw new Error(previewData?.error || "Não foi possível validar o CSV de viagens antes da importação.");
+    const preview = previewData.result || {};
+    if (Number(preview.validTrips || 0) <= 0) {
+      throw new Error("Importação bloqueada: a pré-visualização não encontrou viagens válidas.");
+    }
+    const confirmation = [
+      "CONFIRMAR IMPORTAÇÃO DE VIAGENS UBER",
+      "",
+      "Linhas no CSV: " + (preview.totalRows ?? 0),
+      "Viagens válidas: " + (preview.validTrips ?? 0),
+      "Viagens únicas: " + (preview.uniqueTrips ?? 0),
+      "Linhas repetidas no CSV (serão deduplicadas): " + (preview.duplicateRowsInCsv ?? 0),
+      "Já existentes (serão atualizadas sem duplicar): " + (preview.alreadyImported ?? 0),
+      "Novas viagens previstas: " + (preview.newTrips ?? 0),
+      "Associadas a motoristas: " + (preview.linkedDrivers ?? 0),
+      "Sem motorista associado: " + (preview.unlinkedDrivers ?? 0),
+      "Associadas a viaturas: " + (preview.linkedVehicles ?? 0),
+      "Sem viatura associada: " + (preview.unlinkedVehicles ?? 0),
+      "",
+      "ATENÇÃO: viagens sem motorista/viatura associado serão importadas sem essa ligação. Importa primeiro o Estado do motorista Uber para melhorar a correspondência.",
+      "Confirma apenas se reviu estes números."
+    ].join("\\n");
+    if (!window.confirm(confirmation)) return;
+  }
   if (type === "status" && !dryRun) {
     const previewQuery = new URLSearchParams({ type, dry_run: "true" });
     if (inferredPeriod.start) previewQuery.set("period_start", inferredPeriod.start);

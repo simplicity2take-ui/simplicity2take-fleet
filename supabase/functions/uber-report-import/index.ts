@@ -258,6 +258,8 @@ Deno.serve(async (req) => {
         );
         const skippedRows = driverRows.length - eligibleRows.length;
         const seenUuids = new Set<string>();
+        const seenEmails = new Map<string, string>();
+        const seenPhones = new Map<string, string>();
         const matchedDriverIds = new Set<string>();
         let duplicateUuidRows = 0, matchedExisting = 0, wouldCreate = 0, ambiguousMatches = 0;
         const existingDrivers = await getRestRows("drivers?select=id,email,phone,uber_driver_uuid&limit=1000");
@@ -267,6 +269,10 @@ Deno.serve(async (req) => {
           seenUuids.add(uuid);
           const email = String(row["E-mail do motorista"] || "").trim().toLowerCase();
           const phone = normalizePhone(row["Telemóvel"] || "");
+          if (email && seenEmails.has(email) && seenEmails.get(email) !== uuid) ambiguousMatches++;
+          if (phone && seenPhones.has(phone) && seenPhones.get(phone) !== uuid) ambiguousMatches++;
+          if (email) seenEmails.set(email, uuid);
+          if (phone) seenPhones.set(phone, uuid);
           const candidates = (existingDrivers as any[]).filter(driver =>
             (uuid && driver.uber_driver_uuid === uuid) ||
             (email && String(driver.email || "").trim().toLowerCase() === email) ||
@@ -310,6 +316,8 @@ Deno.serve(async (req) => {
       );
       const existingForImport = await getRestRows("drivers?select=id,email,phone,uber_driver_uuid&limit=1000");
       const seenImportUuids = new Set<string>();
+      const seenImportEmails = new Map<string, string>();
+      const seenImportPhones = new Map<string, string>();
       const seenImportDriverIds = new Set<string>();
       let importDuplicateUuidRows = 0;
       let importAmbiguousMatches = 0;
@@ -319,6 +327,10 @@ Deno.serve(async (req) => {
         seenImportUuids.add(uuid);
         const email = String(row["E-mail do motorista"] || "").trim().toLowerCase();
         const phone = normalizePhone(row["Telemóvel"] || "");
+        if (email && seenImportEmails.has(email) && seenImportEmails.get(email) !== uuid) importAmbiguousMatches++;
+        if (phone && seenImportPhones.has(phone) && seenImportPhones.get(phone) !== uuid) importAmbiguousMatches++;
+        if (email) seenImportEmails.set(email, uuid);
+        if (phone) seenImportPhones.set(phone, uuid);
         const candidates = (existingForImport as any[]).filter(driver =>
           (uuid && driver.uber_driver_uuid === uuid) ||
           (email && String(driver.email || "").trim().toLowerCase() === email) ||

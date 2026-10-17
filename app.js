@@ -615,7 +615,7 @@ async function startAuthenticatedSession(user) {
     await supabaseClient.auth.signOut();
     throw new Error("Este QR é exclusivo para acesso de motorista.");
   }
-  if (profile.status && profile.status !== "Ativo") {
+  if (profile.status !== "Ativo") {
     await supabaseClient.auth.signOut();
     throw new Error("Conta inativa.");
   }

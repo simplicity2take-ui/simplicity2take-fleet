@@ -1392,6 +1392,37 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
   if (!file) throw new Error("Selecione um ficheiro CSV.");
   const inferred = inferUberReportPeriod(file.name);
   const text = await file.text();
+  const inferredPeriod = { start: periodStart || inferred.start, end: periodEnd || inferred.end };
+  if (type === "status" && !dryRun) {
+    const previewQuery = new URLSearchParams({ type, dry_run: "true" });
+    if (inferredPeriod.start) previewQuery.set("period_start", inferredPeriod.start);
+    if (inferredPeriod.end) previewQuery.set("period_end", inferredPeriod.end);
+    const { data: previewData, error: previewError } = await supabaseClient.functions.invoke("uber-report-import?" + previewQuery.toString(), {
+      body: text,
+      headers: { "Content-Type": "text/csv" }
+    });
+    if (previewError) throw previewError;
+    if (!previewData?.ok) throw new Error(previewData?.error || "Não foi possível validar o CSV antes da importação.");
+    const preview = previewData.result || {};
+    if (Number(preview.ambiguousMatches || 0) > 0 || Number(preview.duplicateUuidRows || 0) > 0) {
+      throw new Error("Importação bloqueada por segurança: foram detetadas " + (preview.ambiguousMatches || 0) + " correspondências ambíguas e " + (preview.duplicateUuidRows || 0) + " linhas com UUID repetido. Corrija/reveja o CSV e volte a pré-visualizar antes de importar.");
+    }
+    const confirmation = [
+      "CONFIRMAR IMPORTAÇÃO DO ESTADO UBER",
+      "",
+      "Linhas no CSV: " + (preview.totalRows ?? 0),
+      "Linha(s) da própria empresa a ignorar: " + (preview.organizationRowsSkipped ?? 0),
+      "Motoristas elegíveis: " + (preview.eligibleRows ?? 0),
+      "Motoristas existentes a atualizar: " + (preview.matchedExisting ?? 0),
+      "Novos registos previstos: " + (preview.wouldCreate ?? 0),
+      "",
+      "ATENÇÃO: nos motoristas correspondentes, a importação pode atualizar o UUID Uber, nome, email e telefone com os valores do relatório.",
+      "Só prossiga se reviu o relatório e aceita estas alterações.",
+      "",
+      "Não serão importados CSVs com correspondências ambíguas ou UUIDs repetidos."
+    ].join("\n");
+    if (!window.confirm(confirmation)) return;
+  }
   const query = new URLSearchParams({ type });
   const start = periodStart || inferred.start;
   const end = periodEnd || inferred.end;

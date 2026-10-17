@@ -823,11 +823,14 @@ function renderDashboard() {
 }
 
 function metric(label, value) {
-  return `<article class="metric-card"><span>${label}</span><strong>${value}</strong><small>Simplicity2Take Fleet</small></article>`;
+  return `<article class="metric-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>Simplicity2Take Fleet</small></article>`;
 }
 
 function bar(label, value, max) {
-  return `<div class="bar-row"><span>${label}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.max(8, (value / max) * 100)}%"></div></div><strong>${value}</strong></div>`;
+  const safeValue = Number.isFinite(Number(value)) ? Number(value) : 0;
+  const safeMax = Number.isFinite(Number(max)) && Number(max) > 0 ? Number(max) : 1;
+  const width = Math.max(8, Math.min(100, (safeValue / safeMax) * 100));
+  return `<div class="bar-row"><span>${escapeHtml(label)}</span><div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div><strong>${safeValue}</strong></div>`;
 }
 
 function vehicleDocumentSlot(vehicle, type, label) {
@@ -1108,7 +1111,7 @@ function renderAlerts() {
         return `
           <article class="data-card">
             <div class="panel-heading">
-              <span class="tag ${severityClass}">${level}</span>
+              <span class="tag ${severityClass}">${escapeHtml(level)}</span>
               <strong>${escapeHtml(contextLabel(doc))}</strong>
             </div>
             <h3>${escapeHtml(doc.name)}</h3>
@@ -1549,11 +1552,11 @@ function heading(title, copy, actions) {
 }
 
 function emptyRow(message) {
-  return `<tr><td colspan="8">${message}</td></tr>`;
+  return `<tr><td colspan="8">${escapeHtml(message)}</td></tr>`;
 }
 
 function emptyCard(message) {
-  return `<article class="empty-state">${message}</article>`;
+  return `<article class="empty-state">${escapeHtml(message)}</article>`;
 }
 
 function openVehicleDocumentModal(vehicleId, docType = "") {

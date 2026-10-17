@@ -945,7 +945,7 @@ function vehicleRow(vehicle, admin) {
       <td>${escapeHtml(vehicle.year)}</td>
       <td>${escapeHtml(vehicle.vin)}</td>
       <td><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></td>
-      <td>${vehicle.driverIds.map(driverName).join(", ") || "Sem motorista"}</td>
+      <td>${escapeHtml(vehicle.driverIds.map(driverName).join(", ") || "Sem motorista")}</td>
       <td><div class="vehicle-document-links">${documentSummary}</div></td>
       <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${vehicle.id}">QR</button><button class="mini-button" type="button" data-edit-vehicle="${vehicle.id}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${vehicle.id}">Eliminar</button></div>` : "Consulta"}</td>
     </tr>
@@ -1545,7 +1545,7 @@ function renderAccount() {
 }
 
 function heading(title, copy, actions) {
-  return `<section class="section-heading"><div><p class="eyebrow">${currentUser().role === "admin" ? "Administrador" : "Motorista"}</p><h2>${title}</h2><p class="section-copy">${copy}</p></div><div class="button-row">${actions}</div></section>`;
+  return `<section class="section-heading"><div><p class="eyebrow">${currentUser().role === "admin" ? "Administrador" : "Motorista"}</p><h2>${escapeHtml(title)}</h2><p class="section-copy">${escapeHtml(copy)}</p></div><div class="button-row">${actions}</div></section>`;
 }
 
 function emptyRow(message) {

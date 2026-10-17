@@ -198,7 +198,7 @@ async function loadBackendData() {
     supabaseClient.from("application_documents").select("*"),
     supabaseClient.from("application_messages").select("*").order("created_at", { ascending: true }),
     supabaseClient.from("platform_activity_events").select("*").eq("platform", "bolt").order("observed_at", { ascending: false }).limit(5000),
-    supabaseClient.from("platform_trip_records").select("*").eq("platform", "bolt").order("observed_at", { ascending: false }).limit(5000),
+    supabaseClient.from("platform_trip_records").select("*").in("platform", ["bolt", "uber"]).order("observed_at", { ascending: false }).limit(5000),
     supabaseClient.from("cartrack_vehicles").select("*").order("registration"),
     supabaseClient.from("cartrack_vehicle_snapshots").select("*").order("observed_at", { ascending: false }).limit(5000)
   ]);
@@ -285,7 +285,7 @@ async function loadBackendData() {
     idling: row.idling
   }));
   state.tripRecords = (tripsResult.data || []).map(row => ({
-    id: row.id, sourceTripId: row.source_trip_id, driverId: row.driver_id, vehicleId: row.vehicle_id,
+    id: row.id, platform: row.platform || "bolt", sourceTripId: row.source_trip_id, driverId: row.driver_id, vehicleId: row.vehicle_id,
     driverUuid: row.platform_driver_uuid, vehicleUuid: row.platform_vehicle_uuid, plate: row.vehicle_plate,
     status: row.order_status, acceptedAt: row.accepted_at, pickupAt: row.pickup_at,
     dropoffAt: row.dropoff_at, finishedAt: row.finished_at, distance: row.ride_distance_km, observedAt: row.observed_at
@@ -1157,6 +1157,7 @@ function boltActivitySummary(days = 7) {
   const cutoff = Date.now() - days * 86400000;
   const events = state.activityEvents.filter(e => e.observedAt && new Date(e.observedAt).getTime() >= cutoff).sort((a,b) => new Date(a.observedAt) - new Date(b.observedAt));
   const trips = state.tripRecords.filter(t => {
+    if ((t.platform || "bolt") !== "bolt") return false;
     const ts = t.finishedAt || t.acceptedAt || t.observedAt;
     return ts && new Date(ts).getTime() >= cutoff;
   });
@@ -1406,6 +1407,7 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "") {
   renderApp();
   const saved = data.result?.saved ?? 0;
   if (type === "status") showToast(`Uber: ${data.result?.matched ?? 0} atualizados, ${data.result?.created ?? 0} novos.`);
+  else if (type === "trip_activity") showToast(`Uber: ${saved} viagens importadas; ${data.result?.linkedDrivers ?? 0} ligadas a motoristas e ${data.result?.linkedVehicles ?? 0} a viaturas.`);
   else showToast(`Relatório Uber importado: ${saved} registos.`);
 }
 
@@ -1417,6 +1419,8 @@ function renderSettings() {
   const uberDrivers = state.drivers.filter(driver => driver.uberDriverUuid).length;
   const uberVehicles = state.vehicles.filter(vehicle => vehicle.uberVehicleUuid).length;
   const lastUberSync = [...state.drivers, ...state.vehicles].map(item => item.uberLastSyncedAt).filter(Boolean).sort().pop();
+  const uberTripRecords = state.tripRecords.filter(item => item.platform === "uber");
+  const lastUberTrip = uberTripRecords.map(item => item.observedAt).filter(Boolean).sort().pop();
 
   selectors.content.innerHTML = `
     ${heading("Configurações", "Segurança, palavras-passe e integrações.", "")}
@@ -1482,6 +1486,8 @@ function renderSettings() {
             <div class="settings-list">
               <div class="settings-row"><strong>Motoristas Uber no Portal</strong><span>${uberDrivers}</span></div>
               <div class="settings-row"><strong>Viaturas Uber no Portal</strong><span>${uberVehicles}</span></div>
+              <div class="settings-row"><strong>Viagens Uber importadas</strong><span>${uberTripRecords.length}</span></div>
+              <div class="settings-row"><strong>Último registo de viagem</strong><span>${lastUberTrip ? new Date(lastUberTrip).toLocaleString("pt-PT") : "Ainda sem viagens importadas"}</span></div>
               <div class="settings-row"><strong>Última sincronização</strong><span>${lastUberSync ? new Date(lastUberSync).toLocaleString("pt-PT") : "Ainda não executada"}</span></div>
               <div class="settings-row"><strong>Backend de sincronização</strong><span class="tag active">Preparado</span></div>
             </div>

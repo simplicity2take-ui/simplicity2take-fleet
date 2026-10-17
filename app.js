@@ -1387,7 +1387,7 @@ function inferUberReportPeriod(fileName) {
   return { start: iso(match[1]), end: iso(match[2]) };
 }
 
-async function importUberReport(type, input, periodStart = "", periodEnd = "") {
+async function importUberReport(type, input, periodStart = "", periodEnd = "", dryRun = false) {
   const file = input?.files?.[0];
   if (!file) throw new Error("Selecione um ficheiro CSV.");
   const inferred = inferUberReportPeriod(file.name);
@@ -1397,17 +1397,39 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "") {
   const end = periodEnd || inferred.end;
   if (start) query.set("period_start", start);
   if (end) query.set("period_end", end);
+  if (dryRun) query.set("dry_run", "true");
   const { data, error } = await supabaseClient.functions.invoke("uber-report-import?" + query.toString(), {
     body: text,
     headers: { "Content-Type": "text/csv" }
   });
   if (error) throw error;
   if (!data?.ok) throw new Error(data?.error || "Não foi possível importar o relatório Uber.");
+  if (dryRun) {
+    const result = data.result || {};
+    alert([
+      "PRÉ-VISUALIZAÇÃO — VIAGENS UBER",
+      "",
+      `Linhas no CSV: ${result.totalRows ?? 0}`,
+      `Viagens válidas: ${result.validTrips ?? 0}`,
+      `Viagens únicas: ${result.uniqueTrips ?? 0}`,
+      `Linhas repetidas no próprio CSV: ${result.duplicateRowsInCsv ?? 0}`,
+      `Já existentes na base de dados: ${result.alreadyImported ?? 0}`,
+      `Novas viagens previstas: ${result.newTrips ?? 0}`,
+      `Associadas a motoristas: ${result.linkedDrivers ?? 0}`,
+      `Sem motorista associado: ${result.unlinkedDrivers ?? 0}`,
+      `Associadas a viaturas: ${result.linkedVehicles ?? 0}`,
+      `Sem viatura associada: ${result.unlinkedVehicles ?? 0}`,
+      `Viagens concluídas: ${result.completedTrips ?? 0}`,
+      "",
+      "Esta pré-visualização não guardou nem alterou dados."
+    ].join("\\n"));
+    return data;
+  }
   await loadBackendData();
   renderApp();
   const saved = data.result?.saved ?? 0;
   if (type === "status") showToast(`Uber: ${data.result?.matched ?? 0} atualizados, ${data.result?.created ?? 0} novos.`);
-  else if (type === "trip_activity") showToast(`Uber: ${saved} viagens importadas; ${data.result?.linkedDrivers ?? 0} ligadas a motoristas e ${data.result?.linkedVehicles ?? 0} a viaturas.`);
+  else if (type === "trip_activity") showToast(`Uber: ${saved} viagens importadas; ${data.result?.linkedDrivers ?? 0} ligadas a motoristas e ${data.result?.linkedVehicles ?? 0} a viaturas; ${data.result?.duplicateRowsInCsv ?? 0} linhas repetidas ignoradas.`);
   else showToast(`Relatório Uber importado: ${saved} registos.`);
 }
 
@@ -1511,6 +1533,7 @@ function renderSettings() {
                 <input id="uberTripActivityCsv" type="file" accept=".csv,text/csv">
               </label>
               <button class="secondary-button" type="button" data-uber-import-trip-activity>Importar viagens Uber</button>
+              <button class="secondary-button" type="button" data-uber-preview-trip-activity>Pré-visualizar CSV (sem guardar)</button>
 
               <label class="file-upload-row">Desempenho do veículo (CSV)
                 <input id="uberVehiclePerformanceCsv" type="file" accept=".csv,text/csv">
@@ -2349,15 +2372,16 @@ function bindPortalEvents() {
       uberImportStatus: ["status", "#uberStatusCsv", "Não foi possível importar o estado Uber."],
       uberImportActivity: ["activity", "#uberActivityCsv", "Não foi possível importar a atividade Uber."],
       uberImportTripActivity: ["trip_activity", "#uberTripActivityCsv", "Não foi possível importar as viagens Uber."],
+      uberPreviewTripActivity: ["trip_activity", "#uberTripActivityCsv", "Não foi possível pré-visualizar as viagens Uber.", true],
       uberImportVehiclePerformance: ["vehicle_performance", "#uberVehiclePerformanceCsv", "Não foi possível importar o desempenho do veículo."],
       uberImportVehicleTimeDistance: ["vehicle_time_distance", "#uberVehicleTimeDistanceCsv", "Não foi possível importar o tempo e distância do veículo."],
       uberImportDriverTimeDistance: ["driver_time_distance", "#uberDriverTimeDistanceCsv", "Não foi possível importar o tempo e distância do motorista."],
       uberImportDriverQuality: ["driver_quality", "#uberDriverQualityCsv", "Não foi possível importar a qualidade do motorista."],
       uberImportDriverPayments: ["driver_payments", "#uberDriverPaymentsCsv", "Não foi possível importar os pagamentos de motorista."]
     };
-    for (const [key, [type, selector, message]] of Object.entries(uberReportActions)) {
+    for (const [key, [type, selector, message, dryRun = false]] of Object.entries(uberReportActions)) {
       if (target.dataset[key] !== undefined) {
-        try { await importUberReport(type, document.querySelector(selector)); }
+        try { await importUberReport(type, document.querySelector(selector), "", "", dryRun); }
         catch (error) { console.error(error); showToast(error?.message || message); }
         return;
       }

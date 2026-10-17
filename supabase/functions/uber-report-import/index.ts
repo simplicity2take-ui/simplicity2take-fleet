@@ -242,8 +242,8 @@ Deno.serve(async (req) => {
     }
 
     if (type === "status") {
-      const normalizeIdentity = (value: string) => String(value || "").normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLocaleUpperCase("pt-PT").replace(/[^A-Z0-9]+/g, " ").trim();
-      const normalizePhone = (value: string) => String(value || "").replace(/\\D/g, "");
+      const normalizeIdentity = (value: string) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleUpperCase("pt-PT").replace(/[^A-Z0-9]+/g, " ").trim();
+      const normalizePhone = (value: string) => String(value || "").replace(/\D/g, "");
       const isOrganizationRow = (r: any) => {
         const name = normalizeIdentity(r["Nome do motorista"] || "");
         const organization = normalizeIdentity(r["Nome da organização"] || "");

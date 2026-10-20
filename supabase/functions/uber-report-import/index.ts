@@ -123,7 +123,9 @@ Deno.serve(async (req) => {
     if (!me.ok) return new Response(JSON.stringify({ error: "Sessão inválida" }), { status: 401, headers: { "Content-Type": "application/json" } });
 
     const url = new URL(req.url);
-    const type = url.searchParams.get("type") || "status";
+    const requestedType = url.searchParams.get("type") || "status";
+    // The frontend uses a hyphenated type for individual trip CSV previews.
+    const type = requestedType === "trip-activity" ? "trip_activity" : requestedType;
     const periodStart = url.searchParams.get("period_start");
     const periodEnd = url.searchParams.get("period_end");
     const rows = parseCsv(await req.text());

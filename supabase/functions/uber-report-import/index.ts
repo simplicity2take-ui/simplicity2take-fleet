@@ -68,7 +68,12 @@ async function getRestRows(path: string) {
   const response = await fetch(SUPABASE_URL + "/rest/v1/" + path, {
     headers: { apikey: SERVICE_ROLE_KEY, Authorization: "Bearer " + SERVICE_ROLE_KEY }
   });
-  if (!response.ok) throw new Error("Falha ao consultar correspondências internas (" + response.status + ").");
+  if (!response.ok) {
+    const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 300);
+    const label = path.split("?")[0].replace(/[^a-zA-Z0-9_./-]/g, "").slice(0, 100);
+    console.error("uber-report-import getRestRows failed", { status: response.status, path: label, detail });
+    throw new Error("Falha ao consultar correspondências internas (" + response.status + ") em " + label + (detail ? ": " + detail : "."));
+  }
   return await response.json();
 }
 function localLisbonTimestamp(value: string) {

@@ -113,6 +113,7 @@ function baseDates(periodStart: string | null, periodEnd: string | null) {
 }
 
 Deno.serve(async (req) => {
+  const response = await (async () => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204 });
   try {
     const auth = req.headers.get("Authorization") || "";
@@ -197,10 +198,14 @@ Deno.serve(async (req) => {
       const linkedVehicles = uniqueTrips.filter((r: any) => r.vehicle_id).length;
       const tripIds = uniqueTrips.map((r: any) => String(r.source_trip_id));
       const validUuidTripIds = tripIds.filter((id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id));
-      const existingRows = validUuidTripIds.length
-        ? await getRestRows("platform_trip_records?select=source_trip_id&platform=eq.uber&source_trip_id=in.(" + validUuidTripIds.join(",") + ")&limit=1000")
-        : [];
-      const existingIds = new Set((existingRows as any[]).map(row => String(row.source_trip_id)));
+      // Query existing trip IDs in small batches to avoid excessively long PostgREST URLs.
+      const existingRows: any[] = [];
+      for (let i = 0; i < validUuidTripIds.length; i += 50) {
+        const batch = validUuidTripIds.slice(i, i + 50);
+        const batchRows = await getRestRows("platform_trip_records?select=source_trip_id&platform=eq.uber&source_trip_id=in.(" + batch.join(",") + ")&limit=1000");
+        existingRows.push(...batchRows);
+      }
+      const existingIds = new Set(existingRows.map(row => String(row.source_trip_id)));
       const alreadyImported = uniqueTrips.filter((row: any) => existingIds.has(String(row.source_trip_id))).length;
       const newTrips = uniqueTrips.length - alreadyImported;
       const unlinkedDrivers = uniqueTrips.length - linkedDrivers;
@@ -495,4 +500,11 @@ Deno.serve(async (req) => {
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
+  })();
+  const headers = new Headers(response.headers);
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Access-Control-Allow-Headers", "authorization, x-client-info, apikey, content-type");
+  headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  headers.set("Access-Control-Max-Age", "86400");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 });

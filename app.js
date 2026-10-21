@@ -449,6 +449,7 @@ const recruiterFields = [
   ["name", "nome"],
   ["phone", "telemóvel"],
   ["email", "email"],
+  ["candidateModality", "modalidade pretendida (viatura da empresa ou viatura própria)"],
   ["tvdeCertificate", "certificado TVDE (Sim/Não)"],
   ["drivingLicense", "carta de condução (Sim/Não)"],
   ["tvdeExperience", "experiência em TVDE"],
@@ -605,8 +606,10 @@ async function submitRecruiterApplication() {
       base64: await fileToBase64(file)
     })));
     const conversation = state.recruiterSession.conversation.slice(0, -1);
+    const recruitmentSource = new URLSearchParams(window.location.search).get("source") || (window.location.hostname === "fleet.simplicity2take.com" ? "fleet" : "website");
     const { data, error } = await supabaseClient.functions.invoke("public-application-submit", {
       body: {
+        sourceSite: recruitmentSource,
         candidate: { ...state.recruiterSession.candidate },
         files: uploadedFiles,
         conversation

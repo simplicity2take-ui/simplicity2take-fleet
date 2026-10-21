@@ -40,7 +40,8 @@ Deno.serve(async (request: Request) => {
     const name = clean(candidate.name, 120);
     const phone = clean(candidate.phone, 40);
     const email = clean(candidate.email, 254).toLowerCase();
-    const candidateModality = clean(candidate.candidateModality, 80);
+    const candidateModalityInput = clean(candidate.candidateModality, 80).toLowerCase();
+    const candidateModality = candidateModalityInput === "viatura da empresa" ? "viatura da empresa" : candidateModalityInput === "viatura própria" || candidateModalityInput === "viatura propria" ? "viatura própria" : "";
     const tvdeCertificate = clean(candidate.tvdeCertificate, 80);
     const drivingLicense = clean(candidate.drivingLicense, 80);
     const tvdeExperience = clean(candidate.tvdeExperience, 200);

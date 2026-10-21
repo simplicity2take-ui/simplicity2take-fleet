@@ -5,15 +5,19 @@ const allowedOrigins = new Set([
   "https://simplicity2take.com",
   "https://www.simplicity2take.com"
 ]);
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-function json(body: unknown, status = 200) {
+function corsHeadersFor(origin: string) {
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin"
+  };
+  if (allowedOrigins.has(origin)) headers["Access-Control-Allow-Origin"] = origin;
+  return headers;
+}
+function json(body: unknown, status = 200, origin = "") {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" }
+    headers: { ...corsHeadersFor(origin), "Content-Type": "application/json" }
   });
 }
 const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
@@ -22,19 +26,19 @@ const maxTotalBytes = 8 * 1024 * 1024;
 const clean = (value: unknown, max = 500) => String(value ?? "").trim().slice(0, max);
 
 Deno.serve(async (request: Request) => {
-  if (request.method === "OPTIONS") {
-    if (!allowedOrigins.has(request.headers.get("origin") ?? "")) return new Response("forbidden", { status: 403 });
-    return new Response("ok", { headers: corsHeaders });
-  }
-  if (request.method !== "POST") return json({ ok: false, error: "Método não permitido." }, 405);
   const requestOrigin = request.headers.get("origin") ?? "";
+  if (request.method === "OPTIONS") {
+    if (!allowedOrigins.has(requestOrigin)) return new Response("forbidden", { status: 403 });
+    return new Response("ok", { headers: corsHeadersFor(requestOrigin) });
+  }
+  if (request.method !== "POST") return json({ ok: false, error: "Método não permitido." }, 405, requestOrigin);
   if (!allowedOrigins.has(requestOrigin)) return json({ ok: false, error: "Origem não autorizada." }, 403);
   const sourceSite = requestOrigin === "https://fleet.simplicity2take.com" ? "fleet" : "website";
 
   let applicationId: string | null = null;
   try {
     const raw = await request.text();
-    if (raw.length > 12_000_000) return json({ ok: false, error: "Pedido demasiado grande." }, 413);
+    if (raw.length > 12_000_000) return json({ ok: false, error: "Pedido demasiado grande." }, 413, requestOrigin);
     const body = JSON.parse(raw);
     const candidate = body?.candidate ?? {};
     const name = clean(candidate.name, 120);
@@ -53,9 +57,9 @@ Deno.serve(async (request: Request) => {
     if (!name || !phone || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
         !candidateModality || !["viatura da empresa", "viatura própria"].includes(candidateModality.toLowerCase()) ||
         !tvdeCertificate || !drivingLicense || !tvdeExperience || !availability || !schedulePreference) {
-      return json({ ok: false, error: "Dados incompletos ou email inválido. Reveja a candidatura." }, 400);
+      return json({ ok: false, error: "Dados incompletos ou email inválido. Reveja a candidatura." }, 400, requestOrigin);
     }
-    if (files.length > 3) return json({ ok: false, error: "Pode enviar no máximo 3 documentos." }, 400);
+    if (files.length > 3) return json({ ok: false, error: "Pode enviar no máximo 3 documentos." }, 400, requestOrigin);
 
     let totalBytes = 0;
     const preparedFiles = files.map((file: any) => {
@@ -70,15 +74,15 @@ Deno.serve(async (request: Request) => {
       totalBytes += bytes;
       return { fileName, mimeType, base64, sizeBytes: bytes };
     });
-    if (totalBytes > maxTotalBytes) return json({ ok: false, error: "O total dos documentos não pode ultrapassar 8 MB." }, 413);
+    if (totalBytes > maxTotalBytes) return json({ ok: false, error: "O total dos documentos não pode ultrapassar 8 MB." }, 413, requestOrigin);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const appsScriptUrl = Deno.env.get("GOOGLE_APPS_SCRIPT_URL");
     const uploadSecret = Deno.env.get("GOOGLE_UPLOAD_SECRET");
-    if (!supabaseUrl || !serviceKey) return json({ ok: false, error: "Serviço de candidaturas não configurado." }, 503);
+    if (!supabaseUrl || !serviceKey) return json({ ok: false, error: "Serviço de candidaturas não configurado." }, 503, requestOrigin);
     if (preparedFiles.length && (!appsScriptUrl || !uploadSecret)) {
-      return json({ ok: false, error: "O carregamento de documentos ainda não está configurado. Tente novamente mais tarde." }, 503);
+      return json({ ok: false, error: "O carregamento de documentos ainda não está configurado. Tente novamente mais tarde." }, 503, requestOrigin);
     }
 
     const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -91,7 +95,7 @@ Deno.serve(async (request: Request) => {
     ]);
     if (recentEmail.error || recentPhone.error) throw new Error("Não foi possível validar a candidatura. Tente novamente.");
     if (recentEmail.data?.length || recentPhone.data?.length) {
-      return json({ ok: false, error: "Já recebemos uma candidatura com estes contactos há poucos minutos. Aguarde antes de tentar novamente." }, 429);
+      return json({ ok: false, error: "Já recebemos uma candidatura com estes contactos há poucos minutos. Aguarde antes de tentar novamente." }, 429, requestOrigin);
     }
 
     applicationId = crypto.randomUUID();
@@ -170,7 +174,7 @@ Deno.serve(async (request: Request) => {
       if (error) throw new Error("Não foi possível registar um dos documentos da candidatura.");
     }
 
-    return json({ ok: true, applicationId, message: "Candidatura recebida." }, 201);
+    return json({ ok: true, applicationId, message: "Candidatura recebida." }, 201, requestOrigin);
   } catch (error) {
     console.error("public-application-submit failed", error);
     if (applicationId) {
@@ -186,6 +190,6 @@ Deno.serve(async (request: Request) => {
       }
     }
     const message = error instanceof Error ? error.message : "Erro ao submeter a candidatura.";
-    return json({ ok: false, error: message }, 500);
+    return json({ ok: false, error: message }, 500, requestOrigin);
   }
 });

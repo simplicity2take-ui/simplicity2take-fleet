@@ -298,6 +298,8 @@ async function loadBackendData() {
       name: valueOf(row, "candidate_name", "full_name", "name"),
       phone: valueOf(row, "candidate_phone", "phone"),
       email: valueOf(row, "candidate_email", "email"),
+      candidateModality: valueOf(row, "candidate_modality"),
+      sourceSite: valueOf(row, "source_site"),
       tvdeCertificate: valueOf(row, "tvde_certificate"),
       drivingLicense: valueOf(row, "driving_license"),
       tvdeExperience: valueOf(row, "tvde_experience"),
@@ -449,6 +451,7 @@ const recruiterFields = [
   ["name", "nome"],
   ["phone", "telemóvel"],
   ["email", "email"],
+  ["candidateModality", "modalidade pretendida (viatura da empresa ou viatura própria)"],
   ["tvdeCertificate", "certificado TVDE (Sim/Não)"],
   ["drivingLicense", "carta de condução (Sim/Não)"],
   ["tvdeExperience", "experiência em TVDE"],
@@ -566,6 +569,7 @@ function recruiterSummaryText() {
 Nome: ${c.name}
 Telemóvel: ${c.phone}
 Email: ${c.email}
+Modalidade pretendida: ${c.candidateModality}
 Certificado TVDE: ${c.tvdeCertificate}
 Carta de Condução: ${c.drivingLicense}
 Experiência TVDE: ${c.tvdeExperience}
@@ -605,8 +609,10 @@ async function submitRecruiterApplication() {
       base64: await fileToBase64(file)
     })));
     const conversation = state.recruiterSession.conversation.slice(0, -1);
+    const recruitmentSource = new URLSearchParams(window.location.search).get("source") || (window.location.hostname === "fleet.simplicity2take.com" ? "fleet" : "website");
     const { data, error } = await supabaseClient.functions.invoke("public-application-submit", {
       body: {
+        sourceSite: recruitmentSource,
         candidate: { ...state.recruiterSession.candidate },
         files: uploadedFiles,
         conversation

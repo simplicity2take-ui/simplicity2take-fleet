@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#003366">
+  <meta name="description" content="Candidaturas para motoristas TVDE — SIMPLICITY2TAKE.">
+  <title>Recrutamento | SIMPLICITY2TAKE</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="SIMPLICITY2TAKE">
+      <span class="brand-mark">S2T</span>
+      <span><strong>SIMPLICITY2TAKE</strong><small>RECRUTAMENTO TVDE</small></span>
+    </a>
+    <span class="preview-tag">VERSÃO DE TESTE</span>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">PORTO · VILA NOVA DE GAIA E ARREDORES</p>
+        <h1>O próximo passo da tua carreira começa aqui.</h1>
+        <p class="lead">Estamos a preparar o nosso processo de recrutamento de motoristas TVDE. Indica a modalidade que te interessa e os dados necessários para avaliarmos o teu perfil.</p>
+        <div class="trust-row"><span>● Empresa em atividade desde 2016</span><span>● Candidatura sujeita a análise</span></div>
+      </div>
+      <aside class="hero-card">
+        <span class="card-icon">↗</span>
+        <h2>Duas modalidades</h2>
+        <p>Escolhe a opção que melhor se adapta à tua situação. As condições serão apresentadas após validação pela empresa.</p>
+        <div class="option-mini"><span class="mini-icon">▣</span><span><strong>Viatura da empresa</strong><small>Condições a definir</small></span></div>
+        <div class="option-mini"><span class="mini-icon">⌁</span><span><strong>Viatura própria</strong><small>Sujeita à legislação em vigor</small></span></div>
+      </aside>
+    </section>
+    <section class="form-wrap" id="candidatura">
+      <div class="section-heading">
+        <div><p class="eyebrow">CANDIDATURA</p><h2>Conta-nos um pouco sobre ti</h2></div>
+        <span class="step-label">PASSO 1 DE 1</span>
+      </div>
+      <div class="notice" role="status"><strong>Ambiente de demonstração.</strong> Esta versão ainda não envia nem guarda candidaturas. Não introduzas dados pessoais reais.</div>
+      <form id="application-form" novalidate>
+        <fieldset>
+          <legend>01 <span>Dados de contacto</span></legend>
+          <div class="field-grid">
+            <label>Nome completo<input name="name" autocomplete="name" placeholder="O teu nome" required></label>
+            <label>Telemóvel<input name="phone" type="tel" autocomplete="tel" placeholder="+351 9xx xxx xxx" required></label>
+            <label class="full">Email<input name="email" type="email" autocomplete="email" placeholder="nome@exemplo.pt" required></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>02 <span>Modalidade pretendida</span></legend>
+          <div class="choice-grid">
+            <label class="choice"><input type="radio" name="modality" value="company" required><span class="choice-symbol">▣</span><span><strong>Viatura da empresa</strong><small>Tenho interesse em trabalhar com viatura disponibilizada pela empresa.</small></span></label>
+            <label class="choice"><input type="radio" name="modality" value="own" required><span class="choice-symbol">⌁</span><span><strong>Viatura própria</strong><small>Tenho ou pretendo utilizar uma viatura própria elegível.</small></span></label>
+          </div>
+          <p class="helper">As condições comerciais e operacionais serão esclarecidas pela empresa. Não são publicados valores nesta fase.</p>
+        </fieldset>
+        <fieldset>
+          <legend>03 <span>Experiência e requisitos</span></legend>
+          <div class="field-grid">
+            <label>Certificado TVDE
+              <select name="certificate" required><option value="">Seleciona uma opção</option><option>Sim, válido</option><option>Em processo</option><option>Não tenho</option></select>
+            </label>
+            <label>Carta de condução
+              <select name="license" required><option value="">Seleciona uma opção</option><option>Sim, válida</option><option>Não tenho</option></select>
+            </label>
+            <label>Experiência em TVDE
+              <select name="experience" required><option value="">Seleciona uma opção</option><option>Sem experiência</option><option>Menos de 1 ano</option><option>1 a 3 anos</option><option>Mais de 3 anos</option></select>
+            </label>
+            <label>Disponibilidade para começar
+              <select name="availability" required><option value="">Seleciona uma opção</option><option>Imediata</option><option>Nos próximos 15 dias</option><option>No próximo mês</option><option>A combinar</option></select>
+            </label>
+            <label class="full">Preferência de horário
+              <select name="schedule" required><option value="">Seleciona uma opção</option><option>Tempo inteiro</option><option>Tempo parcial</option><option>Flexível / a combinar</option></select>
+            </label>
+          </div>
+        </fieldset>
+        <label class="consent"><input type="checkbox" name="privacy" required><span>Confirmo que li a informação de privacidade apresentada pela empresa e aceito que os meus dados sejam tratados para análise da candidatura.</span></label>
+        <button class="submit-button" type="submit">Pré-visualizar candidatura <span>→</span></button>
+        <p class="form-footnote">A submissão real será ativada apenas depois de configurar a base de dados, a segurança e a informação de privacidade.</p>
+      </form>
+      <section id="preview-result" class="result-card" hidden aria-live="polite"></section>
+    </section>
+  </main>
+  <footer><span>© SIMPLICITY2TAKE UNIPESSOAL, LDA.</span><span>Recrutamento TVDE · Porto e arredores</span></footer>
+  <script src="./app.js"></script>
+</body>
+</html>

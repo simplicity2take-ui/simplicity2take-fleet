@@ -298,6 +298,8 @@ async function loadBackendData() {
       name: valueOf(row, "candidate_name", "full_name", "name"),
       phone: valueOf(row, "candidate_phone", "phone"),
       email: valueOf(row, "candidate_email", "email"),
+      candidateModality: valueOf(row, "candidate_modality"),
+      sourceSite: valueOf(row, "source_site"),
       tvdeCertificate: valueOf(row, "tvde_certificate"),
       drivingLicense: valueOf(row, "driving_license"),
       tvdeExperience: valueOf(row, "tvde_experience"),
@@ -567,6 +569,7 @@ function recruiterSummaryText() {
 Nome: ${c.name}
 Telemóvel: ${c.phone}
 Email: ${c.email}
+Modalidade pretendida: ${c.candidateModality}
 Certificado TVDE: ${c.tvdeCertificate}
 Carta de Condução: ${c.drivingLicense}
 Experiência TVDE: ${c.tvdeExperience}

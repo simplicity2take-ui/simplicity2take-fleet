@@ -138,7 +138,7 @@ const documentTypes = [
   "Outros"
 ];
 const navByRole = {
-  admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["activity", "Utilização", "UT"], ["documents", "Documentos da Empresa", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
+  admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["activity", "Utilização", "UT"], ["driverReport", "Relatório motoristas", "RM"], ["documents", "Documentos da Empresa", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
   driver: [["vehicles", "Meus Veículos", "VE"], ["documents", "Meus Documentos", "DO"], ["account", "Minha Conta", "EU"]]
 };
 
@@ -749,6 +749,7 @@ function renderContent() {
     alerts: renderAlerts,
     settings: renderSettings,
     activity: renderActivity,
+    driverReport: renderDriverOperationalReport,
     account: renderAccount
   };
   views[state.activeView]();
@@ -1195,6 +1196,103 @@ function boltActivitySummary(days = 7) {
     if (Number.isFinite(distance)) bucket.distance += distance;
   }
   return { events, trips, latestByVehicle, onlineMinutes, serviceMinutes, grouped };
+}
+
+function renderDriverOperationalReport() {
+  selectors.pageTitle.textContent = "Relatório operacional";
+  const today = new Date();
+  const isoDay = date => {
+    const d = new Date(date);
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  };
+  const defaultEnd = isoDay(today);
+  const defaultStart = isoDay(new Date(today.getTime() - 6 * 86400000));
+  if (!state.driverReportStart) state.driverReportStart = "2026-10-12";
+  if (!state.driverReportEnd) state.driverReportEnd = "2026-10-18";
+  if (state.driverReportStart > state.driverReportEnd) state.driverReportStart = state.driverReportEnd;
+  const start = state.driverReportStart;
+  const end = state.driverReportEnd;
+  const selectedDriver = state.driverReportDriver || "all";
+  const startMs = new Date(start + "T00:00:00").getTime();
+  const endMs = new Date(end + "T23:59:59.999").getTime();
+  const inPeriod = value => {
+    if (!value) return false;
+    const ms = new Date(value).getTime();
+    return Number.isFinite(ms) && ms >= startMs && ms <= endMs;
+  };
+  const fmtHours = minutes => {
+    const n = Math.max(0, Math.round(Number(minutes) || 0));
+    return Math.floor(n / 60) + "h " + String(n % 60).padStart(2, "0") + "m";
+  };
+  const fmtKm = value => Number.isFinite(value) ? value.toLocaleString("pt-PT", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "—";
+  const fmtDate = value => value ? new Date(value).toLocaleDateString("pt-PT", { timeZone: "Europe/Lisbon" }) : "—";
+  const isCompleted = trip => {
+    const status = String(trip.status || "").toLowerCase();
+    return !status || /(complete|finished|success|done|completed|drop)/.test(status);
+  };
+  const trips = (state.tripRecords || []).filter(t => (t.platform || "bolt") === "uber" && inPeriod(t.finishedAt || t.dropoffAt || t.pickupAt || t.acceptedAt || t.observedAt));
+  const rows = state.drivers.map(driver => {
+    const driverTrips = trips.filter(t => t.driverId === driver.id && isCompleted(t));
+    const distances = driverTrips.map(t => Number(t.distance)).filter(Number.isFinite);
+    const km = distances.reduce((a,b) => a+b,0);
+    return { driver, trips: driverTrips.length, km, missingKm: driverTrips.length - distances.length };
+  }).filter(row => selectedDriver === "all" || row.driver.id === selectedDriver);
+  const allCompleted = trips.filter(isCompleted);
+  const totalKm = allCompleted.reduce((sum,t) => sum + (Number.isFinite(Number(t.distance)) ? Number(t.distance) : 0), 0);
+  const kmMissing = allCompleted.filter(t => !Number.isFinite(Number(t.distance))).length;
+  const activityPeriodKnown = start >= "2026-10-12" && end <= "2026-10-18";
+  const paymentsPeriodKnown = start >= "2026-10-05" && end <= "2026-10-12";
+  selectors.content.innerHTML = `
+    ${heading("Relatório operacional por motorista", "Uber — viagens e quilómetros pelo período escolhido. Atividade e pagamentos são apresentados separadamente porque os seus períodos podem ser diferentes.", '<button class="secondary-button" type="button" data-driver-report-csv>Exportar CSV</button>')}
+    <section class="panel">
+      <div class="form-grid">
+        <label>Data inicial<input id="driverReportStart" type="date" value="${escapeHtml(start)}"></label>
+        <label>Data final<input id="driverReportEnd" type="date" value="${escapeHtml(end)}"></label>
+        <label>Motorista<select id="driverReportDriver"><option value="all">Todos os motoristas</option>${state.drivers.slice().sort((a,b)=>a.name.localeCompare(b.name,"pt-PT")).map(d=>`<option value="${escapeHtml(d.id)}" ${selectedDriver===d.id?"selected":""}>${escapeHtml(d.name)}</option>`).join("")}</select></label>
+        <div class="form-actions"><button class="primary-button" type="button" data-driver-report-apply>Aplicar filtros</button></div>
+      </div>
+    </section>
+    <section class="status-strip">
+      ${metric("Viagens Uber concluídas", selectedDriver==="all" ? allCompleted.length : (rows[0]?.trips || 0))}
+      ${metric("Distância registada (km)", fmtKm(selectedDriver==="all" ? totalKm : (rows[0]?.km || 0)))}
+      ${metric("Viagens sem distância", selectedDriver==="all" ? kmMissing : (rows[0]?.missingKm || 0))}
+      ${metric("Motoristas no relatório", rows.length)}
+    </section>
+    <section class="panel">
+      <div class="panel-heading"><h2>Viagens e quilómetros por motorista</h2><span class="tag active">Período: ${escapeHtml(fmtDate(start))} – ${escapeHtml(fmtDate(end))}</span></div>
+      <p class="section-copy">A lista usa apenas viagens Uber concluídas importadas para o Fleet. A distância corresponde à soma do campo de quilómetros da plataforma; não é uma medição Cartrack.</p>
+      <div class="table-wrap"><table><thead><tr><th>Motorista</th><th>Viagens concluídas</th><th>Km registados</th><th>Km em falta</th></tr></thead><tbody>
+      ${rows.map(row=>`<tr><td><strong>${escapeHtml(row.driver.name)}</strong></td><td>${row.trips}</td><td>${fmtKm(row.km)}</td><td>${row.missingKm}</td></tr>`).join("") || '<tr><td colspan="4">Sem dados para os filtros escolhidos.</td></tr>'}
+      </tbody></table></div>
+    </section>
+    <section class="content-grid">
+      <article class="panel"><div class="panel-heading"><h2>Atividade do motorista</h2><span class="tag ${activityPeriodKnown?"active":"expiring"}">${activityPeriodKnown?"Período disponível":"Período não coberto"}</span></div>
+      <p class="section-copy">Relatório importado: 12–18 de outubro de 2026. Horas online, horas em viagem e número de viagens são provenientes do relatório de atividade Uber, não das viagens individuais.</p>
+      <p><strong>Estado:</strong> ${activityPeriodKnown?"Existe um relatório de atividade para esta semana; os valores detalhados serão associados quando o respetivo conjunto de dados estiver carregado no Fleet.":"O período selecionado não coincide integralmente com o relatório de atividade importado."}</p></article>
+      <article class="panel"><div class="panel-heading"><h2>Pagamentos do motorista</h2><span class="tag ${paymentsPeriodKnown?"active":"expiring"}">${paymentsPeriodKnown?"Período disponível":"Período diferente"}</span></div>
+      <p class="section-copy">Relatório importado: 5–12 de outubro de 2026. Os pagamentos não são somados ao período de viagens por defeito, para evitar comparações entre semanas diferentes.</p>
+      <p><strong>Estado:</strong> ${paymentsPeriodKnown?"Existe um relatório de pagamentos para este intervalo; os montantes por motorista ainda não estão ligados à grelha operacional.":"Não existe um relatório de pagamentos para todo o período selecionado."}</p></article>
+    </section>
+    <p class="section-copy">Cobertura atual dos dados Uber: 11, 12, 13, 15 e 16 de outubro. Não há ficheiro de viagens de 14 de outubro, nem viagens individuais carregadas de 17–18 de outubro. Não interprete a ausência de registos como zero atividade.</p>
+  `;
+  const apply = () => {
+    const newStart = document.querySelector("#driverReportStart")?.value;
+    const newEnd = document.querySelector("#driverReportEnd")?.value;
+    if (!newStart || !newEnd || newStart > newEnd) { showToast("Indique um intervalo de datas válido."); return; }
+    state.driverReportStart = newStart; state.driverReportEnd = newEnd;
+    state.driverReportDriver = document.querySelector("#driverReportDriver")?.value || "all";
+    renderDriverOperationalReport();
+  };
+  document.querySelector("[data-driver-report-apply]")?.addEventListener("click", apply);
+  document.querySelector("[data-driver-report-csv]")?.addEventListener("click", () => {
+    const header = ["Motorista","Viagens Uber concluídas","Km registados","Viagens sem distância","Data inicial","Data final"];
+    const csvRows = rows.map(row => [row.driver.name,row.trips,Number(row.km.toFixed(2)),row.missingKm,start,end]);
+    const csv = [header,...csvRows].map(row => row.map(v => '"' + String(v ?? "").replace(/"/g,'""') + '"').join(";")).join("\r\n");
+    const blob = new Blob(["\\ufeff",csv], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a"); link.href=url; link.download="relatorio-operacional-motoristas.csv"; link.click();
+    URL.revokeObjectURL(url);
+  });
 }
 
 function renderActivity() {

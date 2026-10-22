@@ -1244,6 +1244,8 @@ async function renderDriverOperationalReport() {
     return !status || /(complete|finished|success|done|completed|drop)/.test(status);
   };
   const trips = (state.tripRecords || []).filter(t => (selectedPlatform === "all" || (t.platform || "bolt") === selectedPlatform) && inPeriod(t.finishedAt || t.dropoffAt || t.pickupAt || t.acceptedAt || t.observedAt));
+  const loadedBoltTrips = (state.tripRecords || []).filter(t => (t.platform || "bolt") === "bolt").length;
+  const loadedUberTrips = (state.tripRecords || []).filter(t => t.platform === "uber").length;
   const rows = state.drivers.map(driver => {
     const driverTrips = trips.filter(t => t.driverId === driver.id && isCompleted(t));
     const distances = driverTrips.map(t => t.distance == null || t.distance === "" ? NaN : Number(t.distance)).filter(Number.isFinite);
@@ -1266,6 +1268,7 @@ async function renderDriverOperationalReport() {
         <div class="form-actions"><button class="primary-button" type="button" data-driver-report-apply>Aplicar filtros</button></div>
       </div>
     </section>
+    ${selectedPlatform !== "uber" && loadedBoltTrips === 0 ? '<section class="panel"><p class="warning-note"><strong>Dados Bolt por carregar:</strong> a tabela comum de viagens não contém registos Bolt neste momento. Os totais Bolt não devem ser interpretados como zero atividade. A sincronização Bolt existente importa motoristas e viaturas; é necessário ligar/importar o histórico de viagens antes de apresentar esses totais.</p></section>' : ""}
     <section class="status-strip">
       ${metric("Viagens concluídas", selectedDriver==="all" ? allCompleted.length : (rows[0]?.trips || 0))}
       ${metric("Distância registada (km)", fmtKm(selectedDriver==="all" ? totalKm : (rows[0]?.km || 0)))}

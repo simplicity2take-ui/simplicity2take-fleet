@@ -1198,7 +1198,7 @@ function boltActivitySummary(days = 7) {
   return { events, trips, latestByVehicle, onlineMinutes, serviceMinutes, grouped };
 }
 
-function renderDriverOperationalReport() {
+async function renderDriverOperationalReport() {
   selectors.pageTitle.textContent = "Relatório operacional";
   const today = new Date();
   const isoDay = date => {
@@ -1213,6 +1213,20 @@ function renderDriverOperationalReport() {
   const start = state.driverReportStart;
   const end = state.driverReportEnd;
   const selectedDriver = state.driverReportDriver || "all";
+  let activityRows = [], paymentRows = [], activityLoadError = "", paymentLoadError = "";
+  const [activityData, paymentData] = await Promise.all([
+    supabaseClient.from("uber_driver_activity").select("*"),
+    supabaseClient.from("uber_driver_payments").select("*")
+  ]);
+  if (activityData.error) activityLoadError = "Não foi possível ler os dados de atividade com as permissões atuais.";
+  else activityRows = activityData.data || [];
+  if (paymentData.error) paymentLoadError = "Não foi possível ler os dados de pagamentos com as permissões atuais.";
+  else paymentRows = paymentData.data || [];
+  const activityForPeriod = activityRows.filter(row => row.period_start === "2026-10-12" && row.period_end === "2026-10-18");
+  const paymentsForPeriod = paymentRows.filter(row => row.period_start === "2026-10-05" && row.period_end === "2026-10-12");
+  const activityVisible = start === "2026-10-12" && end === "2026-10-18";
+  const paymentsVisible = start === "2026-10-05" && end === "2026-10-12";
+  const money = value => value == null || value === "" ? "—" : Number(value).toLocaleString("pt-PT", { style: "currency", currency: "EUR" });
   const startMs = new Date(start + "T00:00:00").getTime();
   const endMs = new Date(end + "T23:59:59.999").getTime();
   const inPeriod = value => {
@@ -1266,12 +1280,12 @@ function renderDriverOperationalReport() {
       </tbody></table></div>
     </section>
     <section class="content-grid">
-      <article class="panel"><div class="panel-heading"><h2>Atividade do motorista</h2><span class="tag ${activityPeriodKnown?"active":"expiring"}">${activityPeriodKnown?"Período disponível":"Período não coberto"}</span></div>
-      <p class="section-copy">Relatório importado: 12–18 de outubro de 2026. Horas online, horas em viagem e número de viagens são provenientes do relatório de atividade Uber, não das viagens individuais.</p>
-      <p><strong>Estado:</strong> ${activityPeriodKnown?"Existe um relatório de atividade para esta semana; os valores detalhados serão associados quando o respetivo conjunto de dados estiver carregado no Fleet.":"O período selecionado não coincide integralmente com o relatório de atividade importado."}</p></article>
-      <article class="panel"><div class="panel-heading"><h2>Pagamentos do motorista</h2><span class="tag ${paymentsPeriodKnown?"active":"expiring"}">${paymentsPeriodKnown?"Período disponível":"Período diferente"}</span></div>
-      <p class="section-copy">Relatório importado: 5–12 de outubro de 2026. Os pagamentos não são somados ao período de viagens por defeito, para evitar comparações entre semanas diferentes.</p>
-      <p><strong>Estado:</strong> ${paymentsPeriodKnown?"Existe um relatório de pagamentos para este intervalo; os montantes por motorista ainda não estão ligados à grelha operacional.":"Não existe um relatório de pagamentos para todo o período selecionado."}</p></article>
+      <article class="panel"><div class="panel-heading"><h2>Atividade do motorista</h2><span class="tag ${activityVisible && !activityLoadError?"active":"expiring"}">${activityVisible?"12–18 out. 2026": "Período distinto"}</span></div>
+      <p class="section-copy">Fonte: relatório de atividade Uber, 12–18 de outubro de 2026. Estes valores são independentes das viagens individuais.</p>
+      ${activityLoadError ? `<p>${escapeHtml(activityLoadError)}</p>` : activityVisible ? `<div class="table-wrap"><table><thead><tr><th>Motorista</th><th>Viagens no relatório</th><th>Online</th><th>Em viagem</th></tr></thead><tbody>${activityForPeriod.filter(row=>selectedDriver==="all" || state.drivers.find(d=>d.id===row.driver_id)?.id===selectedDriver).map(row=>`<tr><td>${escapeHtml(row.driver_name || state.drivers.find(d=>d.id===row.driver_id)?.name || "Motorista não associado")}</td><td>${Number(row.completed_trips)||0}</td><td>${fmtHours(row.online_duration_minutes)}</td><td>${fmtHours(row.trip_duration_minutes)}</td></tr>`).join("") || '<tr><td colspan="4">Sem registos para este filtro.</td></tr>'}</tbody></table></div>` : '<p>Escolha exatamente 12–18 de outubro para consultar este relatório semanal.</p>'}</article>
+      <article class="panel"><div class="panel-heading"><h2>Pagamentos do motorista</h2><span class="tag ${paymentsVisible && !paymentLoadError?"active":"expiring"}">${paymentsVisible?"5–12 out. 2026":"Período distinto"}</span></div>
+      <p class="section-copy">Fonte: relatório de pagamentos Uber, 5–12 de outubro de 2026. Não é somado às viagens de outra semana.</p>
+      ${paymentLoadError ? `<p>${escapeHtml(paymentLoadError)}</p>` : paymentsVisible ? `<div class="table-wrap"><table><thead><tr><th>Motorista</th><th>Receita (“earnings”)</th><th>Tarifa (“fare”)</th><th>Pago a si</th></tr></thead><tbody>${paymentsForPeriod.filter(row=>selectedDriver==="all" || state.drivers.find(d=>d.id===row.driver_id)?.id===selectedDriver).map(row=>`<tr><td>${escapeHtml(row.driver_name || state.drivers.find(d=>d.id===row.driver_id)?.name || "Registo da empresa")}</td><td>${money(row.earnings)}</td><td>${money(row.fare)}</td><td>${money(row.paid_to_you)}</td></tr>`).join("") || '<tr><td colspan="4">Sem registos para este filtro.</td></tr>'}</tbody></table></div>` : '<p>Escolha exatamente 5–12 de outubro para consultar este relatório semanal.</p>'}</article>
     </section>
     <p class="section-copy">Cobertura atual dos dados Uber: 11, 12, 13, 15 e 16 de outubro. Não há ficheiro de viagens de 14 de outubro, nem viagens individuais carregadas de 17–18 de outubro. Não interprete a ausência de registos como zero atividade.</p>
   `;

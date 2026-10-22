@@ -1245,7 +1245,6 @@ async function renderDriverOperationalReport() {
   };
   const trips = (state.tripRecords || []).filter(t => (selectedPlatform === "all" || (t.platform || "bolt") === selectedPlatform) && inPeriod(t.finishedAt || t.dropoffAt || t.pickupAt || t.acceptedAt || t.observedAt));
   const loadedBoltTrips = (state.tripRecords || []).filter(t => (t.platform || "bolt") === "bolt").length;
-  const loadedUberTrips = (state.tripRecords || []).filter(t => t.platform === "uber").length;
   const rows = state.drivers.map(driver => {
     const driverTrips = trips.filter(t => t.driverId === driver.id && isCompleted(t));
     const distances = driverTrips.map(t => t.distance == null || t.distance === "" ? NaN : Number(t.distance)).filter(Number.isFinite);

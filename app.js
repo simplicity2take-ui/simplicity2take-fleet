@@ -1381,7 +1381,7 @@ async function syncUber() {
 }
 
 function inferUberReportPeriod(fileName) {
-  const match = String(fileName || "").match(/(20\\d{6})-(20\\d{6})/);
+  const match = String(fileName || "").match(/(20\d{6})-(20\d{6})/);
   if (!match) return { start: "", end: "" };
   const iso = value => `${value.slice(0,4)}-${value.slice(4,6)}-${value.slice(6,8)}`;
   return { start: iso(match[1]), end: iso(match[2]) };

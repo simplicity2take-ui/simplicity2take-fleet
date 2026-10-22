@@ -1211,6 +1211,7 @@ async function renderDriverOperationalReport() {
   const start = state.driverReportStart;
   const end = state.driverReportEnd;
   const selectedDriver = state.driverReportDriver || "all";
+  const selectedPlatform = state.driverReportPlatform || "all";
   let activityRows = [], paymentRows = [], activityLoadError = "", paymentLoadError = "";
   const [activityData, paymentData] = await Promise.all([
     supabaseClient.from("uber_driver_activity").select("*"),
@@ -1242,7 +1243,7 @@ async function renderDriverOperationalReport() {
     const status = String(trip.status || "").toLowerCase();
     return !status || /(complete|finished|success|done|completed|drop)/.test(status);
   };
-  const trips = (state.tripRecords || []).filter(t => (t.platform || "bolt") === "uber" && inPeriod(t.finishedAt || t.dropoffAt || t.pickupAt || t.acceptedAt || t.observedAt));
+  const trips = (state.tripRecords || []).filter(t => (selectedPlatform === "all" || (t.platform || "bolt") === selectedPlatform) && inPeriod(t.finishedAt || t.dropoffAt || t.pickupAt || t.acceptedAt || t.observedAt));
   const rows = state.drivers.map(driver => {
     const driverTrips = trips.filter(t => t.driverId === driver.id && isCompleted(t));
     const distances = driverTrips.map(t => t.distance == null || t.distance === "" ? NaN : Number(t.distance)).filter(Number.isFinite);
@@ -1255,24 +1256,25 @@ async function renderDriverOperationalReport() {
   const activityPeriodKnown = start >= "2026-10-12" && end <= "2026-10-18";
   const paymentsPeriodKnown = start >= "2026-10-05" && end <= "2026-10-12";
   selectors.content.innerHTML = `
-    ${heading("Relatório operacional por motorista", "Uber — viagens e quilómetros pelo período escolhido. Atividade e pagamentos são apresentados separadamente porque os seus períodos podem ser diferentes.", '<button class="secondary-button" type="button" data-driver-report-csv>Exportar CSV</button>')}
+    ${heading("Relatório operacional por motorista", "Uber e Bolt — viagens e quilómetros importados pelo período escolhido. Atividade e pagamentos detalhados continuam disponíveis para os períodos Uber importados.", '<button class="secondary-button" type="button" data-driver-report-csv>Exportar CSV</button>')}
     <section class="panel">
       <div class="form-grid">
         <label>Data inicial<input id="driverReportStart" type="date" value="${escapeHtml(start)}"></label>
         <label>Data final<input id="driverReportEnd" type="date" value="${escapeHtml(end)}"></label>
+        <label>Plataforma<select id="driverReportPlatform"><option value="all" ${selectedPlatform==="all"?"selected":""}>Todas</option><option value="bolt" ${selectedPlatform==="bolt"?"selected":""}>Bolt</option><option value="uber" ${selectedPlatform==="uber"?"selected":""}>Uber</option></select></label>
         <label>Motorista<select id="driverReportDriver"><option value="all">Todos os motoristas</option>${state.drivers.slice().sort((a,b)=>a.name.localeCompare(b.name,"pt-PT")).map(d=>`<option value="${escapeHtml(d.id)}" ${selectedDriver===d.id?"selected":""}>${escapeHtml(d.name)}</option>`).join("")}</select></label>
         <div class="form-actions"><button class="primary-button" type="button" data-driver-report-apply>Aplicar filtros</button></div>
       </div>
     </section>
     <section class="status-strip">
-      ${metric("Viagens Uber concluídas", selectedDriver==="all" ? allCompleted.length : (rows[0]?.trips || 0))}
+      ${metric("Viagens concluídas", selectedDriver==="all" ? allCompleted.length : (rows[0]?.trips || 0))}
       ${metric("Distância registada (km)", fmtKm(selectedDriver==="all" ? totalKm : (rows[0]?.km || 0)))}
       ${metric("Viagens sem distância", selectedDriver==="all" ? kmMissing : (rows[0]?.missingKm || 0))}
       ${metric("Motoristas no relatório", rows.length)}
     </section>
     <section class="panel">
       <div class="panel-heading"><h2>Viagens e quilómetros por motorista</h2><span class="tag active">Período: ${escapeHtml(fmtDate(start))} – ${escapeHtml(fmtDate(end))}</span></div>
-      <p class="section-copy">A lista usa apenas viagens Uber concluídas importadas para o Fleet. A distância corresponde à soma do campo de quilómetros da plataforma; não é uma medição Cartrack.</p>
+      <p class="section-copy">A lista usa viagens concluídas da plataforma selecionada, ou de ambas quando seleciona «Todas». A distância corresponde aos quilómetros importados da plataforma; não é uma medição Cartrack.</p>
       <div class="table-wrap"><table><thead><tr><th>Motorista</th><th>Viagens concluídas</th><th>Km registados</th><th>Km em falta</th></tr></thead><tbody>
       ${rows.map(row=>`<tr><td><strong>${escapeHtml(row.driver.name)}</strong></td><td>${row.trips}</td><td>${fmtKm(row.km)}</td><td>${row.missingKm}</td></tr>`).join("") || '<tr><td colspan="4">Sem dados para os filtros escolhidos.</td></tr>'}
       </tbody></table></div>
@@ -1293,12 +1295,13 @@ async function renderDriverOperationalReport() {
     if (!newStart || !newEnd || newStart > newEnd) { showToast("Indique um intervalo de datas válido."); return; }
     state.driverReportStart = newStart; state.driverReportEnd = newEnd;
     state.driverReportDriver = document.querySelector("#driverReportDriver")?.value || "all";
+    state.driverReportPlatform = document.querySelector("#driverReportPlatform")?.value || "all";
     renderDriverOperationalReport();
   };
   document.querySelector("[data-driver-report-apply]")?.addEventListener("click", apply);
   document.querySelector("[data-driver-report-csv]")?.addEventListener("click", () => {
-    const header = ["Motorista","Viagens Uber concluídas","Km registados","Viagens sem distância","Data inicial","Data final"];
-    const csvRows = rows.map(row => [row.driver.name,row.trips,Number(row.km.toFixed(2)),row.missingKm,start,end]);
+    const header = ["Plataforma","Motorista","Viagens concluídas","Km registados","Viagens sem distância","Data inicial","Data final"];
+    const csvRows = rows.map(row => [selectedPlatform === "all" ? "Uber + Bolt" : selectedPlatform.toUpperCase(),row.driver.name,row.trips,Number(row.km.toFixed(2)),row.missingKm,start,end]);
     const csv = [header,...csvRows].map(row => row.map(v => '"' + String(v ?? "").replace(/"/g,'""') + '"').join(";")).join("\r\n");
     const blob = new Blob(["\\ufeff",csv], {type:"text/csv;charset=utf-8;"});
     const url = URL.createObjectURL(blob);

@@ -1205,8 +1205,6 @@ async function renderDriverOperationalReport() {
     const d = new Date(date);
     return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
   };
-  const defaultEnd = isoDay(today);
-  const defaultStart = isoDay(new Date(today.getTime() - 6 * 86400000));
   if (!state.driverReportStart) state.driverReportStart = "2026-10-12";
   if (!state.driverReportEnd) state.driverReportEnd = "2026-10-18";
   if (state.driverReportStart > state.driverReportEnd) state.driverReportStart = state.driverReportEnd;
@@ -1247,13 +1245,13 @@ async function renderDriverOperationalReport() {
   const trips = (state.tripRecords || []).filter(t => (t.platform || "bolt") === "uber" && inPeriod(t.finishedAt || t.dropoffAt || t.pickupAt || t.acceptedAt || t.observedAt));
   const rows = state.drivers.map(driver => {
     const driverTrips = trips.filter(t => t.driverId === driver.id && isCompleted(t));
-    const distances = driverTrips.map(t => Number(t.distance)).filter(Number.isFinite);
+    const distances = driverTrips.map(t => t.distance == null || t.distance === "" ? NaN : Number(t.distance)).filter(Number.isFinite);
     const km = distances.reduce((a,b) => a+b,0);
     return { driver, trips: driverTrips.length, km, missingKm: driverTrips.length - distances.length };
   }).filter(row => selectedDriver === "all" || row.driver.id === selectedDriver);
   const allCompleted = trips.filter(isCompleted);
-  const totalKm = allCompleted.reduce((sum,t) => sum + (Number.isFinite(Number(t.distance)) ? Number(t.distance) : 0), 0);
-  const kmMissing = allCompleted.filter(t => !Number.isFinite(Number(t.distance))).length;
+  const totalKm = allCompleted.reduce((sum,t) => sum + (t.distance != null && t.distance !== "" && Number.isFinite(Number(t.distance)) ? Number(t.distance) : 0), 0);
+  const kmMissing = allCompleted.filter(t => t.distance == null || t.distance === "" || !Number.isFinite(Number(t.distance))).length;
   const activityPeriodKnown = start >= "2026-10-12" && end <= "2026-10-18";
   const paymentsPeriodKnown = start >= "2026-10-05" && end <= "2026-10-12";
   selectors.content.innerHTML = `

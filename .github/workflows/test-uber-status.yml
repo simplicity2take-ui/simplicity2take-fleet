@@ -24,6 +24,6 @@ jobs:
         with:
           deno-version: v2.x
       - name: Run Uber status helper tests
-        run: deno test --no-check supabase/functions/uber-report-import/status-import-helpers.test.ts
+        run: deno test supabase/functions/uber-report-import/status-import-helpers.test.ts
       - name: Type-check helper and tests
         run: deno check supabase/functions/uber-report-import/status-import-helpers.ts supabase/functions/uber-report-import/status-import-helpers.test.ts

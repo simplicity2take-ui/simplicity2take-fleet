@@ -362,9 +362,11 @@ Deno.serve(async (req) => {
           " correspondências ambíguas e " + importDuplicateUuidRows +
           " linhas com UUID repetido. Reveja o CSV e corrija os conflitos antes de voltar a tentar.");
       }
-      const normalized = driverRows.map(r => ({
-        uber_driver_uuid: r["UUID do motorista"],
-        status: r["Estado"],
+      // Send only rows that passed the exact same eligibility checks as the preview.
+      // Non-active Uber states remain untouched in Fleet and are counted as skipped.
+      const normalized = eligibleForImport.map(r => ({
+        uber_driver_uuid: String(r["UUID do motorista"] || "").trim(),
+        status: String(r["Estado"] || "").trim().toUpperCase(),
         realtime_status: r["Tempo real"],
         full_name: r["Nome do motorista"],
         email: r["E-mail do motorista"],
@@ -375,9 +377,14 @@ Deno.serve(async (req) => {
       }));
       const result = await rpc("sync_uber_driver_status", { p_rows: normalized });
       return new Response(JSON.stringify({
-        ok: true, type, rows: driverRows.length,
-        result: { ...(result || {}), organizationRowsSkipped }
-      }), { headers: { "Content-Type": "application/json" } });
+        ok: true, type, rows: eligibleForImport.length,
+        result: {
+          ...(result || {}),
+          organizationRowsSkipped,
+          eligibleRows: eligibleForImport.length,
+          skippedRows: driverRows.length - eligibleForImport.length
+        }
+      }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     }
 
     if (type === "activity") {

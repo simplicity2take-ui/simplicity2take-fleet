@@ -16,6 +16,7 @@ Deno.test("accepts only ACTIVE and ACCEPTED rows with a UUID", () => {
 
 Deno.test("detects organization summary rows independent of accents and case", () => {
   assertEquals(isOrganizationRow({ "Nome do motorista": "SIMPLICITY2TAKE", "Nome da organização": "simplicity2take" }), true);
+  assertEquals(isOrganizationRow({ "Nome do motorista": "José Silva", "Nome da organização": "JOSE SILVA" }), true);
   assertEquals(isOrganizationRow({ "Nome do motorista": "José Silva", "Nome da organização": "SIMPLICITY2TAKE" }), false);
   assertEquals(isOrganizationRow({ "Nome do motorista": "", "Nome da organização": "SIMPLICITY2TAKE" }), false);
 });

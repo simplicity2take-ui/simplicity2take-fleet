@@ -25,3 +25,15 @@ Deno.test("normalizes telephone digits without changing digit order", () => {
   assertEquals(normalizePhone("+351 912-345-678"), "351912345678");
   assertEquals(normalizePhone(""), "");
 });
+
+Deno.test("rejects blank UUIDs and unknown or missing states", () => {
+  assertEquals(isEligibleUberDriverRow({ "UUID do motorista": "   ", Estado: "ACTIVE" }), false);
+  assertEquals(isEligibleUberDriverRow({ "UUID do motorista": "uuid-1", Estado: "WAITLISTED_AUTO_REACTIVATION" }), false);
+  assertEquals(isEligibleUberDriverRow({ "UUID do motorista": "uuid-1", Estado: "" }), false);
+  assertEquals(isEligibleUberDriverRow({ "UUID do motorista": "uuid-1" }), false);
+});
+
+Deno.test("trims UUID and treats state case-insensitively", () => {
+  assertEquals(isEligibleUberDriverRow({ "UUID do motorista": " uuid-1 ", Estado: " active " }), true);
+  assertEquals(isEligibleUberDriverRow({ "UUID do motorista": " uuid-2 ", Estado: "ACCEPTED" }), true);
+});

@@ -33,3 +33,22 @@ Do not automatically drop `company_id` or the `companies` table as a rollback af
 - Migration stored in a draft pull request only.
 - Not applied to production.
 - No production data was changed by this checklist.
+
+
+## Follow-up membership/integrity migration
+
+The draft `20261026200000_company_memberships_and_integrity.sql` depends on the company foundation migration and adds company memberships, membership helper functions, and a trigger that rejects a vehicle assignment when driver and vehicle company IDs differ.
+
+Before testing that follow-up migration in isolation:
+
+- Apply the company foundation draft to a disposable database first.
+- Verify all existing drivers and vehicles receive the same expected company ID.
+- Verify the existing assignments do not contain cross-company pairs before creating the trigger.
+- Test insert and update of a same-company assignment succeeds.
+- Test insert and update of a cross-company assignment fails with a check-constraint error.
+- Test a missing driver/vehicle company ID fails closed.
+- Test a normal authenticated user can see only their own membership, while the global administrator can manage memberships.
+- Confirm company administrators cannot create memberships yet; that capability must be implemented through a separately authorized server-side workflow.
+- Re-run existing driver and admin access tests.
+
+The trigger enforces a data-integrity invariant; it is not a substitute for tenant-specific RLS on the rest of the schema.

@@ -8,6 +8,12 @@ The current data model contains profiles, drivers, vehicles, vehicle assignments
 
 The company foundation migration adds ownership anchors only to `drivers` and `vehicles`. That is intentionally insufficient to enable separate companies.
 
+## Read-only baseline observed during review
+
+At the time of the read-only check on 26 October 2026, the active project contained 29 driver records, 27 vehicles, 27 vehicle assignments, 2 documents, 0 platform activity events and 1,079 platform trip records. These are a snapshot for planning, not fixed acceptance targets. The review did not insert, update or delete production data.
+
+The inspected RLS policies currently use administrator/assigned-driver access for core fleet tables and trip history. They do not yet express company-level isolation, which is why the draft ownership columns must not be treated as enabling multi-company access.
+
 ## Scope matrix
 
 | Data area | Required tenant rule before external companies |

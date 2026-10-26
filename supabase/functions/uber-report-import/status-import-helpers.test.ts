@@ -1,5 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
 import {
+  analyzeUberStatusMatches,
   isEligibleUberDriverRow,
   isOrganizationRow,
   normalizePhone,
@@ -36,4 +37,36 @@ Deno.test("rejects blank UUIDs and unknown or missing states", () => {
 Deno.test("trims UUID and treats state case-insensitively", () => {
   assertEquals(isEligibleUberDriverRow({ "UUID do motorista": " uuid-1 ", Estado: " active " }), true);
   assertEquals(isEligibleUberDriverRow({ "UUID do motorista": " uuid-2 ", Estado: "ACCEPTED" }), true);
+});
+
+Deno.test("matches a driver by UUID, email or normalized phone without ambiguity", () => {
+  const existing = [
+    { id: "driver-1", uber_driver_uuid: "uber-1", email: "one@example.com", phone: "+351 912 345 678" },
+  ];
+  assertEquals(analyzeUberStatusMatches([
+    { "UUID do motorista": "uber-1", "E-mail do motorista": "one@example.com", "Telemóvel": "912345678" },
+  ], existing), {
+    matchedExisting: 1, wouldCreate: 0, ambiguousMatches: 0, duplicateUuidRows: 0,
+  });
+});
+
+Deno.test("blocks conflicting identity matches and duplicate report UUIDs", () => {
+  const existing = [
+    { id: "driver-1", uber_driver_uuid: "uber-1", email: "one@example.com", phone: "911111111" },
+    { id: "driver-2", uber_driver_uuid: "uber-2", email: "two@example.com", phone: "922222222" },
+  ];
+  const result = analyzeUberStatusMatches([
+    { "UUID do motorista": "uber-1", "E-mail do motorista": "two@example.com", "Telemóvel": "911111111" },
+    { "UUID do motorista": "uber-1", "E-mail do motorista": "one@example.com", "Telemóvel": "911111111" },
+  ], existing);
+  assertEquals(result.ambiguousMatches > 0, true);
+  assertEquals(result.duplicateUuidRows, 1);
+});
+
+Deno.test("flags two Uber rows that resolve to the same internal driver", () => {
+  const result = analyzeUberStatusMatches([
+    { "UUID do motorista": "uber-1", "E-mail do motorista": "one@example.com" },
+    { "UUID do motorista": "uber-2", "E-mail do motorista": "one@example.com" },
+  ], [{ id: "driver-1", email: "one@example.com" }]);
+  assertEquals(result.ambiguousMatches, 2);
 });

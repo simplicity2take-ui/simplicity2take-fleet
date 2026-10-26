@@ -46,9 +46,9 @@ The inspected RLS policies currently use administrator/assigned-driver access fo
 ## Recommended implementation sequence
 
 1. Test the existing company-foundation migration in an isolated development database.
-2. Decide the staff membership model and driver-transfer policy.
-3. Add membership/role tables and helper functions with unit tests.
-4. Add company scoping and integrity constraints to assignments and documents.
+2. Decide the driver-transfer policy and confirm company membership roles.
+3. Review the draft membership/integrity migration; it introduces memberships and blocks cross-company driver/vehicle assignments, but it does not finish tenant RLS.
+4. Add company scoping and integrity constraints to documents and document viewers.
 5. Add RLS to operational history, imports, reports and CarTrack data.
 6. Update server-side functions to validate tenant scope.
 7. Add automated negative tests proving Company A cannot read or modify Company B data.

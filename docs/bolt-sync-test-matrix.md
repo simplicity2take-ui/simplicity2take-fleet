@@ -7,7 +7,10 @@ This is a test plan only. It does not call Bolt, write to Supabase, deploy an Ed
 | Case | Input / setup | Expected result |
 |---|---|---|
 | Duplicate driver UUID | Two payload records normalize to the same UUID, ignoring case/outer whitespace | Reject the payload before any database writes |
+| Duplicate driver email | Two records share an email, including different UUIDs | Reject the payload before any database writes |
+| Duplicate driver phone | Two records share a phone after whitespace normalization, including different UUIDs/emails | Reject the payload before any database writes |
 | Duplicate vehicle UUID | Two payload records normalize to the same UUID, ignoring case/outer whitespace | Reject the payload before any database writes |
+| Duplicate vehicle registration | Two records share a registration after spaces/hyphens are removed, including different UUIDs | Reject the payload before any database writes |
 | Missing vehicle identity | Vehicle has neither UUID nor registration | Abort with a clear validation error |
 | Missing driver identity | Driver has no UUID, email or phone | Abort with a clear validation error |
 | Inactive status | `inactive`, `deactivated`, `blocked`, `rejected` | Map to Inativo |
@@ -49,4 +52,4 @@ This is a test plan only. It does not call Bolt, write to Supabase, deploy an Ed
 
 ## Current state
 
-The Deno type-check passed on commit `5d409bc5be403c6a1251b41ca3d6ad2fe9c8ef13`. That check validates types only. No behavioral/integration test is claimed complete here. No production sync or deployment is authorized by this document.
+The Deno type-check and unit tests passed on commit `ee8cbccd40062f5528d83f166c1d2e6b94d83b92` (workflow run 40586829378). Unit tests cover the pure helper cases, including fallback identity duplicates. They do not exercise database writes, tenant isolation, rollback, Bolt API pagination, or browser behavior. No behavioral/integration test against Supabase is claimed complete here. No production sync or deployment is authorized by this document.

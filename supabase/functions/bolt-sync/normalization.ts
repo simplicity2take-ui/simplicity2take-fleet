@@ -104,7 +104,8 @@ export function assertCompatibleExternalId(
 ): void {
   const incoming = clean(sourceId).trim();
   const stored = clean(existingId).trim();
-  // UUID/external identity comparisons should not fail only because casing differs.\n  if (incoming && stored && incoming.toLowerCase() !== stored.toLowerCase()) {
+  // UUID/external identity comparisons should not fail only because casing differs.
+  if (incoming && stored && incoming.toLowerCase() !== stored.toLowerCase()) {
     throw new Error(
       `Conflito de identidade ${label}: a referência Bolt recebida difere da referência já associada. Sincronização interrompida para revisão manual.`,
     );

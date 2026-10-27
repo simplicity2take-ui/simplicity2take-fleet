@@ -14,7 +14,7 @@ Status: draft implementation on `fix/bolt-sync-preserve-assignments`. No product
 ## Validation status
 
 - [x] Added a GitHub Actions workflow to run `deno check supabase/functions/bolt-sync/index.ts`.
-- [ ] Confirm that the new workflow has actually run and passed. A workflow file being committed is not proof of a successful check.
+- [x] Deno type-check passed on commit `5d409bc5be403c6a1251b41ca3d6ad2fe9c8ef13` (workflow run 40576854043).
 - [ ] Test no active assignment: one new assignment is created.
 - [ ] Test exactly one matching active assignment: no write to `vehicle_assignments`.
 - [ ] Test one active assignment to a different vehicle: no delete/insert; conflict count increases.

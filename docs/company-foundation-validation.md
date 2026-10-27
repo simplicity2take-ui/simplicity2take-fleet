@@ -52,3 +52,16 @@ Before testing that follow-up migration in isolation:
 - Re-run existing driver and admin access tests.
 
 The trigger enforces a data-integrity invariant; it is not a substitute for tenant-specific RLS on the rest of the schema.
+
+## Additional checks after membership read policy was added
+
+- With an active membership for Company A, the member can select Company A from `public.companies`.
+- The same member cannot select Company B unless they also have an active membership there.
+- An inactive membership grants no company read access.
+- A company member cannot insert, update, or delete company directory rows; those writes remain global-admin-only.
+- A profile with no membership cannot read any company row unless it is a global administrator.
+- Test using real authenticated sessions and RLS, not only SQL executed as the database owner/service role, which can bypass RLS.
+
+## Current live-data diagnostic (read-only, 27 October 2026)
+
+The active project currently reports 0 rows in `platform_activity_events`, 1,079 rows in `platform_trip_records`, 24 rows in `uber_driver_activity`, and 27 rows in `vehicle_assignments`. This does not establish why platform activity events are empty. Before changing any import or sync, trace the Bolt ingestion path, its last successful run/logs, and the destination table used by the UI. Do not backfill or rerun imports against production until the source file, deduplication key, and write effects are reviewed.

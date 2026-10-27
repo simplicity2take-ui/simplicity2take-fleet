@@ -2,7 +2,7 @@
 
 Status: draft implementation on `fix/bolt-sync-preserve-assignments`. No production function has been deployed and no production data has been changed.
 
-## Expected behavior
+## Expected assignment behavior
 
 - A driver with exactly one active assignment to the same vehicle reported by Bolt remains unchanged.
 - A driver with any active assignment to a different vehicle is flagged as a conflict; the existing assignment and history are preserved.
@@ -15,14 +15,20 @@ Status: draft implementation on `fix/bolt-sync-preserve-assignments`. No product
 
 - [x] Added a GitHub Actions workflow to run `deno check supabase/functions/bolt-sync/index.ts`.
 - [x] Deno type-check passed on commit `5d409bc5be403c6a1251b41ca3d6ad2fe9c8ef13` (workflow run 40576854043).
-- [x] Frontend code review: the sync toast displays the number of new assignments and warns when conflicts need manual review. This is a code inspection, not a browser/UI test.
+- [x] Code review confirms the frontend toast displays new assignment count and warns about conflicts. This is not a browser/UI test.
 - [ ] Test no active assignment: one new assignment is created.
 - [ ] Test exactly one matching active assignment: no write to `vehicle_assignments`.
 - [ ] Test one active assignment to a different vehicle: no delete/insert; conflict count increases.
 - [ ] Test multiple active assignments: no delete/insert; conflict count increases.
 - [ ] Test Bolt driver with no matched active vehicle: existing assignment remains untouched.
-- [ ] Verify the external Bolt response mapping and pagination with the account's own API documentation or an approved read-only/non-production request.
+- [ ] Verify API response mapping and pagination using the account's authenticated API documentation or an approved read-only/non-production request.
 - [ ] Review driver/vehicle identity matching and tenant/company scope before deployment.
+
+## Newly identified risk: partial writes
+
+The current function validates duplicate identities before writes, which is good, but then writes vehicles and drivers sequentially. If a later upsert fails, earlier writes may already have committed. This function does not wrap the full sync in a database transaction. Therefore, an HTTP error response does not necessarily mean that nothing changed.
+
+Before running a real sync, either move the write phase behind a transactional database RPC/staging-and-commit design, or explicitly design and test safe idempotent recovery after partial completion. Do not claim all-or-nothing behavior until this is implemented and tested.
 
 ## API contract and pagination warning
 
@@ -30,10 +36,12 @@ The public Bolt developer documentation found during research does not document 
 
 Do not guess at the pagination schema or treat an HTTP 200 response as proof that all records were returned. Confirm the exact request fields, response envelope, total/has-more indicator, and maximum page size from the authenticated Fleet API documentation before implementing pagination or running a real sync.
 
+## Authorization and company isolation
+
+The current sync uses a hard-coded administrator email and queries drivers/vehicles globally without company scope. Because it uses the Supabase service-role key, row-level security does not automatically protect these operations. Do not deploy this function for multi-company use until the authorization and tenant scope are derived from trusted server-side membership and all reads/writes are company-scoped.
+
 ## Limitations
 
 This change deliberately does not automatically close an old assignment or transfer a driver to another vehicle. Conflicts require a human-reviewed resolution flow. This avoids silent history loss but means a Bolt-reported vehicle change will not automatically become the Fleet active assignment.
-
-The sync currently uses a hard-coded administrator email and matches records globally rather than by company/tenant. Those restrictions must be reviewed as part of the multi-company work before deployment.
 
 A passing type check is not a substitute for behavioral tests. Do not deploy or run a real sync until the checks above have been completed and reviewed.

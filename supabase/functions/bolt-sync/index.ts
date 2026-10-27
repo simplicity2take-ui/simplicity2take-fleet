@@ -14,7 +14,7 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { arrayFrom, assertNoDuplicateExternalIdentity, clean, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "./normalization.ts";
+import { arrayFrom, assertNoDuplicateExternalIdentity, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "./normalization.ts";
 
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
@@ -154,12 +154,10 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
       .is("active_until", null);
     if (activeResult.error) throw activeResult.error;
     const activeAssignments = activeResult.data || [];
-    const sameVehicle = activeAssignments.some((assignment: any) => assignment.vehicle_id === assignedVehicle.id);
-    // Exactly one active assignment is the only unambiguous "already in sync" case.
-    // Multiple active rows are inconsistent even if they point to the same vehicle.
-    if (activeAssignments.length === 1 && sameVehicle) {
+    const decision = decideAssignment(activeAssignments, assignedVehicle.id);
+    if (decision === "unchanged") {
       assignmentAction = "unchanged";
-    } else if (activeAssignments.length > 0) {
+    } else if (decision === "conflict") {
       assignmentAction = "conflict";
     } else {
       const assignment = await admin.from("vehicle_assignments").insert({

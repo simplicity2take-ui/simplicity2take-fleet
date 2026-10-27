@@ -199,8 +199,21 @@ Deno.serve(async (req: Request) => {
 
     // Validate the full response before any database writes, so duplicate source
     // identities cannot cause partial or ambiguous upserts.
-    assertNoDuplicateExternalIdentity(boltDrivers, "UUID de motorista", normalizeDriverId);
-    assertNoDuplicateExternalIdentity(boltVehicles, "UUID de viatura", normalizeVehicleId);
+    // Check the identity actually used for matching, including fallback fields,
+    // before any database writes. This prevents duplicate fallback identities
+    // (email/phone or registration) from reaching the upsert loops.
+    assertNoDuplicateExternalIdentity(
+      boltDrivers,
+      "identificação de motorista",
+      (driver: any) => normalizeDriverId(driver) ||
+        clean(first(driver, ["email"])).trim().toLowerCase() ||
+        clean(first(driver, ["phone", "phone_number"])).replace(/\\s+/g, ""),
+    );
+    assertNoDuplicateExternalIdentity(
+      boltVehicles,
+      "identificação de viatura",
+      (vehicle: any) => normalizeVehicleId(vehicle) || normalizePlate(vehicle).replace(/[\\s-]+/g, "").toUpperCase(),
+    );
     assertRequiredExternalIdentities(
       boltDrivers,
       "motorista",

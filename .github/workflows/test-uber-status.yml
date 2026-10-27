@@ -1,0 +1,29 @@
+name: Uber status import tests
+
+on:
+  pull_request:
+    paths:
+      - "supabase/functions/uber-report-import/**"
+      - ".github/workflows/test-uber-status.yml"
+  push:
+    branches:
+      - main
+      - fix/uber-status-import-preview
+    paths:
+      - "supabase/functions/uber-report-import/**"
+      - ".github/workflows/test-uber-status.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Run Uber status helper tests
+        run: deno test supabase/functions/uber-report-import/status-import-helpers.test.ts
+      - name: Type-check helper and tests
+        run: deno check supabase/functions/uber-report-import/index.ts supabase/functions/uber-report-import/status-import-helpers.ts supabase/functions/uber-report-import/status-import-helpers.test.ts

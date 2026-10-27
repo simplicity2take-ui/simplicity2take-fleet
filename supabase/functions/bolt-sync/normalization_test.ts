@@ -1,6 +1,7 @@
 import {
   arrayFrom,
   assertNoDuplicateExternalIdentity,
+  decideAssignment,
   normalizeActiveVehicle,
   normalizeDriverId,
   normalizePlate,
@@ -56,4 +57,20 @@ Deno.test("active vehicle normalizer accepts object and flat identity fields", (
   assertEquals(normalizeActiveVehicle({ active_vehicle: { uuid: "v1" } }), { uuid: "v1" });
   assertEquals(normalizeActiveVehicle({ active_vehicle_uuid: "v2", active_vehicle_reg_number: "AA-00-BB" }), { uuid: "v2", reg_number: "AA-00-BB" });
   assertEquals(normalizeActiveVehicle({}), null);
+});
+
+Deno.test("assignment decision preserves a single matching active assignment", () => {
+  assertEquals(decideAssignment([{ vehicle_id: "vehicle-1" }], "vehicle-1"), "unchanged");
+});
+
+Deno.test("assignment decision flags a different active vehicle without replacement", () => {
+  assertEquals(decideAssignment([{ vehicle_id: "vehicle-1" }], "vehicle-2"), "conflict");
+});
+
+Deno.test("assignment decision flags multiple active rows even when vehicle matches", () => {
+  assertEquals(decideAssignment([{ vehicle_id: "vehicle-1" }, { vehicle_id: "vehicle-1" }], "vehicle-1"), "conflict");
+});
+
+Deno.test("assignment decision creates only when no active assignment exists", () => {
+  assertEquals(decideAssignment([], "vehicle-1"), "create");
 });

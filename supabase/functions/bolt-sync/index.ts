@@ -202,17 +202,32 @@ Deno.serve(async (req: Request) => {
     // Check the identity actually used for matching, including fallback fields,
     // before any database writes. This prevents duplicate fallback identities
     // (email/phone or registration) from reaching the upsert loops.
+    // Validate each fallback channel independently. A unique UUID must not
+    // hide duplicate emails, phone numbers, or registrations in other records.
     assertNoDuplicateExternalIdentity(
       boltDrivers,
-      "identificação de motorista",
-      (driver: any) => normalizeDriverId(driver) ||
-        clean(first(driver, ["email"])).trim().toLowerCase() ||
-        clean(first(driver, ["phone", "phone_number"])).replace(/\s+/g, ""),
+      "UUID de motorista",
+      (driver: any) => normalizeDriverId(driver),
+    );
+    assertNoDuplicateExternalIdentity(
+      boltDrivers,
+      "email de motorista",
+      (driver: any) => clean(first(driver, ["email"])).trim().toLowerCase(),
+    );
+    assertNoDuplicateExternalIdentity(
+      boltDrivers,
+      "telefone de motorista",
+      (driver: any) => clean(first(driver, ["phone", "phone_number"])).replace(/\s+/g, ""),
     );
     assertNoDuplicateExternalIdentity(
       boltVehicles,
-      "identificação de viatura",
-      (vehicle: any) => normalizeVehicleId(vehicle) || normalizePlate(vehicle).replace(/[\s-]+/g, "").toUpperCase(),
+      "UUID de viatura",
+      (vehicle: any) => normalizeVehicleId(vehicle),
+    );
+    assertNoDuplicateExternalIdentity(
+      boltVehicles,
+      "matrícula de viatura",
+      (vehicle: any) => normalizePlate(vehicle).replace(/[\s-]+/g, "").toUpperCase(),
     );
     assertRequiredExternalIdentities(
       boltDrivers,

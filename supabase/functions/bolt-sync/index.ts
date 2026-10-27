@@ -34,11 +34,14 @@ function arrayFrom(payload: any, keys: string[]) {
   return [];
 }
 function statusToPortal(value: unknown, current = "Ativo") {
-  const s = clean(value).toLowerCase();
+  const s = clean(value).trim().toLowerCase();
   if (!s) return current || "Ativo";
-  if (/(suspend|blocked|deactiv|inactive|terminated|banned|disabled)/.test(s)) return "Inativo";
-  if (/(active|activated|enabled|approved)/.test(s)) return "Ativo";
-  return current || "Ativo";
+  // Check negative states first so strings such as "inactive" cannot be
+  // interpreted as active merely because they contain the word "active".
+  if (/(suspend|blocked|deactiv|inactive|terminated|banned|disabled|rejected|declined)/.test(s)) return "Inativo";
+  if (/^(active|activated|enabled|approved|1|true)$/.test(s)) return "Ativo";
+  // Unknown external states must not silently activate a newly imported record.
+  return current || "Inativo";
 }
 function normalizeVehicleId(vehicle: any) { return clean(first(vehicle, ["uuid", "vehicle_uuid", "id"])); }
 function normalizePlate(vehicle: any) { return clean(first(vehicle, ["reg_number", "registration_number", "plate", "license_plate"])); }

@@ -74,7 +74,14 @@ async function boltPost(path: string, token: string) {
     const text = await response.text();
     let data: any = {};
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    if (response.ok) return data;
+    if (response.ok) {
+      // Some Bolt gateway responses report application-level errors with HTTP 200.
+      // Do not treat those payloads as successful driver/vehicle data.
+      if (data?.code !== undefined && Number(data.code) !== 0) {
+        throw new Error(clean(data?.message || data?.error || "A API Bolt devolveu um erro."));
+      }
+      return data;
+    }
     lastError = clean(data?.message || data?.error || text || lastError);
   }
   throw new Error(lastError);

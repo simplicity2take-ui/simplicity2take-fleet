@@ -76,3 +76,9 @@ The active project currently reports 0 rows in `platform_activity_events`, 1,079
 - The standard `bolt-sync` source also replaces a driver's existing vehicle assignments when an active vehicle is returned. This side effect must be included in a preflight/backup and reconciliation plan before running it against production.
 
 These findings are from source inspection and read-only SQL only; no Bolt API request or database write was performed during this diagnostic.
+
+## Production RPC permission check (read-only, 27 October 2026)
+
+The live function ACL check shows `public.sync_bolt_activity(jsonb,jsonb)` is `SECURITY DEFINER` and executable by `service_role` (and postgres), not by `anon` or `authenticated`. This is consistent with the Edge Function using the service role for writes; do not broaden these grants to browser roles. The helper `public.s2t_is_admin()` is executable by `authenticated`, as needed by existing admin policies.
+
+This was an inspection of function metadata only. No grants or function definitions were changed.

@@ -111,3 +111,11 @@ export function assertCompatibleExternalId(
     );
   }
 }
+
+/** Stable public error envelope; never expose provider/database exception text. */
+export function safeSyncError(_error: unknown): { code: string; message: string } {
+  return {
+    code: "BOLT_SYNC_FAILED",
+    message: "A sincronização falhou. Tente novamente mais tarde ou contacte o administrador.",
+  };
+}

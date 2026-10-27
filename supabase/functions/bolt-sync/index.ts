@@ -89,6 +89,9 @@ async function boltPost(path: string, token: string) {
 async function upsertVehicle(admin: any, vehicle: any, now: string) {
   const boltId = normalizeVehicleId(vehicle);
   const plate = normalizePlate(vehicle);
+  if (!boltId && !plate) {
+    throw new Error("A Bolt devolveu uma viatura sem UUID nem matrícula. Sincronização interrompida para evitar criar registos duplicados.");
+  }
   const model = clean(first(vehicle, ["model", "vehicle_model"]));
   const yearValue = first(vehicle, ["year", "vehicle_year"]);
   const year = Number.isFinite(Number(yearValue)) && Number(yearValue) > 1900 ? Number(yearValue) : null;
@@ -131,6 +134,9 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
   const email = clean(first(driver, ["email"]));
   const phone = clean(first(driver, ["phone", "phone_number"]));
+  if (!boltId && !email && !phone) {
+    throw new Error("A Bolt devolveu um motorista sem UUID, email nem telefone. Sincronização interrompida para evitar criar registos duplicados.");
+  }
   const state = first(driver, ["state", "status"]);
   const activeVehicle = normalizeActiveVehicle(driver);
   const activeVehicleId = normalizeVehicleId(activeVehicle);

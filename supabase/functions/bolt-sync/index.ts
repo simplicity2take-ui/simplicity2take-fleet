@@ -14,7 +14,7 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { arrayFrom, assertNoDuplicateExternalIdentity, clean, first, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "./normalization.ts";
+import { arrayFrom, assertNoDuplicateExternalIdentity, clean, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "./normalization.ts";
 
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";

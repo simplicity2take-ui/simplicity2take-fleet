@@ -14,7 +14,7 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { arrayFrom, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "./normalization.ts";
+import { arrayFrom, assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "./normalization.ts";
 
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
@@ -74,6 +74,7 @@ async function upsertVehicle(admin: any, vehicle: any, now: string) {
     if (lookup.error) throw new Error("Não foi possível validar a matrícula da viatura; sincronização interrompida para evitar duplicados.");
     existing = lookup.data;
   }
+  assertCompatibleExternalId(boltId, existing?.bolt_vehicle_uuid, "da viatura");
   const payload: any = {
     plate: plate || existing?.plate || "",
     model: model || existing?.model || "",
@@ -123,6 +124,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     if (lookup.error) throw new Error("O telefone do motorista corresponde a registos ambíguos; sincronização interrompida para revisão manual.");
     existing = lookup.data;
   }
+  assertCompatibleExternalId(boltId, existing?.bolt_driver_uuid, "do motorista");
   const payload: any = {
     full_name: fullName || existing?.full_name || "Motorista Bolt",
     email: email || existing?.email || null,

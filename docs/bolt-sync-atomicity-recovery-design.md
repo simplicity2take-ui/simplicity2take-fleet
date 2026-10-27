@@ -47,6 +47,18 @@ This makes the **database apply phase** atomic; it cannot make the external Bolt
 - A driver or vehicle without a usable identity fails validation before the apply phase.
 - A vehicle assignment is created only when no active assignment exists. A different or multiple active assignment is reported as a conflict and left unchanged.
 
+## Schema inspection findings (read-only)
+
+A read-only schema inspection of the currently connected Supabase project was used to check assumptions. No rows were changed. These observations describe that project's current schema snapshot, not a test environment:
+
+- `vehicles.plate` has a unique constraint; `vehicles.bolt_vehicle_uuid` does not show a unique constraint in the returned schema metadata.
+- `drivers.bolt_driver_uuid` does not show a unique constraint; driver email and phone also do not show unique constraints.
+- `vehicle_assignments` has a primary key and foreign keys, but the returned metadata does not show a unique partial constraint limiting each driver to one active assignment.
+- The inspected `drivers` and `vehicles` tables do not currently expose `company_id` columns. The company ownership and membership migrations are still draft work on a separate pull request and have not been applied to this project.
+- The current schema therefore cannot yet support a safe, tenant-scoped transactional RPC simply by adding a function. Matching rules, unique indexes, company ownership, assignment constraints and migration order need to be reviewed together.
+
+These findings are not permission to modify the connected project. Do not apply the draft migrations or create test data there. Re-run schema validation against a disposable Supabase project before implementing or testing the RPC.
+
 ## Transactional RPC contract (implementation checklist)
 
 Do not create the RPC until the exact deployed schema and reviewed company-membership migrations are available on the implementation branch. The contract below is intentionally a design checklist, not executable SQL.

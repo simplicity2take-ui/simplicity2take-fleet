@@ -63,11 +63,11 @@ Run only against a disposable, isolated Supabase project with mocked Bolt payloa
 
 ## Current error-handling gap
 
-The current Edge Function catch block logs the raw caught error and returns its message to the caller. Supabase/PostgREST errors can contain internal schema, constraint, or query details; other upstream errors may contain provider-specific diagnostics. This is not a safe long-term boundary.
+The earlier Edge Function catch block logged the raw caught error and returned its message to the caller. The current branch now returns a stable public error code/message and logs only that code. This reduces disclosure risk, but it deliberately sacrifices diagnostic detail until a controlled, access-restricted and redacted logging path is implemented.
 
 Before live use:
-- Return a stable, user-safe error code/message to the browser; do not return arbitrary database/provider exception text.
-- Log only a correlation/sync identifier, operation stage, and a classified error code. Do not log credentials, access tokens, full upstream responses, driver records, or raw database errors.
+- Keep the stable, user-safe error code/message at the browser boundary; do not return arbitrary database/provider exception text.
+- Add a correlation/sync identifier and operation stage to logs when the surrounding flow supports them. Do not log credentials, access tokens, full upstream responses, driver records, or raw database errors.
 - Preserve useful operator diagnostics in a controlled server-side channel with access restrictions and retention rules, after explicit redaction.
 - Add tests proving that simulated database errors, upstream error bodies, access tokens, and client secrets do not appear in HTTP responses or ordinary logs.
 

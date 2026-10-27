@@ -14,7 +14,7 @@ Status: draft implementation on `fix/bolt-sync-preserve-assignments`. No product
 ## Validation status
 
 - [x] Added a GitHub Actions workflow to run `deno check supabase/functions/bolt-sync/index.ts`.
-- [x] Deno type-check and unit tests passed on commit `041cd21b5b8b193667e9cc932a3e530c7d87f69c` (workflow run 40586829378).
+- [x] Deno type-check and unit tests passed on commit `ee8cbccd40062f5528d83f166c1d2e6b94d83b92` (workflow run 40586829378).
 - [x] Code review confirms the frontend toast displays new assignment count and warns about conflicts. This is not a browser/UI test.
 - [ ] Test no active assignment: one new assignment is created.
 - [ ] Test exactly one matching active assignment: no write to `vehicle_assignments`.

@@ -126,6 +126,22 @@ Deno.serve(async (req) => {
     const token = auth.slice(7);
     const me = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` } });
     if (!me.ok) return new Response(JSON.stringify({ error: "Sessão inválida" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    const user = await me.json();
+    if (!user?.id) return new Response(JSON.stringify({ error: "Sessão inválida" }), { status: 401, headers: { "Content-Type": "application/json" } });
+
+    // This Edge Function uses the service-role key for reads and writes.
+    // Require an active global administrator before processing any report type.
+    const profileResponse = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=role,status&limit=1`,
+      { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+    );
+    if (!profileResponse.ok) {
+      return new Response(JSON.stringify({ error: "Não foi possível validar as permissões do administrador." }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const profiles = await profileResponse.json();
+    if (!Array.isArray(profiles) || profiles.length !== 1 || profiles[0]?.role !== "admin" || profiles[0]?.status !== "Ativo") {
+      return new Response(JSON.stringify({ error: "Apenas um administrador ativo pode importar relatórios." }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
 
     const url = new URL(req.url);
     const requestedType = url.searchParams.get("type") || "status";

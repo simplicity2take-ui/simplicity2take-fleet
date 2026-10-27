@@ -1,6 +1,7 @@
 import {
   arrayFrom,
   assertNoDuplicateExternalIdentity,
+  normalizeActiveVehicle,
   normalizeDriverId,
   normalizePlate,
   normalizeVehicleId,
@@ -49,4 +50,10 @@ Deno.test("duplicate identity check ignores missing identities for caller valida
     assertNoDuplicateExternalIdentity([{ uuid: "" }, {}], "UUID", normalizeDriverId),
     undefined,
   );
+});
+
+Deno.test("active vehicle normalizer accepts object and flat identity fields", () => {
+  assertEquals(normalizeActiveVehicle({ active_vehicle: { uuid: "v1" } }), { uuid: "v1" });
+  assertEquals(normalizeActiveVehicle({ active_vehicle_uuid: "v2", active_vehicle_reg_number: "AA-00-BB" }), { uuid: "v2", reg_number: "AA-00-BB" });
+  assertEquals(normalizeActiveVehicle({}), null);
 });

@@ -114,3 +114,15 @@ Deno.test("duplicate fallback vehicle registration is rejected before writes", (
     "duplicado",
   );
 });
+
+Deno.test("duplicate fallback driver phone ignores whitespace", () => {
+  assertThrows(
+    () => assertNoDuplicateExternalIdentity(
+      [{ phone: "+351 912 345 678" }, { phone_number: "+351912345678" }],
+      "identificação de motorista",
+      (driver) => String(driver.phone || driver.phone_number || "").replace(/\s+/g, ""),
+    ),
+    Error,
+    "duplicado",
+  );
+});

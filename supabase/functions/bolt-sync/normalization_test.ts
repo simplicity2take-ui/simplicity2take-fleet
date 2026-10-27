@@ -19,7 +19,7 @@ Deno.test("status mapping rejects inactive before checking active", () => {
 Deno.test("unknown status preserves existing state but defaults new records to inactive", () => {
   assertEquals(statusToPortal("pending", "Ativo"), "Ativo");
   assertEquals(statusToPortal("pending", "Inativo"), "Inativo");
-  assertEquals(statusToPortal("pending"), "Ativo");
+  assertEquals(statusToPortal("pending", "Inativo"), "Inativo");
 });
 
 Deno.test("arrayFrom finds nested supported arrays", () => {

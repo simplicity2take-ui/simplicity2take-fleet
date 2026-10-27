@@ -153,10 +153,11 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     if (activeResult.error) throw activeResult.error;
     const activeAssignments = activeResult.data || [];
     const sameVehicle = activeAssignments.some((assignment: any) => assignment.vehicle_id === assignedVehicle.id);
-    const differentVehicle = activeAssignments.some((assignment: any) => assignment.vehicle_id !== assignedVehicle.id);
-    if (sameVehicle && !differentVehicle) {
+    // Exactly one active assignment is the only unambiguous "already in sync" case.
+    // Multiple active rows are inconsistent even if they point to the same vehicle.
+    if (activeAssignments.length === 1 && sameVehicle) {
       assignmentAction = "unchanged";
-    } else if (differentVehicle || activeAssignments.length > 0) {
+    } else if (activeAssignments.length > 0) {
       assignmentAction = "conflict";
     } else {
       const assignment = await admin.from("vehicle_assignments").insert({

@@ -22,12 +22,12 @@ function first(obj: any, keys: string[]) {
   }
   return "";
 }
-function arrayFrom(payload: any, keys: string[]) {
+function arrayFrom(payload: any, keys: string[]): any[] {
   if (Array.isArray(payload)) return payload;
   for (const key of keys) if (Array.isArray(payload?.[key])) return payload[key];
   for (const key of ["data", "result", "response"]) {
     if (payload?.[key] && typeof payload[key] === "object") {
-      const nested = arrayFrom(payload[key], keys);
+      const nested: any[] = arrayFrom(payload[key], keys);
       if (nested.length) return nested;
     }
   }

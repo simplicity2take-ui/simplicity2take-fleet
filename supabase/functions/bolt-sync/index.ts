@@ -85,8 +85,16 @@ async function upsertVehicle(admin: any, vehicle: any, now: string) {
   const vin = clean(first(vehicle, ["vin", "VIN"]));
   const state = first(vehicle, ["state", "status"]);
   let existing: any = null;
-  if (boltId) existing = (await admin.from("vehicles").select("*").eq("bolt_vehicle_uuid", boltId).maybeSingle()).data;
-  if (!existing && plate) existing = (await admin.from("vehicles").select("*").eq("plate", plate).maybeSingle()).data;
+  if (boltId) {
+    const lookup = await admin.from("vehicles").select("*").eq("bolt_vehicle_uuid", boltId).maybeSingle();
+    if (lookup.error) throw new Error("Não foi possível validar a viatura pela referência Bolt; sincronização interrompida para evitar duplicados.");
+    existing = lookup.data;
+  }
+  if (!existing && plate) {
+    const lookup = await admin.from("vehicles").select("*").eq("plate", plate).maybeSingle();
+    if (lookup.error) throw new Error("Não foi possível validar a matrícula da viatura; sincronização interrompida para evitar duplicados.");
+    existing = lookup.data;
+  }
   const payload: any = {
     plate: plate || existing?.plate || "",
     model: model || existing?.model || "",
@@ -118,9 +126,21 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   const activeVehicleId = normalizeVehicleId(activeVehicle);
   const activePlate = normalizePlate(activeVehicle);
   let existing: any = null;
-  if (boltId) existing = (await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).maybeSingle()).data;
-  if (!existing && email) existing = (await admin.from("drivers").select("*").ilike("email", email).maybeSingle()).data;
-  if (!existing && phone) existing = (await admin.from("drivers").select("*").eq("phone", phone).maybeSingle()).data;
+  if (boltId) {
+    const lookup = await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).maybeSingle();
+    if (lookup.error) throw new Error("Não foi possível validar o motorista pela referência Bolt; sincronização interrompida para evitar duplicados.");
+    existing = lookup.data;
+  }
+  if (!existing && email) {
+    const lookup = await admin.from("drivers").select("*").ilike("email", email).maybeSingle();
+    if (lookup.error) throw new Error("O email do motorista corresponde a registos ambíguos; sincronização interrompida para revisão manual.");
+    existing = lookup.data;
+  }
+  if (!existing && phone) {
+    const lookup = await admin.from("drivers").select("*").eq("phone", phone).maybeSingle();
+    if (lookup.error) throw new Error("O telefone do motorista corresponde a registos ambíguos; sincronização interrompida para revisão manual.");
+    existing = lookup.data;
+  }
   const payload: any = {
     full_name: fullName || existing?.full_name || "Motorista Bolt",
     email: email || existing?.email || null,

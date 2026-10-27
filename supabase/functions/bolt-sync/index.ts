@@ -14,53 +14,8 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-function clean(value: unknown) { return value === undefined || value === null ? "" : String(value); }
-function first(obj: any, keys: string[]) {
-  for (const key of keys) {
-    const value = obj?.[key];
-    if (value !== undefined && value !== null && value !== "") return value;
-  }
-  return "";
-}
-function arrayFrom(payload: any, keys: string[]): any[] {
-  if (Array.isArray(payload)) return payload;
-  for (const key of keys) if (Array.isArray(payload?.[key])) return payload[key];
-  for (const key of ["data", "result", "response"]) {
-    if (payload?.[key] && typeof payload[key] === "object") {
-      const nested: any[] = arrayFrom(payload[key], keys);
-      if (nested.length) return nested;
-    }
-  }
-  return [];
-}
-function statusToPortal(value: unknown, current = "Ativo") {
-  const s = clean(value).trim().toLowerCase();
-  if (!s) return current || "Ativo";
-  // Check negative states first so strings such as "inactive" cannot be
-  // interpreted as active merely because they contain the word "active".
-  if (/(suspend|blocked|deactiv|inactive|terminated|banned|disabled|rejected|declined)/.test(s)) return "Inativo";
-  if (/^(active|activated|enabled|approved|1|true)$/.test(s)) return "Ativo";
-  // Unknown external states must not silently activate a newly imported record.
-  return current || "Inativo";
-}
-function normalizeVehicleId(vehicle: any) { return clean(first(vehicle, ["uuid", "vehicle_uuid", "id"])); }
-function normalizePlate(vehicle: any) { return clean(first(vehicle, ["reg_number", "registration_number", "plate", "license_plate"])); }
-function normalizeDriverId(driver: any) { return clean(first(driver, ["driver_uuid", "uuid", "id"])); }
-function normalizeActiveVehicle(driver: any) {
-  const v = driver?.active_vehicle;
-  return v && typeof v === "object" ? v : null;
-}
-function assertNoDuplicateExternalIdentity(rows: any[], label: string, identity: (row: any) => string) {
-  const seen = new Set<string>();
-  for (const row of rows) {
-    const key = identity(row).trim().toUpperCase();
-    if (!key) continue;
-    if (seen.has(key)) {
-      throw new Error(`A Bolt devolveu ${label} duplicado (${key}). Sincronização interrompida para revisão manual.`);
-    }
-    seen.add(key);
-  }
-}
+import { arrayFrom, assertNoDuplicateExternalIdentity, clean, first, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "./normalization.ts";
+
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
   const clientSecret = Deno.env.get("BOLT_CLIENT_SECRET") || "";

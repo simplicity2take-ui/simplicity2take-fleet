@@ -14,7 +14,7 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { arrayFrom, assertNoDuplicateExternalIdentity, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "./normalization.ts";
+import { arrayFrom, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "./normalization.ts";
 
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
@@ -201,6 +201,16 @@ Deno.serve(async (req: Request) => {
     // identities cannot cause partial or ambiguous upserts.
     assertNoDuplicateExternalIdentity(boltDrivers, "UUID de motorista", normalizeDriverId);
     assertNoDuplicateExternalIdentity(boltVehicles, "UUID de viatura", normalizeVehicleId);
+    assertRequiredExternalIdentities(
+      boltDrivers,
+      "motorista",
+      (driver: any) => normalizeDriverId(driver) || clean(first(driver, ["email"])) || clean(first(driver, ["phone", "phone_number"])),
+    );
+    assertRequiredExternalIdentities(
+      boltVehicles,
+      "viatura",
+      (vehicle: any) => normalizeVehicleId(vehicle) || normalizePlate(vehicle),
+    );
 
     const now = new Date().toISOString();
     const vehicleByBoltId = new Map<string, any>();

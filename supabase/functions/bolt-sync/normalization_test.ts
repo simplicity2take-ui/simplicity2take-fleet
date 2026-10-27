@@ -175,7 +175,7 @@ Deno.test("fallback identity match rejects a different stored driver Bolt UUID",
 });
 
 Deno.test("compatible external identity permits same UUID or missing source UUID", () => {
-  assertEquals(assertCompatibleExternalId("bolt-1", "bolt-1", "da viatura"), undefined);
+  assertEquals(assertCompatibleExternalId("bolt-1", "bolt-1", "da viatura"), undefined);\n  assertEquals(assertCompatibleExternalId("BOLT-1", "bolt-1", "da viatura"), undefined);
   assertEquals(assertCompatibleExternalId("", "bolt-1", "da viatura"), undefined);
   assertEquals(assertCompatibleExternalId("bolt-1", "", "da viatura"), undefined);
 });

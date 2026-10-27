@@ -50,6 +50,17 @@ function normalizeActiveVehicle(driver: any) {
   const v = driver?.active_vehicle;
   return v && typeof v === "object" ? v : null;
 }
+function assertNoDuplicateExternalIdentity(rows: any[], label: string, identity: (row: any) => string) {
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = identity(row).trim().toUpperCase();
+    if (!key) continue;
+    if (seen.has(key)) {
+      throw new Error(`A Bolt devolveu ${label} duplicado (${key}). Sincronização interrompida para revisão manual.`);
+    }
+    seen.add(key);
+  }
+}
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
   const clientSecret = Deno.env.get("BOLT_CLIENT_SECRET") || "";
@@ -232,6 +243,11 @@ Deno.serve(async (req: Request) => {
     const boltDrivers = arrayFrom(driversPayload, ["drivers", "fleet_drivers", "items"]);
     const boltVehicles = arrayFrom(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
     if (!boltDrivers.length && !boltVehicles.length) return json({ ok: false, error: "A Bolt respondeu sem motoristas nem viaturas. Confirme no Swagger os parâmetros de paginação da tua conta." }, 502);
+
+    // Validate the full response before any database writes, so duplicate source
+    // identities cannot cause partial or ambiguous upserts.
+    assertNoDuplicateExternalIdentity(boltDrivers, "UUID de motorista", normalizeDriverId);
+    assertNoDuplicateExternalIdentity(boltVehicles, "UUID de viatura", normalizeVehicleId);
 
     const now = new Date().toISOString();
     const vehicleByBoltId = new Map<string, any>();

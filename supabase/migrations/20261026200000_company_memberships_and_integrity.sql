@@ -57,6 +57,15 @@ as $$
     );
 $$;
 
+
+-- Company staff need to read the company record that their active membership grants access to.
+-- Keep company mutations restricted to global administrators until a server-side workflow exists.
+drop policy if exists "s2t company members read own company" on public.companies;
+create policy "s2t company members read own company"
+on public.companies for select
+to authenticated
+using (public.s2t_is_company_member(id));
+
 alter table public.company_memberships enable row level security;
 
 drop policy if exists "s2t memberships self or global admin" on public.company_memberships;

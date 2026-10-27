@@ -90,3 +90,27 @@ Deno.test("required identity validation accepts driver email or phone fallback",
     undefined,
   );
 });
+
+Deno.test("duplicate fallback driver email is rejected before writes", () => {
+  assertThrows(
+    () => assertNoDuplicateExternalIdentity(
+      [{ email: "Driver@example.com" }, { email: "driver@example.com" }],
+      "identificação de motorista",
+      (driver) => String(driver.email || "").trim().toLowerCase(),
+    ),
+    Error,
+    "duplicado",
+  );
+});
+
+Deno.test("duplicate fallback vehicle registration is rejected before writes", () => {
+  assertThrows(
+    () => assertNoDuplicateExternalIdentity(
+      [{ registration_number: "AA-00-BB" }, { registration_number: "AA00BB" }],
+      "identificação de viatura",
+      (vehicle) => String(vehicle.registration_number || "").replace(/[\\s-]+/g, "").toUpperCase(),
+    ),
+    Error,
+    "duplicado",
+  );
+});

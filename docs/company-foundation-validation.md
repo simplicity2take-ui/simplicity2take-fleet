@@ -65,3 +65,14 @@ The trigger enforces a data-integrity invariant; it is not a substitute for tena
 ## Current live-data diagnostic (read-only, 27 October 2026)
 
 The active project currently reports 0 rows in `platform_activity_events`, 1,079 rows in `platform_trip_records`, 24 rows in `uber_driver_activity`, and 27 rows in `vehicle_assignments`. This does not establish why platform activity events are empty. Before changing any import or sync, trace the Bolt ingestion path, its last successful run/logs, and the destination table used by the UI. Do not backfill or rerun imports against production until the source file, deduplication key, and write effects are reviewed.
+
+## Bolt integration findings (read-only, 27 October 2026)
+
+- The current frontend calls two separate Edge Functions: `bolt-sync` for fleet drivers/vehicles/assignments and `bolt-activity-sync` for activity events/trip history.
+- In the active database snapshot, `platform_activity_events` has 0 rows and `platform_trip_records` has 1,079 rows, all associated with Uber. The `uber_driver_activity` table has 24 rows for 12–18 October 2026.
+- The database function `public.sync_bolt_activity(jsonb,jsonb)` exists. It upserts Bolt events by `event_key` and Bolt trips by `(platform, source_trip_id)`; it resolves drivers by Bolt UUID and vehicles by Bolt UUID/plate.
+- The reviewed source for `bolt-activity-sync` calls the Bolt Fleet Integration endpoint `getFleetOrders`, which its own source comments describe as undocumented and requiring verification against the fleet's credentials and payload. It also uses a hard-coded Bolt company ID (9360).
+- Do not invoke a production sync or import until the endpoint/permissions, company ID, response schema, date coverage, and write effects have been confirmed. A successful HTTP response alone is not proof of complete historical coverage.
+- The standard `bolt-sync` source also replaces a driver's existing vehicle assignments when an active vehicle is returned. This side effect must be included in a preflight/backup and reconciliation plan before running it against production.
+
+These findings are from source inspection and read-only SQL only; no Bolt API request or database write was performed during this diagnostic.

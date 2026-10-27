@@ -1,6 +1,7 @@
 import {
   arrayFrom,
   assertNoDuplicateExternalIdentity,
+  assertRequiredExternalIdentities,
   decideAssignment,
   normalizeActiveVehicle,
   normalizeDriverId,
@@ -73,4 +74,19 @@ Deno.test("assignment decision flags multiple active rows even when vehicle matc
 
 Deno.test("assignment decision creates only when no active assignment exists", () => {
   assertEquals(decideAssignment([], "vehicle-1"), "create");
+});
+
+Deno.test("required identity validation rejects missing vehicle identity before writes", () => {
+  assertThrows(
+    () => assertRequiredExternalIdentities([{}, { uuid: "v2" }], "viatura", normalizeVehicleId),
+    Error,
+    "antes de qualquer escrita",
+  );
+});
+
+Deno.test("required identity validation accepts driver email or phone fallback", () => {
+  assertEquals(
+    assertRequiredExternalIdentities([{ email: "driver@example.com" }], "motorista", (row) => row.uuid || row.email || row.phone || ""),
+    undefined,
+  );
 });

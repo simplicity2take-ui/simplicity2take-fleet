@@ -14,7 +14,7 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { arrayFrom, assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "./normalization.ts";
+import { arrayFrom, assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusToPortal } from "./normalization.ts";
 
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
@@ -268,7 +268,10 @@ Deno.serve(async (req: Request) => {
       assignments: { created: assignmentsCreated, conflictsRequiringReview: assignmentsConflicts }
     });
   } catch (error) {
-    console.error("bolt-sync error", error);
-    return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);
+    // Do not return or log raw provider/database exceptions; they may contain
+    // internal schema details or sensitive request/response data.
+    const safeError = safeSyncError(error);
+    console.error("bolt-sync failed", { code: safeError.code });
+    return json({ ok: false, ...safeError }, 500);
   }
 });

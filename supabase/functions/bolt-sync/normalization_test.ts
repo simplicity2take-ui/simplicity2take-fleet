@@ -9,6 +9,7 @@ import {
   normalizePlate,
   normalizeVehicleId,
   statusToPortal,
+  safeSyncError,
 } from "./normalization.ts";
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 
@@ -180,4 +181,13 @@ Deno.test("compatible external identity permits same UUID or missing source UUID
   assertEquals(assertCompatibleExternalId("BOLT-1", "bolt-1", "da viatura"), undefined);
   assertEquals(assertCompatibleExternalId("", "bolt-1", "da viatura"), undefined);
   assertEquals(assertCompatibleExternalId("bolt-1", "", "da viatura"), undefined);
+});
+
+Deno.test("safe sync error never exposes provider or database exception details", () => {
+  const secret = "client_secret=super-secret-token";
+  const databaseError = new Error(`PostgREST internal schema detail: ${secret}`);
+  const result = safeSyncError(databaseError);
+  assertEquals(result.code, "BOLT_SYNC_FAILED");
+  assertEquals(result.message, "A sincronização falhou. Tente novamente mais tarde ou contacte o administrador.");
+  if (JSON.stringify(result).includes(secret)) throw new Error("Sensitive exception detail leaked into public error");
 });

@@ -13,6 +13,17 @@ export function normalizePhone(value: unknown): string {
   return String(value || "").replace(/\D/g, "");
 }
 
+/** Match Portuguese numbers whether the report includes the +351 country code or not. */
+function phonesMatch(left: unknown, right: unknown): boolean {
+  const a = normalizePhone(left);
+  const b = normalizePhone(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const nationalA = a.startsWith("351") && a.length === 12 ? a.slice(3) : a;
+  const nationalB = b.startsWith("351") && b.length === 12 ? b.slice(3) : b;
+  return nationalA.length === 9 && nationalA === nationalB;
+}
+
 export function isOrganizationRow(row: UberStatusRow): boolean {
   const name = normalizeIdentity(row["Nome do motorista"]);
   const organization = normalizeIdentity(row["Nome da organização"]);
@@ -74,7 +85,7 @@ export function analyzeUberStatusMatches(
     const candidates = existingDrivers.filter((driver) =>
       (uuid && String(driver.uber_driver_uuid || "").trim() === uuid) ||
       (email && String(driver.email || "").trim().toLowerCase() === email) ||
-      (phone && normalizePhone(driver.phone || "") === phone)
+      (phone && phonesMatch(driver.phone || "", phone))
     );
     const candidateIds = new Set(candidates.map((driver) => String(driver.id)));
 

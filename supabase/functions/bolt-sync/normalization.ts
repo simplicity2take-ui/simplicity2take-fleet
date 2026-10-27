@@ -25,7 +25,7 @@ export function arrayFrom(payload: any, keys: string[]): any[] {
   return [];
 }
 
-export function statusToPortal(value: unknown, current = "Ativo"): string {
+export function statusToPortal(value: unknown, current = "Inativo"): string {
   const status = clean(value).trim().toLowerCase();
   if (!status) return current || "Ativo";
   if (/(suspend|blocked|deactiv|inactive|terminated|banned|disabled|rejected|declined)/.test(status)) return "Inativo";

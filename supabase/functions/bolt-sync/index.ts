@@ -103,7 +103,7 @@ async function upsertVehicle(admin: any, vehicle: any, now: string) {
     model: model || existing?.model || "",
     vehicle_year: year || existing?.vehicle_year || null,
     vin: vin || existing?.vin || null,
-    status: statusToPortal(state, existing?.status || "Ativo"),
+    status: statusToPortal(state, existing?.status || "Inativo"),
     bolt_vehicle_uuid: boltId || existing?.bolt_vehicle_uuid || null,
     bolt_last_synced_at: now
   };
@@ -148,7 +148,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     full_name: fullName || existing?.full_name || "Motorista Bolt",
     email: email || existing?.email || null,
     phone: phone || existing?.phone || null,
-    status: statusToPortal(state, existing?.status || "Ativo"),
+    status: statusToPortal(state, existing?.status || "Inativo"),
     bolt_driver_uuid: boltId || existing?.bolt_driver_uuid || null,
     bolt_partner_uuid: partnerUuid || existing?.bolt_partner_uuid || null,
     bolt_last_synced_at: now

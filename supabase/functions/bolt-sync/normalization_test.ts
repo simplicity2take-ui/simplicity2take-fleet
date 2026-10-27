@@ -108,7 +108,7 @@ Deno.test("duplicate fallback vehicle registration is rejected before writes", (
     () => assertNoDuplicateExternalIdentity(
       [{ registration_number: "AA-00-BB" }, { registration_number: "AA00BB" }],
       "identificação de viatura",
-      (vehicle) => String(vehicle.registration_number || "").replace(/[\\s-]+/g, "").toUpperCase(),
+      (vehicle) => String(vehicle.registration_number || "").replace(/[\s-]+/g, "").toUpperCase(),
     ),
     Error,
     "duplicado",

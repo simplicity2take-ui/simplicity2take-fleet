@@ -207,12 +207,12 @@ Deno.serve(async (req: Request) => {
       "identificação de motorista",
       (driver: any) => normalizeDriverId(driver) ||
         clean(first(driver, ["email"])).trim().toLowerCase() ||
-        clean(first(driver, ["phone", "phone_number"])).replace(/\\s+/g, ""),
+        clean(first(driver, ["phone", "phone_number"])).replace(/\s+/g, ""),
     );
     assertNoDuplicateExternalIdentity(
       boltVehicles,
       "identificação de viatura",
-      (vehicle: any) => normalizeVehicleId(vehicle) || normalizePlate(vehicle).replace(/[\\s-]+/g, "").toUpperCase(),
+      (vehicle: any) => normalizeVehicleId(vehicle) || normalizePlate(vehicle).replace(/[\s-]+/g, "").toUpperCase(),
     );
     assertRequiredExternalIdentities(
       boltDrivers,

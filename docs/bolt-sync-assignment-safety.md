@@ -15,12 +15,12 @@ Status: draft implementation on `fix/bolt-sync-preserve-assignments`. No product
 
 - [x] Added a GitHub Actions workflow to run `deno check supabase/functions/bolt-sync/index.ts`.
 - [x] Deno type-check passed on commit `5d409bc5be403c6a1251b41ca3d6ad2fe9c8ef13` (workflow run 40576854043).
+- [x] Frontend code review: the sync toast displays the number of new assignments and warns when conflicts need manual review. This is a code inspection, not a browser/UI test.
 - [ ] Test no active assignment: one new assignment is created.
 - [ ] Test exactly one matching active assignment: no write to `vehicle_assignments`.
 - [ ] Test one active assignment to a different vehicle: no delete/insert; conflict count increases.
 - [ ] Test multiple active assignments: no delete/insert; conflict count increases.
 - [ ] Test Bolt driver with no matched active vehicle: existing assignment remains untouched.
-- [ ] Confirm the frontend can display or otherwise surface the returned conflict count.
 - [ ] Verify the external Bolt response mapping and pagination with the account's own API documentation or an approved read-only/non-production request.
 - [ ] Review driver/vehicle identity matching and tenant/company scope before deployment.
 

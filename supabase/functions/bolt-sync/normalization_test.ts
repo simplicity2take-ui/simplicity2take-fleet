@@ -1,5 +1,6 @@
 import {
   arrayFrom,
+  assertCompatibleExternalId,
   assertNoDuplicateExternalIdentity,
   assertRequiredExternalIdentities,
   decideAssignment,
@@ -155,4 +156,26 @@ Deno.test("duplicate registration is detected even when vehicles have different 
     Error,
     "duplicado",
   );
+});
+
+Deno.test("fallback identity match rejects a different stored vehicle Bolt UUID", () => {
+  assertThrows(
+    () => assertCompatibleExternalId("bolt-vehicle-new", "bolt-vehicle-old", "da viatura"),
+    Error,
+    "Conflito de identidade",
+  );
+});
+
+Deno.test("fallback identity match rejects a different stored driver Bolt UUID", () => {
+  assertThrows(
+    () => assertCompatibleExternalId("bolt-driver-new", "bolt-driver-old", "do motorista"),
+    Error,
+    "Conflito de identidade",
+  );
+});
+
+Deno.test("compatible external identity permits same UUID or missing source UUID", () => {
+  assertEquals(assertCompatibleExternalId("bolt-1", "bolt-1", "da viatura"), undefined);
+  assertEquals(assertCompatibleExternalId("", "bolt-1", "da viatura"), undefined);
+  assertEquals(assertCompatibleExternalId("bolt-1", "", "da viatura"), undefined);
 });

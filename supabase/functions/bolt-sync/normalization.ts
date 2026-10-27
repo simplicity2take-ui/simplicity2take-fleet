@@ -92,3 +92,21 @@ export function assertRequiredExternalIdentities(
     }
   }
 }
+
+/**
+ * Prevent a fallback match (email, phone or registration) from silently
+ * transferring a record to a different external UUID.
+ */
+export function assertCompatibleExternalId(
+  sourceId: unknown,
+  existingId: unknown,
+  label: string,
+): void {
+  const incoming = clean(sourceId).trim();
+  const stored = clean(existingId).trim();
+  if (incoming && stored && incoming !== stored) {
+    throw new Error(
+      `Conflito de identidade ${label}: a referência Bolt recebida difere da referência já associada. Sincronização interrompida para revisão manual.`,
+    );
+  }
+}

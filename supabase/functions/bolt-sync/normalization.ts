@@ -80,3 +80,15 @@ export function decideAssignment(
   if (activeAssignments.length > 0) return "conflict";
   return "create";
 }
+
+export function assertRequiredExternalIdentities(
+  rows: any[],
+  label: string,
+  identity: (row: any) => string,
+): void {
+  for (const [index, row] of rows.entries()) {
+    if (!identity(row).trim()) {
+      throw new Error(`A Bolt devolveu ${label} sem identificação no registo ${index + 1}. Sincronização interrompida antes de qualquer escrita.`);
+    }
+  }
+}

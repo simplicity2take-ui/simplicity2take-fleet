@@ -12,7 +12,7 @@ This is a test plan only. It does not call Bolt, write to Supabase, deploy an Ed
 | Duplicate vehicle UUID | Two payload records normalize to the same UUID, ignoring case/outer whitespace | Reject the payload before any database writes |
 | Duplicate vehicle registration | Two records share a registration after spaces/hyphens are removed, including different UUIDs | Reject the payload before any database writes |
 | Missing vehicle identity | Vehicle has neither UUID nor registration | Abort with a clear validation error |
-| Missing driver identity | Driver has no UUID, email or phone | Abort with a clear validation error |
+| Missing driver identity | Driver has no UUID, email or phone | Abort with a clear validation error |\n| Conflicting driver UUID on fallback match | Email/phone matches a Fleet driver already linked to a different Bolt UUID | Reject before updating the matched record; manual review required |\n| Conflicting vehicle UUID on fallback match | Registration matches a Fleet vehicle already linked to a different Bolt UUID | Reject before updating the matched record; manual review required |
 | Inactive status | `inactive`, `deactivated`, `blocked`, `rejected` | Map to Inativo |
 | Active status | Exact known values `active`, `activated`, `enabled`, `approved` | Map to Ativo |
 | Unknown status | Any unrecognized value for a new record | Remain Inativo; do not silently activate |
@@ -52,4 +52,4 @@ This is a test plan only. It does not call Bolt, write to Supabase, deploy an Ed
 
 ## Current state
 
-The Deno type-check and unit tests passed on commit `ee8cbccd40062f5528d83f166c1d2e6b94d83b92` (workflow run 40586829378). Unit tests cover the pure helper cases, including fallback identity duplicates. They do not exercise database writes, tenant isolation, rollback, Bolt API pagination, or browser behavior. No behavioral/integration test against Supabase is claimed complete here. No production sync or deployment is authorized by this document.
+The Deno type-check and unit tests passed on commit `ee8cbccd40062f5528d83f166c1d2e6b94d83b92` (workflow run 40586829378). The latest code change adds pure tests for conflicting stored Bolt UUIDs; its CI result must be checked before treating those tests as passed. Unit tests cover the pure helper cases, including fallback identity duplicates. They do not exercise database writes, tenant isolation, rollback, Bolt API pagination, or browser behavior. No behavioral/integration test against Supabase is claimed complete here. No production sync or deployment is authorized by this document.

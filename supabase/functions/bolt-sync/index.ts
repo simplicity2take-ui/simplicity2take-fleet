@@ -161,7 +161,11 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
       assignmentAction = "conflict";
     } else {
       const assignment = await admin.from("vehicle_assignments").insert({
-        vehicle_id: assignedVehicle.id, driver_id: row.id, active_from: new Date().toISOString().slice(0, 10), active_until: null
+        vehicle_id: assignedVehicle.id,
+        driver_id: row.id,
+        active_from: new Date().toISOString().slice(0, 10),
+        active_until: null,
+        source: "bolt"
       });
       if (assignment.error) throw assignment.error;
       assignmentAction = "created";

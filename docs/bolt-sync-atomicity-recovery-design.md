@@ -61,6 +61,16 @@ Run only against a disposable, isolated Supabase project with mocked Bolt payloa
 8. Caller without the required authorization: rejected before writes.
 9. Error/log output contains no access token, client secret or full sensitive payload.
 
+## Current error-handling gap
+
+The current Edge Function catch block logs the raw caught error and returns its message to the caller. Supabase/PostgREST errors can contain internal schema, constraint, or query details; other upstream errors may contain provider-specific diagnostics. This is not a safe long-term boundary.
+
+Before live use:
+- Return a stable, user-safe error code/message to the browser; do not return arbitrary database/provider exception text.
+- Log only a correlation/sync identifier, operation stage, and a classified error code. Do not log credentials, access tokens, full upstream responses, driver records, or raw database errors.
+- Preserve useful operator diagnostics in a controlled server-side channel with access restrictions and retention rules, after explicit redaction.
+- Add tests proving that simulated database errors, upstream error bodies, access tokens, and client secrets do not appear in HTTP responses or ordinary logs.
+
 ## Release gate
 
 Do not deploy or run a real sync until:

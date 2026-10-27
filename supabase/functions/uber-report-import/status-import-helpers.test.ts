@@ -39,6 +39,20 @@ Deno.test("trims UUID and treats state case-insensitively", () => {
   assertEquals(isEligibleUberDriverRow({ "UUID do motorista": " uuid-2 ", Estado: "ACCEPTED" }), true);
 });
 
+Deno.test("matches Portuguese national and +351 phone formats without ambiguity", () => {
+  const phoneOnly = [{ id: "driver-phone", phone: "+351 912 345 678" }];
+  assertEquals(analyzeUberStatusMatches([
+    { "UUID do motorista": "uber-phone", "Telemóvel": "912345678" },
+  ], phoneOnly), {
+    matchedExisting: 1, wouldCreate: 0, ambiguousMatches: 0, duplicateUuidRows: 0,
+  });
+  assertEquals(analyzeUberStatusMatches([
+    { "UUID do motorista": "uber-phone", "Telemóvel": "+351 912 345 678" },
+  ], [{ id: "driver-phone", phone: "912345678" }]), {
+    matchedExisting: 1, wouldCreate: 0, ambiguousMatches: 0, duplicateUuidRows: 0,
+  });
+});
+
 Deno.test("matches a driver by UUID, email or normalized phone without ambiguity", () => {
   const existing = [
     { id: "driver-1", uber_driver_uuid: "uber-1", email: "one@example.com", phone: "+351 912 345 678" },

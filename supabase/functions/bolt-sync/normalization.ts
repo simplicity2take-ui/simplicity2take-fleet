@@ -60,3 +60,12 @@ export function assertNoDuplicateExternalIdentity(
     seen.add(key);
   }
 }
+
+export function normalizeActiveVehicle(driver: any): any | null {
+  const candidate = first(driver, ["active_vehicle", "activeVehicle", "assigned_vehicle", "assignedVehicle", "vehicle"]);
+  if (candidate && typeof candidate === "object") return candidate;
+  const vehicleId = first(driver, ["active_vehicle_uuid", "activeVehicleUuid", "vehicle_uuid", "vehicleUuid"]);
+  const plate = first(driver, ["active_vehicle_reg_number", "vehicle_reg_number", "vehicle_registration_number"]);
+  if (vehicleId || plate) return { uuid: vehicleId, reg_number: plate };
+  return null;
+}

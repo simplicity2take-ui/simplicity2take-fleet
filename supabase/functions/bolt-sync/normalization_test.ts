@@ -126,3 +126,33 @@ Deno.test("duplicate fallback driver phone ignores whitespace", () => {
     "duplicado",
   );
 });
+
+Deno.test("duplicate driver phone is detected even when records have different emails", () => {
+  assertThrows(
+    () => assertNoDuplicateExternalIdentity(
+      [
+        { driver_uuid: "d1", email: "one@example.com", phone: "+351 912 345 678" },
+        { driver_uuid: "d2", email: "two@example.com", phone_number: "+351912345678" },
+      ],
+      "telefone de motorista",
+      (driver) => String(driver.phone || driver.phone_number || "").replace(/\s+/g, ""),
+    ),
+    Error,
+    "duplicado",
+  );
+});
+
+Deno.test("duplicate registration is detected even when vehicles have different UUIDs", () => {
+  assertThrows(
+    () => assertNoDuplicateExternalIdentity(
+      [
+        { uuid: "v1", registration_number: "AA-00-BB" },
+        { uuid: "v2", registration_number: "AA00BB" },
+      ],
+      "matrícula de viatura",
+      (vehicle) => String(vehicle.registration_number || "").replace(/[\s-]+/g, "").toUpperCase(),
+    ),
+    Error,
+    "duplicado",
+  );
+});

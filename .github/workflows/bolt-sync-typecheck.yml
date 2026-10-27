@@ -1,4 +1,4 @@
-name: Bolt sync type check
+name: Bolt sync checks
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  deno-check:
+  deno-check-and-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,3 +19,5 @@ jobs:
           deno-version: v2.x
       - name: Type-check Bolt sync Edge Function
         run: deno check supabase/functions/bolt-sync/index.ts
+      - name: Run Bolt normalization unit tests
+        run: deno test --allow-none supabase/functions/bolt-sync/normalization_test.ts

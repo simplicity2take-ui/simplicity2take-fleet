@@ -142,14 +142,31 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   }
   let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
   if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
+  let assignmentAction: "none" | "unchanged" | "created" | "conflict" = "none";
   if (assignedVehicle?.id) {
-    await admin.from("vehicle_assignments").delete().eq("driver_id", row.id);
-    const assignment = await admin.from("vehicle_assignments").insert({
-      vehicle_id: assignedVehicle.id, driver_id: row.id, active_from: new Date().toISOString().slice(0, 10), active_until: null
-    });
-    if (assignment.error) throw assignment.error;
+    // Never delete assignment history during an external sync. If a different
+    // active assignment exists, flag it for review instead of silently replacing it.
+    const activeResult = await admin.from("vehicle_assignments")
+      .select("id, vehicle_id")
+      .eq("driver_id", row.id)
+      .is("active_until", null);
+    if (activeResult.error) throw activeResult.error;
+    const activeAssignments = activeResult.data || [];
+    const sameVehicle = activeAssignments.some((assignment: any) => assignment.vehicle_id === assignedVehicle.id);
+    const differentVehicle = activeAssignments.some((assignment: any) => assignment.vehicle_id !== assignedVehicle.id);
+    if (sameVehicle && !differentVehicle) {
+      assignmentAction = "unchanged";
+    } else if (differentVehicle || activeAssignments.length > 0) {
+      assignmentAction = "conflict";
+    } else {
+      const assignment = await admin.from("vehicle_assignments").insert({
+        vehicle_id: assignedVehicle.id, driver_id: row.id, active_from: new Date().toISOString().slice(0, 10), active_until: null
+      });
+      if (assignment.error) throw assignment.error;
+      assignmentAction = "created";
+    }
   }
-  return { row, created, assignedVehicleId: assignedVehicle?.id || null };
+  return { row, created, assignedVehicleId: assignedVehicle?.id || null, assignmentAction };
 }
 
 Deno.serve(async (req: Request) => {
@@ -187,17 +204,18 @@ Deno.serve(async (req: Request) => {
       if (boltId) vehicleByBoltId.set(boltId, result.row);
       if (plate) vehicleByPlate.set(plate, result.row);
     }
-    let driversCreated = 0, assignmentsUpdated = 0;
+    let driversCreated = 0, assignmentsCreated = 0, assignmentsConflicts = 0;
     for (const driver of boltDrivers) {
       const result = await upsertDriver(admin, driver, vehicleByBoltId, vehicleByPlate, now);
       if (result.created) driversCreated++;
-      if (result.assignedVehicleId) assignmentsUpdated++;
+      if (result.assignmentAction === "created") assignmentsCreated++;
+      if (result.assignmentAction === "conflict") assignmentsConflicts++;
     }
     return json({
       ok: true, source: "bolt", syncedAt: now,
       drivers: { received: boltDrivers.length, created: driversCreated, updated: boltDrivers.length - driversCreated },
       vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: boltVehicles.length - vehiclesCreated },
-      assignmentsUpdated
+      assignments: { created: assignmentsCreated, conflictsRequiringReview: assignmentsConflicts }
     });
   } catch (error) {
     console.error("bolt-sync error", error);

@@ -69,3 +69,14 @@ export function normalizeActiveVehicle(driver: any): any | null {
   if (vehicleId || plate) return { uuid: vehicleId, reg_number: plate };
   return null;
 }
+
+export function decideAssignment(
+  activeAssignments: Array<{ vehicle_id: string | number | null }>,
+  targetVehicleId: string | number,
+): "unchanged" | "conflict" | "create" {
+  if (activeAssignments.length === 1 && activeAssignments[0].vehicle_id === targetVehicleId) {
+    return "unchanged";
+  }
+  if (activeAssignments.length > 0) return "conflict";
+  return "create";
+}

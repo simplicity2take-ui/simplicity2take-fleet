@@ -25,6 +25,18 @@ export function arrayFrom(payload: any, keys: string[]): any[] {
   return [];
 }
 
+/** Distinguish a valid empty collection from a missing/unrecognized response envelope. */
+export function hasArrayFrom(payload: any, keys: string[]): boolean {
+  if (Array.isArray(payload)) return true;
+  for (const key of keys) if (Array.isArray(payload?.[key])) return true;
+  for (const key of ["data", "result", "response"]) {
+    if (payload?.[key] && typeof payload[key] === "object" && hasArrayFrom(payload[key], keys)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function statusToPortal(value: unknown, current = "Inativo"): string {
   const status = clean(value).trim().toLowerCase();
   if (!status) return current || "Ativo";

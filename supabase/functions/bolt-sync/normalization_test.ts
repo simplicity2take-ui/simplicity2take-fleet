@@ -14,6 +14,20 @@ import {
 } from "./normalization.ts";
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 
+Deno.test("Bolt v2 vehicle identifiers and normalized registration are recognized", () => {
+  assertEquals(normalizeVehicleId({ uuid: "vehicle-v2-1" }), "vehicle-v2-1");
+  assertEquals(normalizePlate({ normalised_registration_number: "AA-00-BB" }), "AA-00-BB");
+  assertEquals(normalizePlate({ normalized_registration_number: "CC-11-DD" }), "CC-11-DD");
+});
+
+Deno.test("Bolt v2 driver UUID and nested vehicle are recognized", () => {
+  assertEquals(normalizeDriverId({ uuid: "driver-v2-1" }), "driver-v2-1");
+  assertEquals(
+    normalizeActiveVehicle({ vehicle: { uuid: "vehicle-v2-1", registration_number: "AA-00-BB" } }),
+    { uuid: "vehicle-v2-1", registration_number: "AA-00-BB" },
+  );
+});
+
 Deno.test("status mapping rejects inactive before checking active", () => {
   assertEquals(statusToPortal("inactive", "Ativo"), "Inativo");
   assertEquals(statusToPortal("deactivated", "Ativo"), "Inativo");

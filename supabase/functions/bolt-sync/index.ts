@@ -265,6 +265,23 @@ Deno.serve(async (req: Request) => {
       (vehicle: any) => normalizeVehicleId(vehicle) || normalizePlate(vehicle),
     );
 
+    // Explicit preview mode: validate Bolt responses and identities, then return counts
+    // without querying or writing Fleet tables. This is safe for first credential checks.
+    const requestBody = await req.clone().json().catch(() => ({}));
+    if (requestBody?.dry_run === true) {
+      return json({
+        ok: true,
+        mode: "dry_run",
+        source: "bolt",
+        companyId,
+        preview: true,
+        driversReceived: boltDrivers.length,
+        vehiclesReceived: boltVehicles.length,
+        writesPerformed: false,
+        note: "Os dados foram validados em memória; não foram consultados nem alterados registos do Fleet."
+      });
+    }
+
     const now = new Date().toISOString();
     const vehicleByBoltId = new Map<string, any>();
     const vehicleByPlate = new Map<string, any>();

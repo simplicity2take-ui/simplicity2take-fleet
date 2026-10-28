@@ -11,7 +11,7 @@ This is a test plan only. It does not call Bolt, write to Supabase, deploy an Ed
 | Duplicate driver phone | Two records share a phone after whitespace normalization, including different UUIDs/emails | Reject the payload before any database writes |
 | Duplicate vehicle UUID | Two payload records normalize to the same UUID, ignoring case/outer whitespace | Reject the payload before any database writes |
 | Duplicate vehicle registration | Two records share a registration after spaces/hyphens are removed, including different UUIDs | Reject the payload before any database writes |
-| Missing vehicle identity | Vehicle has neither UUID nor registration | Abort with a clear validation error |
+| Pagination full page followed by empty page | A full page is followed by an empty collection | Continue requesting pages after a full page and stop on the valid empty terminator |\n| Missing vehicle identity | Vehicle has neither UUID nor registration | Abort with a clear validation error |
 | Missing driver identity | Driver has no UUID, email or phone | Abort with a clear validation error |
 | Conflicting driver UUID on fallback match | Email/phone matches a Fleet driver already linked to a different Bolt UUID | Reject before updating the matched record; manual review required |
 | Conflicting vehicle UUID on fallback match | Registration matches a Fleet vehicle already linked to a different Bolt UUID | Reject before updating the matched record; manual review required |
@@ -55,7 +55,7 @@ This is a test plan only. It does not call Bolt, write to Supabase, deploy an Ed
 
 ## Current state
 
-The Deno type-check and unit tests passed on commit `ee8cbccd40062f5528d83f166c1d2e6b94d83b92` (workflow run 40586829378). The code now also checks that fallback matches do not silently replace a different stored Bolt UUID, with tests for conflicts, case and whitespace normalization. The latest CI run must be checked before treating the newest test edits as passed. Unit tests cover the pure helper cases, including fallback identity duplicates. They do not exercise database writes, tenant isolation, rollback, Bolt API pagination, or browser behavior. No behavioral/integration test against Supabase is claimed complete here. No production sync or deployment is authorized by this document.
+The Deno type-check and unit tests passed on commit `ee8cbccd40062f5528d83f166c1d2e6b94d83b92` (workflow run 40586829378). The code now also checks that fallback matches do not silently replace a different stored Bolt UUID, with tests for conflicts, case and whitespace normalization. The pagination tests also cover a full page followed by a valid empty terminator; check CI for the latest commit before treating the newest test edits as passed. Unit tests cover the pure helper cases, including fallback identity duplicates. They do not exercise database writes, tenant isolation, rollback, Bolt API pagination, or browser behavior. No behavioral/integration test against Supabase is claimed complete here. No production sync or deployment is authorized by this document.
 
 
 ## Source review — pagination and request retries (27 October 2026)

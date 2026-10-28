@@ -14,7 +14,7 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway-v2";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusToPortal } from "./normalization.ts";
+import { assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusToPortal, isBoltWriteAllowed } from "./normalization.ts";
 import { extractBoltCompanies, fetchAllBoltPages } from "./bolt-v2.ts";
 
 async function getBoltToken() {
@@ -284,8 +284,8 @@ Deno.serve(async (req: Request) => {
 
     // Fail closed: write mode requires both an explicit server-side opt-in and
     // an explicit per-request confirmation. Neither is enabled by this change.
-    const writesEnabled = Deno.env.get("BOLT_SYNC_ALLOW_WRITES") === "true";
-    if (!writesEnabled || requestBody?.confirm_write !== true) {
+    const writesEnabled = Deno.env.get("BOLT_SYNC_ALLOW_WRITES");
+    if (!isBoltWriteAllowed(writesEnabled, requestBody?.confirm_write)) {
       return json({
         ok: false,
         code: "BOLT_SYNC_WRITES_DISABLED",

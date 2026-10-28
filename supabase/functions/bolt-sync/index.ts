@@ -216,10 +216,8 @@ Deno.serve(async (req: Request) => {
       }, 409);
     }
     const companyId = companies[0].company_id;
-    const [boltDrivers, boltVehicles] = await Promise.all([
-      fetchBoltDrivers(token, companyId),
-      fetchBoltVehicles(token, companyId)
-    ]);
+    const boltDrivers = await fetchBoltDrivers(token, companyId);
+    const boltVehicles = await fetchBoltVehicles(token, companyId);
     if (!boltDrivers.length && !boltVehicles.length) {
       return json({ ok: false, error: "A Bolt devolveu motoristas e viaturas vazios. Sincronização interrompida para revisão." }, 502);
     }

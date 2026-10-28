@@ -11,6 +11,7 @@ import {
   normalizeVehicleId,
   statusToPortal,
   safeSyncError,
+  isBoltWriteAllowed,
 } from "./normalization.ts";
 import { assertEquals, assertThrows } from "jsr:@std/assert@1";
 
@@ -26,6 +27,14 @@ Deno.test("Bolt v2 driver UUID and nested vehicle are recognized", () => {
     normalizeActiveVehicle({ vehicle: { uuid: "vehicle-v2-1", registration_number: "AA-00-BB" } }),
     { uuid: "vehicle-v2-1", registration_number: "AA-00-BB" },
   );
+});
+
+Deno.test("Bolt write gate is closed unless both explicit opt-ins are present", () => {
+  assertEquals(isBoltWriteAllowed(undefined, true), false);
+  assertEquals(isBoltWriteAllowed("false", true), false);
+  assertEquals(isBoltWriteAllowed("true", false), false);
+  assertEquals(isBoltWriteAllowed("TRUE", true), false);
+  assertEquals(isBoltWriteAllowed("true", true), true);
 });
 
 Deno.test("status mapping rejects inactive before checking active", () => {

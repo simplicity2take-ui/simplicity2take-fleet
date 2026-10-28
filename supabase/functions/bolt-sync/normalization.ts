@@ -131,3 +131,9 @@ export function safeSyncError(_error: unknown): { code: string; message: string 
     message: "A sincronização falhou. Tente novamente mais tarde ou contacte o administrador.",
   };
 }
+
+
+/** Write mode is denied unless both independent opt-ins are explicit. */
+export function isBoltWriteAllowed(serverOptIn: unknown, requestConfirmation: unknown): boolean {
+  return serverOptIn === "true" && requestConfirmation === true;
+}

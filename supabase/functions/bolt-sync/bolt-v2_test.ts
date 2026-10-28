@@ -44,6 +44,20 @@ Deno.test("pagination fails closed when the page ceiling is reached", async () =
   }), "drivers", { limit: 2, maxPages: 2 }), Error, "limite de segurança");
 });
 
+Deno.test("pagination requests the next page after a full page and accepts an empty terminator", async () => {
+  const offsets: number[] = [];
+  const rows = await fetchAllBoltPages<{ uuid: string }>(async (offset, limit) => {
+    offsets.push(offset);
+    if (offset === 0) {
+      return { code: 0, data: { drivers: [{ uuid: "d1" }, { uuid: "d2" }] } };
+    }
+    return { code: 0, data: { drivers: [] } };
+  }, "drivers", { limit: 2 });
+
+  assertEquals(rows, [{ uuid: "d1" }, { uuid: "d2" }]);
+  assertEquals(offsets, [0, 2]);
+});
+
 Deno.test("pagination rejects invalid limit", async () => {
   await assertRejects(() => fetchAllBoltPages(async () => ({ code: 0, data: { drivers: [] } }), "drivers", { limit: 1001 }), Error, "inválido");
 });

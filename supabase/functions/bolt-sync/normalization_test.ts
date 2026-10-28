@@ -1,5 +1,6 @@
 import {
   arrayFrom,
+  hasArrayFrom,
   assertCompatibleExternalId,
   assertNoDuplicateExternalIdentity,
   assertRequiredExternalIdentities,
@@ -29,6 +30,13 @@ Deno.test("unknown status preserves existing state but defaults new records to i
 Deno.test("arrayFrom finds nested supported arrays", () => {
   assertEquals(arrayFrom({ data: { result: { drivers: [{ uuid: "d1" }] } } }, ["drivers"]), [{ uuid: "d1" }]);
   assertEquals(arrayFrom({ data: { items: [] } }, ["drivers"]), []);
+});
+
+Deno.test("response envelope distinguishes missing collection from valid empty collection", () => {
+  assertEquals(hasArrayFrom({ data: { drivers: [] } }, ["drivers"]), true);
+  assertEquals(hasArrayFrom({ response: { items: [{ uuid: "d1" }] } }, ["drivers", "items"]), true);
+  assertEquals(hasArrayFrom({ data: { message: "success" } }, ["drivers"]), false);
+  assertEquals(hasArrayFrom({ code: 0 }, ["vehicles"]), false);
 });
 
 Deno.test("normalizers accept known identity fields", () => {

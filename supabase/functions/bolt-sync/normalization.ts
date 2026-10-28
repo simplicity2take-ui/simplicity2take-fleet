@@ -50,7 +50,7 @@ export function normalizeVehicleId(vehicle: any): string {
 }
 
 export function normalizePlate(vehicle: any): string {
-  return clean(first(vehicle, ["reg_number", "registration_number", "plate", "license_plate"]));
+  return clean(first(vehicle, ["reg_number", "registration_number", "normalised_registration_number", "normalized_registration_number", "plate", "license_plate"]));
 }
 
 export function normalizeDriverId(driver: any): string {

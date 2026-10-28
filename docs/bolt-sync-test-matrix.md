@@ -114,3 +114,12 @@ Important limits:
 - The endpoint has not been deployed by this change.
 - Normal non-dry-run behavior remains in the code and must not be enabled in production until tenant isolation, transactional writes, and the release blockers above are addressed and separately approved.
 - CI passing covers type-check/unit tests only; it does not prove credentials or provider connectivity.
+
+
+## Write-mode safety gate (28 October 2026)
+
+The Edge Function now fails closed for non-dry-run requests unless **both** conditions are true:
+- the server-side environment variable `BOLT_SYNC_ALLOW_WRITES` is exactly `true`; and
+- the request JSON contains `"confirm_write": true`.
+
+This commit does not set the environment variable, deploy the function, or authorize a live sync. The default remains writes-disabled unless an operator deliberately changes the environment and sends the explicit confirmation. The dry-run path returns before database reads/writes and does not require this write opt-in.

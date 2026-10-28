@@ -94,3 +94,23 @@ Reviewed the user-provided Bolt Swagger export/PDF (page 1). The documented live
 5. Validate `code` explicitly and reject malformed/missing `data` collections before any database writes.
 6. No authenticated Bolt request, database write, deployment, or production sync was performed as part of this review. The company-selection policy, field-to-database mapping, tenant isolation, and atomic apply step remain release blockers.
 
+
+
+## Explicit no-write preview mode (28 October 2026)
+
+The Edge Function now accepts a JSON request body containing `{"dry_run": true}`. After the normal authentication and Bolt v2 fetch/validation steps, it returns a preview summary with the selected company ID and driver/vehicle counts. The branch returns before querying or mutating Fleet tables; the response includes `writesPerformed: false`.
+
+Example request body:
+
+```json
+{
+  "dry_run": true
+}
+```
+
+Important limits:
+- This is a no-write preview, not a live-connection result; it has not been invoked against Bolt.
+- It still makes external Bolt API requests when the deployed function is called, so only test it after the credentials and intended environment are verified.
+- The endpoint has not been deployed by this change.
+- Normal non-dry-run behavior remains in the code and must not be enabled in production until tenant isolation, transactional writes, and the release blockers above are addressed and separately approved.
+- CI passing covers type-check/unit tests only; it does not prove credentials or provider connectivity.

@@ -80,6 +80,6 @@ Deno.test("pagination rejects non-zero Bolt application codes even when data con
       data: { vehicles: [{ uuid: "v1" }] },
     }), "vehicles", { limit: 3 }),
     Error,
-    "código de error",
+    "código de erro",
   );
 });

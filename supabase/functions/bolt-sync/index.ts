@@ -9,12 +9,13 @@ const corsHeaders = {
 };
 
 const BOLT_TOKEN_URL = "https://oidc.bolt.eu/token";
-const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
+const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway-v2";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { arrayFrom, assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, hasArrayFrom, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusToPortal } from "./normalization.ts";
+import { assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusToPortal } from "./normalization.ts";
+import { extractBoltCompanies, fetchAllBoltPages } from "./bolt-v2.ts";
 
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
@@ -28,34 +29,40 @@ async function getBoltToken() {
   if (!response.ok || !data.access_token) throw new Error("A Bolt recusou a autenticação API. Verifique as credenciais e o acesso Fleet Integration.");
   return data.access_token as string;
 }
-async function boltPost(path: string, token: string) {
-  const attempts = [{ pager: { offset: 0, limit: 1000 } }, { page: { offset: 0, limit: 1000 } }, {}];
-  let lastError = "Pedido Bolt recusado.";
-  for (const payload of attempts) {
-    const response = await fetch(BOLT_API_BASE + path, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const text = await response.text();
-    let data: any = {};
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    if (response.ok) {
-      // Some Bolt gateway responses report application-level errors with HTTP 200.
-      // Do not treat those payloads as successful driver/vehicle data.
-      if (data?.code !== undefined && Number(data.code) !== 0) {
-        throw new Error(clean(data?.message || data?.error || "A API Bolt devolveu um erro."));
-      }
-      return data;
-    }
-    // Authentication/authorization failures cannot be repaired by changing the
-    // request body. Fail closed instead of retrying with alternate payloads.
+let lastBoltRequestAt = 0;
+async function boltPost(path: string, token: string, payload?: unknown) {
+  // Stay below the documented limit of 2 requests/second/API key.
+  const waitMs = Math.max(0, 550 - (Date.now() - lastBoltRequestAt));
+  if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+  const response = await fetch(BOLT_API_BASE + path, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+    ...(payload === undefined ? {} : { body: JSON.stringify(payload) })
+  });
+  lastBoltRequestAt = Date.now();
+  const text = await response.text();
+  let data: any = {};
+  try { data = JSON.parse(text); } catch { throw new Error("A Bolt devolveu uma resposta que não é JSON válido."); }
+  if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
       throw new Error("A Bolt recusou a autenticação ou as permissões da integração Fleet. Verifique o acesso autorizado.");
     }
-    lastError = clean(data?.message || data?.error || text || lastError);
+    if (response.status === 429) throw new Error("A Bolt limitou temporariamente os pedidos da integração. Tente novamente mais tarde.");
+    throw new Error("A API Bolt recusou o pedido. Verifique o contrato e as permissões da integração.");
   }
-  throw new Error(lastError);
+  return data;
+}
+async function fetchBoltDrivers(token: string, companyId: number) {
+  return await fetchAllBoltPages<any>(
+    (offset, limit) => boltPost("/fleetIntegration/v2/getDrivers", token, { company_id: companyId, offset, limit }),
+    "drivers",
+  );
+}
+async function fetchBoltVehicles(token: string, companyId: number) {
+  return await fetchAllBoltPages<any>(
+    (offset, limit) => boltPost("/fleetIntegration/v2/getVehicles", token, { company_id: companyId, offset, limit }),
+    "vehicles",
+  );
 }
 async function upsertVehicle(admin: any, vehicle: any, now: string) {
   const boltId = normalizeVehicleId(vehicle);
@@ -196,20 +203,26 @@ Deno.serve(async (req: Request) => {
     if (callerEmail !== "simplicity2take@gmail.com") return json({ ok: false, error: "Apenas o administrador pode sincronizar a Bolt." }, 403);
 
     const token = await getBoltToken();
-    const [driversPayload, vehiclesPayload] = await Promise.all([
-      boltPost("/fleetIntegration/v1/getDrivers", token),
-      boltPost("/fleetIntegration/v1/getVehicles", token)
-    ]);
-    const driverCollectionsRecognized = hasArrayFrom(driversPayload, ["drivers", "fleet_drivers", "items"]);
-    const vehicleCollectionsRecognized = hasArrayFrom(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
-    if (!driverCollectionsRecognized || !vehicleCollectionsRecognized) {
-      // A success-shaped HTTP response is not enough: both expected collections
-      // must be present, even if a legitimate collection is empty.
-      return json({ ok: false, error: "A resposta da Bolt não contém as listas esperadas de motoristas e viaturas. Sincronização interrompida para evitar uma importação incompleta." }, 502);
+    const companiesPayload = await boltPost("/fleetIntegration/v2/getCompanies", token);
+    const companies = extractBoltCompanies(companiesPayload);
+    // The current Fleet database does not yet enforce tenant-scoped writes.
+    // Fail closed if the Bolt key exposes more than one company; never mix fleets.
+    if (companies.length !== 1) {
+      return json({
+        ok: false,
+        error: companies.length === 0
+          ? "A chave Bolt não devolveu nenhuma empresa acessível."
+          : "A chave Bolt tem acesso a várias empresas. A sincronização está bloqueada até existir mapeamento e isolamento por empresa."
+      }, 409);
     }
-    const boltDrivers = arrayFrom(driversPayload, ["drivers", "fleet_drivers", "items"]);
-    const boltVehicles = arrayFrom(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
-    if (!boltDrivers.length && !boltVehicles.length) return json({ ok: false, error: "A Bolt respondeu com as listas de motoristas e viaturas vazias. Confirme no Swagger os parâmetros de paginação da tua conta." }, 502);
+    const companyId = companies[0].company_id;
+    const [boltDrivers, boltVehicles] = await Promise.all([
+      fetchBoltDrivers(token, companyId),
+      fetchBoltVehicles(token, companyId)
+    ]);
+    if (!boltDrivers.length && !boltVehicles.length) {
+      return json({ ok: false, error: "A Bolt devolveu motoristas e viaturas vazios. Sincronização interrompida para revisão." }, 502);
+    }
 
     // Validate the full response before any database writes, so duplicate source
     // identities cannot cause partial or ambiguous upserts.

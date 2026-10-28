@@ -282,6 +282,18 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Fail closed: write mode requires both an explicit server-side opt-in and
+    // an explicit per-request confirmation. Neither is enabled by this change.
+    const writesEnabled = Deno.env.get("BOLT_SYNC_ALLOW_WRITES") === "true";
+    if (!writesEnabled || requestBody?.confirm_write !== true) {
+      return json({
+        ok: false,
+        code: "BOLT_SYNC_WRITES_DISABLED",
+        error: "A sincronização com gravações está bloqueada. Use dry_run para pré-visualizar; a ativação exige configuração e aprovação explícitas.",
+        writesPerformed: false
+      }, 409);
+    }
+
     const now = new Date().toISOString();
     const vehicleByBoltId = new Map<string, any>();
     const vehicleByPlate = new Map<string, any>();

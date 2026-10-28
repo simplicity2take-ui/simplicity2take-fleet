@@ -48,6 +48,11 @@ async function boltPost(path: string, token: string) {
       }
       return data;
     }
+    // Authentication/authorization failures cannot be repaired by changing the
+    // request body. Fail closed instead of retrying with alternate payloads.
+    if (response.status === 401 || response.status === 403) {
+      throw new Error("A Bolt recusou a autenticação ou as permissões da integração Fleet. Verifique o acesso autorizado.");
+    }
     lastError = clean(data?.message || data?.error || text || lastError);
   }
   throw new Error(lastError);

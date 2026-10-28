@@ -61,3 +61,25 @@ Deno.test("pagination requests the next page after a full page and accepts an em
 Deno.test("pagination rejects invalid limit", async () => {
   await assertRejects(() => fetchAllBoltPages(async () => ({ code: 0, data: { drivers: [] } }), "drivers", { limit: 1001 }), Error, "inválido");
 });
+
+Deno.test("pagination rejects a response that exceeds the configured row ceiling", async () => {
+  await assertRejects(
+    () => fetchAllBoltPages(async () => ({
+      code: 0,
+      data: { vehicles: [{ uuid: "v1" }, { uuid: "v2" }, { uuid: "v3" }] },
+    }), "vehicles", { limit: 3, maxRows: 2 }),
+    Error,
+    "excede o limite de seguridad",
+  );
+});
+
+Deno.test("pagination rejects non-zero Bolt application codes even when data contains rows", async () => {
+  await assertRejects(
+    () => fetchAllBoltPages(async () => ({
+      code: 17,
+      data: { vehicles: [{ uuid: "v1" }] },
+    }), "vehicles", { limit: 3 }),
+    Error,
+    "código de error",
+  );
+});

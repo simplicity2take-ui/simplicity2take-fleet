@@ -14,7 +14,7 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { arrayFrom, assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusToPortal } from "./normalization.ts";
+import { arrayFrom, assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, hasArrayFrom, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusToPortal } from "./normalization.ts";
 
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
@@ -195,9 +195,16 @@ Deno.serve(async (req: Request) => {
       boltPost("/fleetIntegration/v1/getDrivers", token),
       boltPost("/fleetIntegration/v1/getVehicles", token)
     ]);
+    const driverCollectionsRecognized = hasArrayFrom(driversPayload, ["drivers", "fleet_drivers", "items"]);
+    const vehicleCollectionsRecognized = hasArrayFrom(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
+    if (!driverCollectionsRecognized || !vehicleCollectionsRecognized) {
+      // A success-shaped HTTP response is not enough: both expected collections
+      // must be present, even if a legitimate collection is empty.
+      return json({ ok: false, error: "A resposta da Bolt não contém as listas esperadas de motoristas e viaturas. Sincronização interrompida para evitar uma importação incompleta." }, 502);
+    }
     const boltDrivers = arrayFrom(driversPayload, ["drivers", "fleet_drivers", "items"]);
     const boltVehicles = arrayFrom(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
-    if (!boltDrivers.length && !boltVehicles.length) return json({ ok: false, error: "A Bolt respondeu sem motoristas nem viaturas. Confirme no Swagger os parâmetros de paginação da tua conta." }, 502);
+    if (!boltDrivers.length && !boltVehicles.length) return json({ ok: false, error: "A Bolt respondeu com as listas de motoristas e viaturas vazias. Confirme no Swagger os parâmetros de paginação da tua conta." }, 502);
 
     // Validate the full response before any database writes, so duplicate source
     // identities cannot cause partial or ambiguous upserts.

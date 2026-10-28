@@ -69,7 +69,7 @@ Deno.test("pagination rejects a response that exceeds the configured row ceiling
       data: { vehicles: [{ uuid: "v1" }, { uuid: "v2" }, { uuid: "v3" }] },
     }), "vehicles", { limit: 3, maxRows: 2 }),
     Error,
-    "excede o limite de seguridad",
+    "excede o limite de segurança",
   );
 });
 

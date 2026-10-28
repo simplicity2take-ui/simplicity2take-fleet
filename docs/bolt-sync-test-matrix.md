@@ -75,3 +75,22 @@ Required before live use:
 5. Keep the sync in dry-run/preflight mode until the full payload is proven complete.
 
 This is a source-code finding, not evidence that the current Bolt account returns more than 1000 records or uses any particular pagination format. No Bolt API request was made.
+
+## Confirmed Bolt Fleet Integration v2 contract (28 October 2026)
+
+Reviewed the user-provided Bolt Swagger export/PDF (page 1). The documented live server is `https://node.bolt.eu/fleet-integration-gateway-v2`; the listed operations use the `/fleetIntegration/v2/` prefix. This is a documentation-backed contract, not a live API test.
+
+- `POST /fleetIntegration/v2/getCompanies`: no request body; response envelope contains `code`, `message`, and `data.companies`. Each company includes `company_id`, `legal_name`, `city_name`, `country_code`, and `status_code`.
+- `POST /fleetIntegration/v2/getDrivers`: request includes `company_id`; optional `statuses`, `driver_uuids`, `added_after`, `added_before`; pagination is top-level `offset` and `limit`. Defaults are offset 0 and limit 1000; limit range is 1–1000. Response collection is `data.drivers`.
+- `POST /fleetIntegration/v2/getVehicles`: request includes `company_id`; optional `statuses`, `vehicle_uuids`, `added_after`, `added_before`; pagination is top-level `offset` and `limit`. Defaults are offset 0 and limit 1000; limit range is 1–1000. Response collection is `data.vehicles`.
+- The documented rate limit for these three endpoints is 2 requests per second per API key. Responses use an application envelope with `code: 0` for the documented success example.
+
+### Implementation consequences
+
+1. The existing function's base URL and v1 endpoint paths do not match this contract.
+2. The current `pager` / `page` request-body fallbacks are incorrect for v2; `offset` and `limit` are top-level fields.
+3. A complete sync must call `getCompanies`, select only company IDs authorized for this integration, then request drivers and vehicles per company. Do not assume one company ID or silently combine companies.
+4. Follow pagination by incrementing `offset` using the confirmed `data.drivers` / `data.vehicles` arrays and stop only when a page is shorter than the requested limit (or when a verified total count says all rows have been fetched). Detect repeated pages and impose a hard page/row ceiling.
+5. Validate `code` explicitly and reject malformed/missing `data` collections before any database writes.
+6. No authenticated Bolt request, database write, deployment, or production sync was performed as part of this review. The company-selection policy, field-to-database mapping, tenant isolation, and atomic apply step remain release blockers.
+

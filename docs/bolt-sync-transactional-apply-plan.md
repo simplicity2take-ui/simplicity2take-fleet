@@ -8,6 +8,26 @@ Design only. This document does not deploy code, change database schema, enable 
 
 The current Edge Function performs separate vehicle, driver, and assignment mutations. If a later mutation fails, earlier mutations may already be committed. A successful dry-run validates the external payload but does not prove that database writes will be atomic or safe.
 
+## Findings from the draft company migrations
+
+Static review of PR #32 found these draft files:
+
+- `supabase/migrations/20261026190000_company_fleet_foundation.sql`
+- `supabase/migrations/20261026200000_company_memberships_and_integrity.sql`
+
+They are not applied migrations and must not be treated as production schema.
+
+The first migration adds `company_id` to `vehicles` and `drivers`, backfills existing rows to the `simplicity2take` company, and makes both columns NOT NULL. The second adds `company_memberships` and an assignment trigger that rejects a driver/vehicle pair when their company IDs differ. However, the migration's own comments and review identify that tenant RLS remains incomplete.
+
+Before the Bolt RPC can be implemented, the company foundation needs to be validated in a disposable Supabase project. In particular:
+
+- Confirm that the `s2t_is_admin()` and `profiles` dependencies exist and have the expected security behavior.
+- Test the backfill and idempotency with representative existing data and baseline row counts.
+- The assignment guard currently permits a row when either assignment ID is NULL; verify both columns are independently NOT NULL or change the guard to fail closed.
+- The guard does not protect against changing `drivers.company_id` or `vehicles.company_id` while assignments already exist.
+- The draft adds ownership only to drivers and vehicles; assignments, documents, platform history, reports, and CarTrack data still need their own tenant access rules before external companies are enabled.
+- Do not assume that a company membership row alone authorizes write operations. The role and server-side authorization rules must be explicit.
+
 ## Required architecture before enabling writes
 
 1. **Fetch and validate outside the write transaction**
@@ -22,12 +42,13 @@ The current Edge Function performs separate vehicle, driver, and assignment muta
    - Upsert all vehicles and drivers and reconcile assignments in the same transaction.
    - Any failed validation or SQL operation must roll back the entire import.
    - Return counts and conflict identifiers only after commit; never report success before the transaction commits.
-   - Do not implement the RPC until the actual migrations and table constraints are inspected and the company ownership model is settled.
+   - Do not implement the RPC until the company migrations and table constraints are tested and the ownership model is settled.
 
 3. **Tenant isolation**
    - Every vehicle, driver, and assignment must be associated with a company/tenant using the approved schema.
    - Every lookup and mutation must be scoped to that tenant; global matching by plate, email, phone, or external UUID is not sufficient.
    - Enforce authorization in trusted server/database code and maintain appropriate RLS policies. Do not rely on client-supplied company IDs.
+   - Service-role Edge Function queries must perform their own authorization checks; RLS does not automatically constrain service-role operations.
 
 4. **Identity and assignment concurrency**
    - Review and add tenant-scoped unique constraints for external Bolt IDs and normalized fallback identifiers where business rules permit.
@@ -44,9 +65,11 @@ The current Edge Function performs separate vehicle, driver, and assignment muta
 
 ## Release gates
 
-- [ ] Company/tenant schema and migrations reviewed; no production migration assumed.
+- [ ] Company migrations applied and tested only in a disposable environment, with row counts and rollback evidence.
+- [ ] Company ownership transfer and NULL assignment behavior explicitly handled.
+- [ ] Tenant RLS coverage reviewed for all fleet and operational data.
 - [ ] Trusted administrator/role authorization implemented and tested.
-- [ ] Transactional RPC reviewed against the actual schema.
+- [ ] Transactional RPC reviewed against the tested schema.
 - [ ] Tenant-scoped constraints and RLS reviewed.
 - [ ] Failure-injection and concurrency tests pass.
 - [ ] Dry-run reconciliation reviewed against expected Bolt counts.

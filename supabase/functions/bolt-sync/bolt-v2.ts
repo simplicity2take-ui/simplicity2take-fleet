@@ -58,6 +58,9 @@ export async function fetchAllBoltPages<T>(
     const collection = envelope.data?.[collectionKey];
     if (!Array.isArray(collection)) throw new Error(`Resposta Bolt sem lista data.${collectionKey}.`);
     const page = collection as T[];
+    if (page.length > limit) {
+      throw new Error("A Bolt devolveu mais registos do que o limite de página solicitado.");
+    }
     const fingerprint = JSON.stringify(page);
     if (page.length > 0 && pageFingerprints.has(fingerprint)) {
       throw new Error("A Bolt repetiu uma página; sincronização interrompida.");

@@ -5,6 +5,9 @@ Deno.test("Bolt v2 success envelope requires code zero and object data", () => {
   assertEquals(assertBoltSuccess({ code: 0, data: { drivers: [] } }).data, { drivers: [] });
   assertThrows(() => assertBoltSuccess({ data: { drivers: [] } }), Error, "código");
   assertThrows(() => assertBoltSuccess({ code: 5, data: {} }), Error, "código");
+  assertThrows(() => assertBoltSuccess({ code: "", data: {} }), Error, "código");
+  assertThrows(() => assertBoltSuccess({ code: "   ", data: {} }), Error, "código");
+  assertThrows(() => assertBoltSuccess({ code: false as unknown as string, data: {} }), Error, "código");
   assertThrows(() => assertBoltSuccess({ code: 0, data: [] }), Error, "data");
 });
 

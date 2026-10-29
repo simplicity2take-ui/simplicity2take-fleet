@@ -99,8 +99,11 @@ declare
   driver_company uuid;
   vehicle_company uuid;
 begin
+  -- Fail closed: an assignment must always identify both a driver and a vehicle.
+  -- This trigger supplements, but does not replace, NOT NULL constraints on the columns.
   if new.driver_id is null or new.vehicle_id is null then
-    return new;
+    raise exception 'Atribuição recusada: motorista e viatura são obrigatórios'
+      using errcode = '23502';
   end if;
 
   select d.company_id into driver_company
@@ -132,4 +135,4 @@ for each row execute function public.s2t_guard_assignment_company();
 comment on table public.company_memberships is
   'Company membership and role assignments. Draft: company-admin writes must be delegated through a validated server-side workflow before external use.';
 comment on function public.s2t_guard_assignment_company() is
-  'Prevents assigning a driver and vehicle whose company_id values differ. Requires company ownership migration first.';
+  'Prevents assignments with missing driver/vehicle IDs or driver/vehicle pairs whose company_id values differ. Requires company ownership migration first.';

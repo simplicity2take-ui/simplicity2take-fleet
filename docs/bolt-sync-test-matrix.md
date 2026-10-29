@@ -123,3 +123,16 @@ The Edge Function now fails closed for non-dry-run requests unless **both** cond
 - the request JSON contains `"confirm_write": true`.
 
 This commit does not set the environment variable, deploy the function, or authorize a live sync. The default remains writes-disabled unless an operator deliberately changes the environment and sends the explicit confirmation. The dry-run path returns before database reads/writes and does not require this write opt-in.
+
+## Additional unit tests added (29 October 2026)
+
+The latest test commits add these cases to the pure unit suite:
+
+- safeSyncError does not expose tokens, client secrets, or internal database details when the thrown value is a string, object, null, or undefined.
+- Pagination rejects invalid maxPages and maxRows limits before invoking the page-fetch callback.
+- Company extraction rejects malformed entries, unsafe integer IDs, and a missing data.companies collection.
+
+Latest code/test commit at the time of this update: c344395a5a32f13cc9d69ae57fc4ec605eb36981.
+
+**Verification status:** these cases are committed, but no GitHub Actions run associated with that commit was returned by the available workflow lookup. Do not mark the latest test suite as passing until an actual CI run is observed. These remain unit tests; they do not validate database transactions, company-level authorization, or live Bolt connectivity.
+

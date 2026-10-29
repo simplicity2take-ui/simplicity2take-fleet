@@ -83,3 +83,41 @@ Deno.test("pagination rejects non-zero Bolt application codes even when data con
     "código de erro",
   );
 });
+
+Deno.test("pagination rejects invalid safety ceilings before requesting a page", async () => {
+  let calls = 0;
+  const fetchPage = async () => {
+    calls++;
+    return { code: 0, data: { drivers: [] } };
+  };
+  await assertRejects(
+    () => fetchAllBoltPages(fetchPage, "drivers", { maxPages: 0 }),
+    Error,
+    "Limites de segurança",
+  );
+  await assertRejects(
+    () => fetchAllBoltPages(fetchPage, "drivers", { maxRows: 0 }),
+    Error,
+    "Limites de segurança",
+  );
+  assertEquals(calls, 0);
+});
+
+Deno.test("company extraction rejects malformed and unsafe company identifiers", () => {
+  assertThrows(
+    () => extractBoltCompanies({ code: 0, data: { companies: [null] } }),
+    Error,
+    "inválida",
+  );
+  assertThrows(
+    () => extractBoltCompanies({ code: 0, data: { companies: [{ company_id: Number.MAX_SAFE_INTEGER + 1 }] } }),
+    Error,
+    "válido",
+  );
+  assertThrows(
+    () => extractBoltCompanies({ code: 0, data: {} }),
+    Error,
+    "sem lista",
+  );
+});
+

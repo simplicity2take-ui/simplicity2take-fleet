@@ -11,7 +11,8 @@ This is a test plan only. It does not call Bolt, write to Supabase, deploy an Ed
 | Duplicate driver phone | Two records share a phone after whitespace normalization, including different UUIDs/emails | Reject the payload before any database writes |
 | Duplicate vehicle UUID | Two payload records normalize to the same UUID, ignoring case/outer whitespace | Reject the payload before any database writes |
 | Duplicate vehicle registration | Two records share a registration after spaces/hyphens are removed, including different UUIDs | Reject the payload before any database writes |
-| Pagination row ceiling | A response exceeds the configured maximum row count | Reject before any database writes |\n| Bolt application-level error | HTTP response contains a non-zero Bolt `code` despite having a `data` object | Reject the response before any database writes |\n| Pagination full page followed by empty page | A full page is followed by an empty collection | Continue requesting pages after a full page and stop on the valid empty terminator |\n| Missing vehicle identity | Vehicle has neither UUID nor registration | Abort with a clear validation error |
+| Pagination row ceiling | A response exceeds the configured maximum row count | Reject before any database writes |
+| Oversized page | A response page contains more rows than the requested page limit | Reject the response before any database writes |\n| Bolt application-level error | HTTP response contains a non-zero Bolt `code` despite having a `data` object | Reject the response before any database writes |\n| Pagination full page followed by empty page | A full page is followed by an empty collection | Continue requesting pages after a full page and stop on the valid empty terminator |\n| Missing vehicle identity | Vehicle has neither UUID nor registration | Abort with a clear validation error |
 | Missing driver identity | Driver has no UUID, email or phone | Abort with a clear validation error |
 | Conflicting driver UUID on fallback match | Email/phone matches a Fleet driver already linked to a different Bolt UUID | Reject before updating the matched record; manual review required |
 | Conflicting vehicle UUID on fallback match | Registration matches a Fleet vehicle already linked to a different Bolt UUID | Reject before updating the matched record; manual review required |
@@ -24,6 +25,9 @@ This is a test plan only. It does not call Bolt, write to Supabase, deploy an Ed
 | Multiple active assignments | More than one active row | Preserve all rows and report conflict |
 | No active assignment | Bolt vehicle maps to a Fleet vehicle | Create one active assignment |
 | No vehicle match | Bolt reports an unknown vehicle | Do not create/replace an assignment |
+
+
+Latest check: GitHub Actions run [40899275026](https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/40899275026) passed for commit `5161f7b8c657f7096b4e061bd90abdbc8dc57de1`, including the oversized-page regression test. This result does not validate live Bolt pagination semantics or database transactionality.
 
 ## Integration tests required in an isolated Supabase project
 

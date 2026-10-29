@@ -42,8 +42,10 @@ export async function fetchAllBoltPages<T>(
   options: { limit?: number; maxPages?: number; maxRows?: number } = {},
 ): Promise<T[]> {
   const limit = options.limit ?? 1000;
-  const maxPages = options.maxPages ?? 100;
   const maxRows = options.maxRows ?? 100_000;
+  // Permit one extra request to confirm the terminator when the row ceiling
+  // is reached exactly on a full final page.
+  const maxPages = options.maxPages ?? Math.ceil(maxRows / limit) + 1;
   if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
     throw new Error("Limite de paginação Bolt inválido.");
   }

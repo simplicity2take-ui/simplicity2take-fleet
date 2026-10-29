@@ -9,7 +9,8 @@ export function assertBoltSuccess<T>(payload: unknown): BoltEnvelope<T> {
     throw new Error("Resposta Bolt inválida.");
   }
   const envelope = payload as BoltEnvelope<T>;
-  if (envelope.code === undefined || Number(envelope.code) !== 0) {
+  const successCode = envelope.code === 0 || (typeof envelope.code === "string" && envelope.code.trim() === "0");
+  if (!successCode) {
     throw new Error("A Bolt devolveu um código de erro ou uma resposta sem código.");
   }
   if (!envelope.data || typeof envelope.data !== "object" || Array.isArray(envelope.data)) {

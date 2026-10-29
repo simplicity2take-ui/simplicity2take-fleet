@@ -121,3 +121,18 @@ Deno.test("company extraction rejects malformed and unsafe company identifiers",
   );
 });
 
+Deno.test("pagination rejects a page larger than the requested limit", async () => {
+  let calls = 0;
+  await assertRejects(
+    () => fetchAllBoltPages(async () => {
+      calls++;
+      return {
+        code: 0,
+        data: { drivers: [{ uuid: "d1" }, { uuid: "d2" }, { uuid: "d3" }] },
+      };
+    }, "drivers", { limit: 2 }),
+    Error,
+    "mais registos do que o limite",
+  );
+  assertEquals(calls, 1);
+});

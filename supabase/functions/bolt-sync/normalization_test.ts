@@ -222,3 +222,22 @@ Deno.test("safe sync error never exposes provider or database exception details"
   assertEquals(result.message, "A sincronização falhou. Tente novamente mais tarde ou contacte o administrador.");
   if (JSON.stringify(result).includes(secret)) throw new Error("Sensitive exception detail leaked into public error");
 });
+
+Deno.test("safe sync error also hides secrets from non-Error thrown values", () => {
+  const sensitiveValues = [
+    "Bearer live-access-token",
+    { message: "database schema leaked", client_secret: "top-secret" },
+    null,
+    undefined,
+  ];
+  for (const thrown of sensitiveValues) {
+    const result = safeSyncError(thrown);
+    assertEquals(result.code, "BOLT_SYNC_FAILED");
+    assertEquals(result.message, "A sincronização falhou. Tente novamente mais tarde ou contacte o administrador.");
+    const serialized = JSON.stringify(result);
+    if (serialized.includes("live-access-token") || serialized.includes("top-secret") || serialized.includes("database schema")) {
+      throw new Error("Sensitive detail leaked from a non-Error thrown value");
+    }
+  }
+});
+

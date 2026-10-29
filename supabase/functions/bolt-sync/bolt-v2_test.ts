@@ -139,3 +139,17 @@ Deno.test("pagination rejects a page larger than the requested limit", async () 
   );
   assertEquals(calls, 1);
 });
+
+
+Deno.test("pagination can confirm an empty terminator at the exact row ceiling", async () => {
+  const offsets: number[] = [];
+  const rows = await fetchAllBoltPages<{ uuid: string }>(async (offset) => {
+    offsets.push(offset);
+    if (offset === 0) return { code: 0, data: { drivers: [{ uuid: "d1" }] } };
+    if (offset === 1) return { code: 0, data: { drivers: [{ uuid: "d2" }] } };
+    return { code: 0, data: { drivers: [] } };
+  }, "drivers", { limit: 1, maxRows: 2 });
+
+  assertEquals(rows, [{ uuid: "d1" }, { uuid: "d2" }]);
+  assertEquals(offsets, [0, 1, 2]);
+});

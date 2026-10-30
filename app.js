@@ -214,7 +214,7 @@ async function loadBackendData() {
   if (membershipResult.error) throw membershipResult.error;
   state.currentCompanyId = membershipResult.data?.company_id || null;
   state.currentCompanyRole = membershipResult.data?.role || null;
-  if (!state.currentCompanyId && currentUser()?.role === "admin") {
+  if (currentUser()?.role === "admin") {
     const companyResult = await supabaseClient.from("companies").select("id").eq("slug", "simplicity2take").maybeSingle();
     if (companyResult.error) throw companyResult.error;
     state.currentCompanyId = companyResult.data?.id || null;
@@ -413,10 +413,12 @@ function showVehicleQr(vehicleId) {
 }
 
 function companyDocuments() {
-  return state.documents.filter(doc =>
-    !doc.driverId && !doc.vehicleId &&
-    (!state.currentCompanyId || !doc.companyId || doc.companyId === state.currentCompanyId)
-  );
+  const isGlobalAdmin = currentUser()?.role === "admin";
+  return state.documents.filter(doc => {
+    if (doc.driverId || doc.vehicleId) return false;
+    if (isGlobalAdmin) return true;
+    return Boolean(state.currentCompanyId && doc.companyId === state.currentCompanyId);
+  });
 }
 
 function driverDocuments() {

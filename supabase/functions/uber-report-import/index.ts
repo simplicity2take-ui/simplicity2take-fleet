@@ -126,6 +126,25 @@ function minutes(v: string, fieldName = "duração") {
   if (!Number.isSafeInteger(total)) throw new Error("Duração demasiado elevada em " + fieldName + ".");
   return total;
 }
+function clockMinutes(v: string, fieldName = "duração") {
+  const input = String(v || "").trim();
+  if (!input) return null;
+  // Uber time-and-distance reports use HH:MM:SS, unlike driver activity's
+  // D:HH:MM columns. Preserve the original value in raw and store whole minutes.
+  const match = input.match(/^(\\d+):(\\d{2}):(\\d{2})$/);
+  if (!match) throw new Error("Valor inválido em " + fieldName + ": utilize horas:minutos:segundos.");
+  const hours = Number(match[1]);
+  const mins = Number(match[2]);
+  const seconds = Number(match[3]);
+  if (!Number.isSafeInteger(hours) || mins > 59 || seconds > 60) {
+    throw new Error("Duração inválida em " + fieldName + ": minutos devem ser 0–59 e segundos 0–60.");
+  }
+  const totalSeconds = hours * 3600 + mins * 60 + seconds;
+  if (!Number.isSafeInteger(totalSeconds)) throw new Error("Duração demasiado elevada em " + fieldName + ".");
+  // Some supplied Uber exports contain 60 seconds (e.g. 00:07:60).
+  // Treat it as the next minute; raw retains the exact source value.
+  return Math.floor(totalSeconds / 60);
+}
 async function rpc(name: string, body: unknown) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: "POST",
@@ -522,10 +541,10 @@ Deno.serve(async (req) => {
       const normalized = rows.map(r => ({
         uber_vehicle_uuid: r["UUID do veículo"],
         plate: r["Matrícula do veículo"],
-        opening_minutes: minutes(r["Hora de abertura"], "Hora de abertura"),
-        route_minutes: minutes(r["Tempo em rota"], "Tempo em rota"),
-        trip_minutes: minutes(r["Tempo em viagem"], "Tempo em viagem"),
-        unavailable_minutes: minutes(r["Tempo indisponível"], "Tempo indisponível"),
+        opening_minutes: clockMinutes(r["Hora de abertura"], "Hora de abertura"),
+        route_minutes: clockMinutes(r["Tempo em rota"], "Tempo em rota"),
+        trip_minutes: clockMinutes(r["Tempo em viagem"], "Tempo em viagem"),
+        unavailable_minutes: clockMinutes(r["Tempo indisponível"], "Tempo indisponível"),
         free_distance_km: numberValue(r["Distância livre"]),
         route_distance_km: numberValue(r["Distância em rota"]),
         trip_distance_km: numberValue(r["Distância em viagem"]),
@@ -541,10 +560,10 @@ Deno.serve(async (req) => {
       const normalized = rows.map(r => ({
         uber_driver_uuid: r["UUID do motorista"],
         driver_name: [r["Nome próprio do motorista"], r["Apelido do motorista"]].filter(Boolean).join(" "),
-        opening_minutes: minutes(r["Hora de abertura"], "Hora de abertura"),
-        route_minutes: minutes(r["Tempo em rota"], "Tempo em rota"),
-        trip_minutes: minutes(r["Tempo em viagem"], "Tempo em viagem"),
-        unavailable_minutes: minutes(r["Tempo indisponível"], "Tempo indisponível"),
+        opening_minutes: clockMinutes(r["Hora de abertura"], "Hora de abertura"),
+        route_minutes: clockMinutes(r["Tempo em rota"], "Tempo em rota"),
+        trip_minutes: clockMinutes(r["Tempo em viagem"], "Tempo em viagem"),
+        unavailable_minutes: clockMinutes(r["Tempo indisponível"], "Tempo indisponível"),
         free_distance_km: numberValue(r["Distância livre"]),
         route_distance_km: numberValue(r["Distância em rota"]),
         trip_distance_km: numberValue(r["Distância em viagem"]),

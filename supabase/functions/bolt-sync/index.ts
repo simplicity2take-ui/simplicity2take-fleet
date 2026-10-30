@@ -14,7 +14,7 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway-v2";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusToPortal, isBoltWriteAllowed } from "./normalization.ts";
+import { assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, hasOtherDriverAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusToPortal, isBoltWriteAllowed } from "./normalization.ts";
 import { extractBoltCompanies, fetchAllBoltPages } from "./bolt-v2.ts";
 
 async function getBoltToken() {
@@ -168,8 +168,24 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
       .is("active_until", null);
     if (activeResult.error) throw activeResult.error;
     const activeAssignments = activeResult.data || [];
+
+    // Check the other side of the relationship as well: another driver may
+    // already have this vehicle active. This is a fail-closed pre-insert check;
+    // a database transaction/constraint is still required to prevent races.
+    const vehicleActiveResult = await admin.from("vehicle_assignments")
+      .select("id, driver_id")
+      .eq("vehicle_id", assignedVehicle.id)
+      .is("active_until", null);
+    if (vehicleActiveResult.error) throw vehicleActiveResult.error;
+    const vehicleHasOtherDriver = hasOtherDriverAssignment(
+      vehicleActiveResult.data || [],
+      row.id,
+    );
+
     const decision = decideAssignment(activeAssignments, assignedVehicle.id);
-    if (decision === "unchanged") {
+    if (vehicleHasOtherDriver) {
+      assignmentAction = "conflict";
+    } else if (decision === "unchanged") {
       assignmentAction = "unchanged";
     } else if (decision === "conflict") {
       assignmentAction = "conflict";

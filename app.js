@@ -201,7 +201,7 @@ async function loadBackendData() {
     // Company members receive only the document data permitted by document RLS.
     // Do not even request fleet, platform, application or CarTrack tables until
     // those tables have complete company-scoped policies.
-    const documentsResult = await supabaseClient.from("documents").select("*");
+    const documentsResult = await supabaseClient.from("documents").select("id, company_id, name, document_type, document_number, policy_number, issue_date, expiry_date, observations, original_file_name, mime_type, vehicle_id, driver_id, uploaded_by");
     if (documentsResult.error) throw documentsResult.error;
     state.drivers = [];
     state.vehicles = [];
@@ -222,8 +222,6 @@ async function loadBackendData() {
       observations: valueOf(row, "observations", "notes"),
       fileName: valueOf(row, "original_file_name", "file_name", "name"),
       fileType: valueOf(row, "mime_type", "file_type"),
-      driveFileId: valueOf(row, "drive_file_id", "google_drive_file_id"),
-      driveUrl: valueOf(row, "drive_web_view_link", "drive_url", "web_view_link", "file_url"),
       vehicleId: valueOf(row, "vehicle_id"),
       driverId: valueOf(row, "driver_id"),
       viewerDriverIds: [],

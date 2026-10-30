@@ -14,7 +14,7 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway-v2";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, hasOtherDriverAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusForSync, statusToPortal, isBoltWriteAllowed } from "./normalization.ts";
+import { assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, hasOtherDriverAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusForSync, statusToPortal, isBoltWriteAllowed, isActiveGlobalAdmin } from "./normalization.ts";
 import { extractBoltCompanies, fetchAllBoltPages } from "./bolt-v2.ts";
 
 async function getBoltToken() {
@@ -218,8 +218,14 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(supabaseUrl, serviceRoleKey);
     const { data: authData, error: authError } = await admin.auth.getUser(userToken);
     if (authError || !authData.user) return json({ ok: false, error: "Sessão inválida." }, 401);
-    const callerEmail = (authData.user.email || "").toLowerCase();
-    if (callerEmail !== "simplicity2take@gmail.com") return json({ ok: false, error: "Apenas o administrador pode sincronizar a Bolt." }, 403);
+    const { data: profile, error: profileError } = await admin
+      .from("profiles")
+      .select("role,status")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+    if (profileError || !isActiveGlobalAdmin(profile)) {
+      return json({ ok: false, error: "Apenas um administrador ativo pode sincronizar a Bolt." }, 403);
+    }
 
     const token = await getBoltToken();
     const companiesPayload = await boltPost("/fleetIntegration/v2/getCompanies", token);

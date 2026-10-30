@@ -1096,7 +1096,7 @@ function vehicleRow(vehicle, admin) {
       <td><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></td>
       <td>${escapeHtml(vehicle.driverIds.map(driverName).join(", ") || "Sem motorista")}</td>
       <td><div class="vehicle-document-links">${documentSummary}</div></td>
-      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${escapeHtml(vehicle.id)}">QR</button><button class="mini-button" type="button" data-edit-vehicle="${escapeHtml(vehicle.id)}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${escapeHtml(vehicle.id)}">Eliminar</button></div>` : "Consulta"}</td>
+      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${escapeHtml(vehicle.id)}">QR</button><button class="mini-button" type="button" data-edit-vehicle="${escapeHtml(vehicle.id)}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${escapeHtml(vehicle.id)}">Arquivar</button></div>` : "Consulta"}</td>
     </tr>
   `;
 }
@@ -1126,7 +1126,7 @@ function driverRow(driver) {
         ? `<span class="tag ${activityStateClass(driver.uberRealtimeStatus || driver.uberStatus)}">${escapeHtml(activityStateLabel(driver.uberRealtimeStatus || driver.uberStatus))}</span>`
         : '<span class="tag">Sem Uber</span>'}</td>
       <td><span class="tag">${docs.length} docs</span></td>
-      <td><div class="row-actions"><button class="mini-button" type="button" data-doc-driver="${escapeHtml(driver.id)}">Documento</button><button class="mini-button" type="button" data-edit-driver="${escapeHtml(driver.id)}">Editar</button><button class="mini-button" type="button" data-reset-password="${escapeHtml(driver.id)}">Definir passe</button><button class="danger-button" type="button" data-delete-driver="${escapeHtml(driver.id)}">Eliminar</button></div></td>
+      <td><div class="row-actions"><button class="mini-button" type="button" data-doc-driver="${escapeHtml(driver.id)}">Documento</button><button class="mini-button" type="button" data-edit-driver="${escapeHtml(driver.id)}">Editar</button><button class="mini-button" type="button" data-reset-password="${escapeHtml(driver.id)}">Definir passe</button><button class="danger-button" type="button" data-delete-driver="${escapeHtml(driver.id)}">Desativar</button></div></td>
     </tr>
   `;
 }
@@ -2363,15 +2363,12 @@ async function saveVehicle(values, driverIds, id) {
   const { data: vehicle, error } = await query;
   if (error) throw error;
   const vehicleId = id || vehicle.id;
-  const { error: deleteError } = await supabaseClient.from("vehicle_assignments").delete().eq("vehicle_id", vehicleId);
-  if (deleteError) throw deleteError;
-  if (driverIds.length) {
-    const { error: assignmentError } = await supabaseClient.from("vehicle_assignments").insert(
-      driverIds.map(driverId => ({ vehicle_id: vehicleId, driver_id: driverId, active_from: new Date().toISOString().slice(0, 10), active_until: null }))
-    );
-    if (assignmentError) throw assignmentError;
-  }
-  showToast(id ? "Veículo atualizado." : "Veículo criado.");
+  const { error: assignmentError } = await supabaseClient.rpc("s2t_replace_vehicle_assignments", {
+    p_vehicle_id: vehicleId,
+    p_driver_ids: driverIds
+  });
+  if (assignmentError) throw assignmentError;
+  showToast(id ? "Viatura atualizada. O histórico de associações foi preservado." : "Viatura criada.");
 }
 
 async function saveDocument(values, viewerDriverIds, id) {
@@ -2644,67 +2641,29 @@ async function handleAdminAction(action) {
       await loadBackendData(); renderApp(); showToast("Documento eliminado.");
     }
     if (action.type === "delete-vehicle") {
-      if (!confirm("Eliminar esta viatura do portal?")) return;
-      const { error: assignmentError } = await supabaseClient
-        .from("vehicle_assignments")
-        .delete()
-        .eq("vehicle_id", action.id);
-      if (assignmentError) throw assignmentError;
-
-      const { error } = await supabaseClient
-        .from("vehicles")
-        .delete()
-        .eq("id", action.id);
+      if (!confirm("Arquivar esta viatura? As associações ativas serão encerradas e todo o histórico será preservado.")) return;
+      const { error } = await supabaseClient.rpc("s2t_archive_vehicle", {
+        p_vehicle_id: action.id
+      });
       if (error) throw error;
 
       await loadBackendData();
       renderApp();
-      showToast("Viatura eliminada.");
+      showToast("Viatura arquivada. O histórico foi preservado.");
     }
     if (action.type === "delete-driver") {
       const driver = state.drivers.find(item => item.id === action.id);
       if (!driver) return;
+      if (!confirm("Desativar este motorista? As associações ativas serão encerradas e o histórico documental e operacional será preservado.")) return;
 
-      const driverDocs = state.documents.filter(doc => doc.driverId === action.id);
-
-      if (driver.status === "Inativo" && driverDocs.length === 0) {
-        if (!confirm("Eliminar definitivamente este motorista?")) return;
-
-        const { error: assignmentError } = await supabaseClient
-          .from("vehicle_assignments")
-          .delete()
-          .eq("driver_id", action.id);
-        if (assignmentError) throw assignmentError;
-
-        const { error: viewerError } = await supabaseClient
-          .from("document_viewers")
-          .delete()
-          .eq("driver_id", action.id);
-        if (viewerError) throw viewerError;
-
-        const { error } = await supabaseClient
-          .from("drivers")
-          .delete()
-          .eq("id", action.id);
-        if (error) throw error;
-
-        await loadBackendData();
-        renderApp();
-        showToast("Motorista eliminado definitivamente.");
-        return;
-      }
-
-      if (!confirm("Desativar este motorista? O histórico documental será preservado.")) return;
-
-      const { error } = await supabaseClient
-        .from("drivers")
-        .update({ status: "Inativo" })
-        .eq("id", action.id);
+      const { error } = await supabaseClient.rpc("s2t_deactivate_driver", {
+        p_driver_id: action.id
+      });
       if (error) throw error;
 
       await loadBackendData();
       renderApp();
-      showToast("Motorista desativado.");
+      showToast("Motorista desativado. O histórico foi preservado.");
     }
   } catch (error) {
     console.error(error);

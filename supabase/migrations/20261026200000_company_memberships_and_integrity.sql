@@ -22,6 +22,28 @@ create index if not exists company_memberships_profile_status_idx
 create index if not exists company_memberships_company_status_idx
   on public.company_memberships(company_id, status);
 
+-- Harden the pre-existing global-admin helper before using it from the new
+-- company-scoped SECURITY DEFINER functions and RLS policies. Keep its return
+-- value limited to the caller's own profile and pin all name resolution.
+create or replace function public.s2t_is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.role = 'admin'
+      and coalesce(p.status, 'Ativo') = 'Ativo'
+  );
+$;
+
+revoke all on function public.s2t_is_admin() from public, anon;
+grant execute on function public.s2t_is_admin() to authenticated;
+
 -- These helpers deliberately use SECURITY DEFINER to evaluate membership without
 -- depending on caller visibility of other membership rows. Pin the search path and
 -- schema-qualify every relation/function to prevent object-shadowing attacks.

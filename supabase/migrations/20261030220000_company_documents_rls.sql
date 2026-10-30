@@ -37,6 +37,28 @@ create index if not exists documents_company_id_idx
 alter table public.documents enable row level security;
 alter table public.document_viewers enable row level security;
 
+-- Avoid a recursive RLS dependency: documents can consult this SECURITY DEFINER
+-- helper, while document_viewers may safely consult documents in its own policy.
+-- The helper checks only the authenticated driver's explicit viewer grant.
+create or replace function public.s2t_driver_can_view_document(p_document_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $function$
+  select exists (
+    select 1
+    from public.document_viewers dv
+    where dv.document_id = p_document_id
+      and dv.driver_id = public.s2t_driver_id()
+      and dv.can_view = true
+  );
+$function$;
+
+revoke all on function public.s2t_driver_can_view_document(uuid) from public, anon;
+grant execute on function public.s2t_driver_can_view_document(uuid) to authenticated;
+
 -- Remove the old permissive document read policy before replacing it with a
 -- single policy that combines global admin, company-admin and driver access.
 drop policy if exists "s2t_documents_admin_or_authorized_driver" on public.documents;
@@ -68,17 +90,13 @@ using (
       from public.vehicle_assignments va
       where va.vehicle_id = documents.vehicle_id
         and va.driver_id = public.s2t_driver_id()
-        and coalesce(va.active, true) = true
+        and va.active_from <= current_date
+        and (va.active_until is null or va.active_until >= current_date)
     )
   )
   or (
     driver_id is null
-    and exists (
-      select 1
-      from public.document_viewers dv
-      where dv.document_id = documents.id
-        and dv.driver_id = public.s2t_driver_id()
-    )
+    and public.s2t_driver_can_view_document(documents.id)
   )
 );
 
@@ -100,6 +118,8 @@ using (
   )
 );
 
+comment on function public.s2t_driver_can_view_document(uuid) is
+  'Checks an explicit document-viewer grant for the authenticated driver without recursive RLS evaluation.';
 comment on column public.documents.company_id is
   'Owning company for document access. NULL indicates unresolved/inconsistent ownership and is hidden from company members.';
 comment on policy "s2t documents company scope" on public.documents is

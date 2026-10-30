@@ -148,10 +148,12 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   if (assignedVehicle?.id) {
     // Preserve the complete assignment history. Bolt must never delete or
     // silently replace an existing active Fleet assignment.
+    const assignmentDate = now.slice(0, 10);
     const activeResult = await admin.from("vehicle_assignments")
       .select("id, vehicle_id")
       .eq("driver_id", row.id)
-      .is("active_until", null);
+      .lte("active_from", assignmentDate)
+      .or("active_until.is.null,active_until.gte." + assignmentDate);
     if (activeResult.error) throw new Error("Não foi possível validar a associação ativa do motorista; sincronização interrompida.");
     const activeAssignments = activeResult.data || [];
     if (activeAssignments.length === 1 && activeAssignments[0].vehicle_id === assignedVehicle.id) {

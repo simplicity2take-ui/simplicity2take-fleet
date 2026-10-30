@@ -69,6 +69,20 @@ begin
   order by d.id
   for update;
 
+  -- Re-check after obtaining row locks: a concurrent driver deactivation may
+  -- have committed after the earlier validation but before these locks.
+  select count(*) into v_valid_count
+  from unnest(v_driver_ids) as requested(driver_id)
+  join public.drivers d
+    on d.id = requested.driver_id
+   and d.company_id = v_company_id
+   and coalesce(d.status, 'Ativo') = 'Ativo';
+
+  if v_valid_count <> v_requested_count then
+    raise exception 'Só podem ser atribuídos motoristas ativos da mesma empresa da viatura'
+      using errcode = '23514';
+  end if;
+
   if exists (
     select 1
     from public.vehicle_assignments va

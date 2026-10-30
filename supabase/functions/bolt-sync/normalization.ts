@@ -137,3 +137,12 @@ export function safeSyncError(_error: unknown): { code: string; message: string 
 export function isBoltWriteAllowed(serverOptIn: unknown, requestConfirmation: unknown): boolean {
   return serverOptIn === "true" && requestConfirmation === true;
 }
+
+
+/** Detect whether a target vehicle is already active for a different driver. */
+export function hasOtherDriverAssignment(
+  activeAssignments: Array<{ driver_id: string | number | null }>,
+  driverId: string | number,
+): boolean {
+  return activeAssignments.some((assignment) => assignment.driver_id !== driverId);
+}

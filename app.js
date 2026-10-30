@@ -9,6 +9,8 @@ const state = {
   smartPreview: null,
   requestedVehicleId: null,
   documentContext: "company",
+  currentCompanyId: null,
+  currentCompanyRole: null,
   users: [
     { id: "admin", role: "admin", name: "Administrador Simplicity2Take", email: "admin@simplicity2take.pt", phone: "210000000" },
     { id: "u-joao", role: "driver", name: "João Silva", email: "joao@simplicity2take.pt", phone: "912345678", driverId: "d-joao" },
@@ -206,6 +208,13 @@ async function loadBackendData() {
   const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult].find(result => result.error)?.error;
   if (firstError) throw firstError;
 
+  const membershipResult = state.sessionUserId
+    ? await supabaseClient.from("company_memberships").select("company_id, role").eq("profile_id", state.sessionUserId).eq("status", "Ativo").limit(1).maybeSingle()
+    : { data: null, error: null };
+  if (membershipResult.error) throw membershipResult.error;
+  state.currentCompanyId = membershipResult.data?.company_id || null;
+  state.currentCompanyRole = membershipResult.data?.role || null;
+
   const assignments = assignmentsResult.data || [];
   const viewers = viewersResult.data || [];
   state.drivers = (driversResult.data || []).map(row => ({
@@ -244,6 +253,7 @@ async function loadBackendData() {
   }));
   state.documents = (documentsResult.data || []).map(row => ({
     id: row.id,
+    companyId: valueOf(row, "company_id"),
     name: valueOf(row, "name", "title", "file_name"),
     type: valueOf(row, "document_type", "type") || "Outros",
     number: valueOf(row, "document_number", "number"),
@@ -398,7 +408,10 @@ function showVehicleQr(vehicleId) {
 }
 
 function companyDocuments() {
-  return state.documents.filter(doc => !doc.driverId && !doc.vehicleId);
+  return state.documents.filter(doc =>
+    !doc.driverId && !doc.vehicleId &&
+    (!state.currentCompanyId || !doc.companyId || doc.companyId === state.currentCompanyId)
+  );
 }
 
 function driverDocuments() {
@@ -434,7 +447,7 @@ function alertLevel(doc) {
 
 function visibleDocuments() {
   const user = currentUser();
-  if (user.role === "admin") return state.documents;
+  if (user.role === "admin" || state.currentCompanyRole === "company_admin") return companyDocuments();
   return driverDocuments();
 }
 
@@ -987,7 +1000,7 @@ function driverRow(driver) {
 }
 
 function renderDocuments() {
-  const admin = currentUser().role === "admin";
+  const admin = currentUser().role === "admin" || state.currentCompanyRole === "company_admin";
   const documents = admin ? companyDocuments() : driverDocuments();
   selectors.pageTitle.textContent = admin ? "Documentos da Empresa" : "Meus Documentos";
   selectors.content.innerHTML = `
@@ -2144,7 +2157,8 @@ async function saveDocument(values, viewerDriverIds, id) {
     drive_web_view_link: driveData.webViewLink,
     vehicle_id: finalVehicleId,
     driver_id: finalDriverId,
-    uploaded_by: state.sessionUserId
+    uploaded_by: state.sessionUserId,
+    company_id: context === "company" ? (existing?.companyId || state.currentCompanyId) : (context === "vehicle" ? state.vehicles.find(vehicle => vehicle.id === finalVehicleId)?.raw?.company_id || null : state.drivers.find(driver => driver.id === finalDriverId)?.raw?.company_id || null)
   };
 
   const query = id

@@ -186,3 +186,27 @@ Bolt sync remains S2T-company-only and global-admin-only. Its provider paginatio
 ### Validation
 
 Reviewed the GitHub diffs and confirmed the direct Uber driver/vehicle lookup URLs include the server-resolved S2T `company_id`; no unscoped driver lookup remains in those two matching paths. This is static source inspection only, not a TypeScript/Deno build or integration test. No secrets, database rows, external APIs or production deployments were changed.
+
+
+
+## SQL import/sync function audit — missing Uber definitions and Bolt tenant gap (30 October 2026)
+
+A repository-wide code search and inspection of the complete versioned `supabase/migrations` directory on the feature branch found no SQL definitions for the Uber RPC functions called by `uber-report-import`:
+
+- `sync_uber_driver_status`
+- `sync_uber_driver_activity`
+- `sync_uber_vehicle_performance`
+- `sync_uber_vehicle_time_distance`
+- `sync_uber_driver_time_distance`
+- `sync_uber_driver_quality`
+- `sync_uber_driver_payments`
+
+Their deployed definitions, grants, SECURITY DEFINER settings and write scope therefore remain unverified. Do not infer their safety from the Edge Function's direct lookup filters. Before changing or enabling these RPCs, retrieve their actual definitions from the intended Supabase project (or add the authoritative SQL definitions to version control), then review every read, insert, update, conflict target and ownership relation. Keep the Uber endpoint restricted to the active global-admin / S2T-only interim workflow until that review is complete.
+
+The versioned migration `20261007193000_add_platform_activity.sql` does contain `public.sync_bolt_activity(jsonb,jsonb)`. The function is SECURITY DEFINER, sets `search_path = public`, is executable by `service_role`, and joins Bolt driver/vehicle UUIDs without a company predicate. It writes activity/trip rows whose company scope is later inferred from linked driver/vehicle records. An unmatched identity can therefore produce a row with no company-linked parent, and a provider UUID collision can resolve to another company's driver/vehicle. The function's conflict-upsert paths also need review to ensure a repeated global event/trip key cannot overwrite another company's existing record.
+
+This is a confirmed source-level tenant-isolation gap, not a claim that cross-company data has already been exposed. Do not run this RPC with live provider data or enable company-admin Bolt sync until a replacement has been designed around trusted server-side company resolution, company-filtered identity matching, fail-closed unmatched rows, and conflict updates constrained to the same tenant. Confirm actual deployed schema and existing data before adding any company key or changing unique constraints.
+
+### Audit method and validation
+
+Inspected the feature branch's complete migration directory and the source of `20261007193000_add_platform_activity.sql` and `supabase/functions/uber-report-import/index.ts`; GitHub code search returned no versioned SQL definitions for the Uber RPC names. This was repository/source inspection only. No Supabase SQL was executed, no remote function definitions were fetched, no migration was applied, and no Uber/Bolt API or production data was accessed.

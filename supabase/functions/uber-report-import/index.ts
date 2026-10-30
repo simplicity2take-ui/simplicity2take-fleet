@@ -120,12 +120,36 @@ function baseDates(periodStart: string | null, periodEnd: string | null) {
 Deno.serve(async (req) => {
   const response = await (async () => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204 });
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Método não permitido" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Allow": "POST, OPTIONS" }
+    });
+  }
   try {
     const auth = req.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ")) return new Response(JSON.stringify({ error: "Não autenticado" }), { status: 401, headers: { "Content-Type": "application/json" } });
     const token = auth.slice(7);
     const me = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` } });
     if (!me.ok) return new Response(JSON.stringify({ error: "Sessão inválida" }), { status: 401, headers: { "Content-Type": "application/json" } });
+
+    // This import endpoint uses the service-role key and performs company-wide
+    // writes. Until tenant-aware import workflows exist, restrict it server-side
+    // to active global administrators (UI visibility is not an authorization boundary).
+    const authenticatedUser = await me.json();
+    const adminProfiles = await getRestRows(
+      "profiles?select=id,role,status&id=eq." + encodeURIComponent(authenticatedUser.id) + "&role=eq.admin&limit=1"
+    );
+    const isActiveGlobalAdmin = (adminProfiles as any[]).some(profile =>
+      profile.id === authenticatedUser.id && profile.role === "admin" &&
+      (profile.status == null || profile.status === "Ativo")
+    );
+    if (!isActiveGlobalAdmin) {
+      return new Response(JSON.stringify({ error: "Sem permissões para importar relatórios." }), {
+        status: 403,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
+      });
+    }
 
     const url = new URL(req.url);
     const requestedType = url.searchParams.get("type") || "status";

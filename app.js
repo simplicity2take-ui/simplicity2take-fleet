@@ -9,6 +9,8 @@ const state = {
   smartPreview: null,
   requestedVehicleId: null,
   documentContext: "company",
+  currentCompanyId: null,
+  currentCompanyRole: null,
   users: [
     { id: "admin", role: "admin", name: "Administrador Simplicity2Take", email: "admin@simplicity2take.pt", phone: "210000000" },
     { id: "u-joao", role: "driver", name: "João Silva", email: "joao@simplicity2take.pt", phone: "912345678", driverId: "d-joao" },
@@ -188,6 +190,46 @@ function valueOf(row, ...keys) {
 }
 
 async function loadBackendData() {
+  const membershipResult = state.sessionUserId
+    ? await supabaseClient.from("company_memberships").select("company_id, role").eq("profile_id", state.sessionUserId).eq("status", "Ativo").limit(1).maybeSingle()
+    : { data: null, error: null };
+  if (membershipResult.error) throw membershipResult.error;
+  state.currentCompanyId = membershipResult.data?.company_id || null;
+  state.currentCompanyRole = membershipResult.data?.role || null;
+
+  if (currentUser()?.role !== "admin" && membershipResult.data) {
+    // Company members receive only the document data permitted by document RLS.
+    // Do not even request fleet, platform, application or CarTrack tables until
+    // those tables have complete company-scoped policies.
+    const documentsResult = await supabaseClient.from("documents").select("id, company_id, name, document_type, document_number, policy_number, issue_date, expiry_date, observations, original_file_name, mime_type, vehicle_id, driver_id, uploaded_by");
+    if (documentsResult.error) throw documentsResult.error;
+    state.drivers = [];
+    state.vehicles = [];
+    state.activityEvents = [];
+    state.tripRecords = [];
+    state.cartrackVehicles = [];
+    state.cartrackSnapshots = [];
+    state.applications = [];
+    state.documents = (documentsResult.data || []).map(row => ({
+      id: row.id,
+      companyId: valueOf(row, "company_id"),
+      name: valueOf(row, "name", "title", "file_name"),
+      type: valueOf(row, "document_type", "type") || "Outros",
+      number: valueOf(row, "document_number", "number"),
+      policyNumber: valueOf(row, "policy_number"),
+      issueDate: valueOf(row, "issue_date"),
+      expiryDate: valueOf(row, "expiry_date"),
+      observations: valueOf(row, "observations", "notes"),
+      fileName: valueOf(row, "original_file_name", "file_name", "name"),
+      fileType: valueOf(row, "mime_type", "file_type"),
+      vehicleId: valueOf(row, "vehicle_id"),
+      driverId: valueOf(row, "driver_id"),
+      viewerDriverIds: [],
+      raw: row
+    }));
+    return;
+  }
+
   const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult] = await Promise.all([
     supabaseClient.from("drivers").select("*"),
     supabaseClient.from("vehicles").select("*"),
@@ -205,6 +247,12 @@ async function loadBackendData() {
 
   const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult].find(result => result.error)?.error;
   if (firstError) throw firstError;
+
+  if (currentUser()?.role === "admin") {
+    const companyResult = await supabaseClient.from("companies").select("id").eq("slug", "simplicity2take").maybeSingle();
+    if (companyResult.error) throw companyResult.error;
+    state.currentCompanyId = companyResult.data?.id || null;
+  }
 
   const assignments = assignmentsResult.data || [];
   const viewers = viewersResult.data || [];
@@ -244,6 +292,7 @@ async function loadBackendData() {
   }));
   state.documents = (documentsResult.data || []).map(row => ({
     id: row.id,
+    companyId: valueOf(row, "company_id"),
     name: valueOf(row, "name", "title", "file_name"),
     type: valueOf(row, "document_type", "type") || "Outros",
     number: valueOf(row, "document_number", "number"),
@@ -398,7 +447,12 @@ function showVehicleQr(vehicleId) {
 }
 
 function companyDocuments() {
-  return state.documents.filter(doc => !doc.driverId && !doc.vehicleId);
+  const isGlobalAdmin = currentUser()?.role === "admin";
+  return state.documents.filter(doc => {
+    if (doc.driverId || doc.vehicleId) return false;
+    if (isGlobalAdmin) return true;
+    return Boolean(state.currentCompanyId && doc.companyId === state.currentCompanyId);
+  });
 }
 
 function driverDocuments() {
@@ -434,7 +488,7 @@ function alertLevel(doc) {
 
 function visibleDocuments() {
   const user = currentUser();
-  if (user.role === "admin") return state.documents;
+  if (user.role === "admin" || state.currentCompanyRole) return companyDocuments();
   return driverDocuments();
 }
 
@@ -697,7 +751,7 @@ async function startAuthenticatedSession(user) {
   state.profile = { ...profile, email: profile.email || user.email };
   state.sessionUserId = user.id;
   await loadBackendData();
-  state.activeView = profile.role === "admin" ? "dashboard" : "vehicles";
+  state.activeView = profile.role === "admin" ? "dashboard" : state.currentCompanyRole ? "documents" : "vehicles";
   await openRequestedVehicle();
   selectors.loginScreen.classList.add("hidden");
   selectors.appShell.classList.remove("hidden");
@@ -709,14 +763,22 @@ async function logout() {
   documentBlobCache.clear();
   state.sessionUserId = null;
   state.profile = null;
+  state.currentCompanyId = null;
+  state.currentCompanyRole = null;
   selectors.appShell.classList.add("hidden");
   selectors.loginScreen.classList.remove("hidden");
   selectors.loginPassword.value = "";
 }
 
+function navigationForUser() {
+  if (currentUser().role === "admin") return navByRole.admin;
+  if (state.currentCompanyRole) return [["documents", "Documentos da Empresa", "DO"], ["account", "Minha Conta", "EU"]];
+  return navByRole.driver;
+}
+
 function renderApp() {
   const user = currentUser();
-  selectors.sessionRole.textContent = user.role === "admin" ? "Administrador" : "Motorista";
+  selectors.sessionRole.textContent = user.role === "admin" ? "Administrador" : state.currentCompanyRole ? "Utilizador da Empresa" : "Motorista";
   selectors.sessionName.textContent = user.name;
   renderNav();
   renderContent();
@@ -724,7 +786,7 @@ function renderApp() {
 
 function renderNav() {
   const user = currentUser();
-  selectors.sideNav.innerHTML = navByRole[user.role].map(([view, label, icon]) => `
+  selectors.sideNav.innerHTML = navigationForUser().map(([view, label, icon]) => `
     <button class="nav-item ${state.activeView === view ? "active" : ""}" type="button" data-view="${view}">
       <span class="nav-icon">${icon}</span>
       <span>${label}</span>
@@ -733,7 +795,7 @@ function renderNav() {
 }
 
 function setView(view) {
-  const allowed = navByRole[currentUser().role].some(item => item[0] === view);
+  const allowed = navigationForUser().some(item => item[0] === view);
   if (!allowed) return;
   state.activeView = view;
   renderApp();
@@ -987,16 +1049,18 @@ function driverRow(driver) {
 }
 
 function renderDocuments() {
-  const admin = currentUser().role === "admin";
-  const documents = admin ? companyDocuments() : driverDocuments();
-  selectors.pageTitle.textContent = admin ? "Documentos da Empresa" : "Meus Documentos";
+  const globalAdmin = currentUser().role === "admin";
+  const companyMember = globalAdmin || Boolean(state.currentCompanyRole);
+  const companyAdmin = globalAdmin || state.currentCompanyRole === "company_admin";
+  const documents = companyMember ? companyDocuments() : driverDocuments();
+  selectors.pageTitle.textContent = companyMember ? "Documentos da Empresa" : "Meus Documentos";
   selectors.content.innerHTML = `
     ${heading(
-      admin ? "Gestão documental da empresa" : "Os meus documentos",
-      admin ? "Aqui ficam apenas os documentos da empresa. Documentos de viaturas e de motoristas são geridos nas respetivas áreas." : "Aqui ficam os teus documentos pessoais, os documentos das viaturas atribuídas e os documentos da empresa partilhados contigo.",
-      admin ? `<button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>` : ""
+      companyAdmin ? "Gestão documental da empresa" : companyMember ? "Documentos da empresa" : "Os meus documentos",
+      companyAdmin ? "Aqui ficam apenas os documentos da empresa. Documentos de viaturas e de motoristas são geridos nas respetivas áreas." : companyMember ? "Consulta os documentos gerais da tua empresa. Para documentos de viaturas e motoristas, usa as áreas autorizadas." : "Aqui ficam os teus documentos pessoais, os documentos das viaturas atribuídas e os documentos da empresa partilhados contigo.",
+      globalAdmin ? `<button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>` : ""
     )}
-    <section class="cards-grid">${documents.map(doc => documentCard(doc, admin)).join("") || emptyCard(admin ? "Ainda não existem documentos da empresa." : "Sem documentos para apresentar.")}</section>
+    <section class="cards-grid">${documents.map(doc => documentCard(doc, globalAdmin)).join("") || emptyCard(companyMember ? "Ainda não existem documentos da empresa." : "Sem documentos para apresentar.")}</section>
   `;
 }
 
@@ -2144,7 +2208,8 @@ async function saveDocument(values, viewerDriverIds, id) {
     drive_web_view_link: driveData.webViewLink,
     vehicle_id: finalVehicleId,
     driver_id: finalDriverId,
-    uploaded_by: state.sessionUserId
+    uploaded_by: state.sessionUserId,
+    company_id: context === "company" ? (existing?.companyId || state.currentCompanyId) : (context === "vehicle" ? state.vehicles.find(vehicle => vehicle.id === finalVehicleId)?.raw?.company_id || null : state.drivers.find(driver => driver.id === finalDriverId)?.raw?.company_id || null)
   };
 
   const query = id
@@ -2506,6 +2571,8 @@ function bindPortalEvents() {
       documentBlobCache.clear();
       state.sessionUserId = null;
       state.profile = null;
+      state.currentCompanyId = null;
+      state.currentCompanyRole = null;
       selectors.appShell.classList.add("hidden");
       selectors.loginScreen.classList.remove("hidden");
     }

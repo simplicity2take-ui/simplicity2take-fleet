@@ -138,7 +138,7 @@ The frontend intentionally remains docs-only for company members until the fleet
 
 ## Remaining data inventory — next isolation phase (30 October 2026)
 
-Added read-only diagnostic `supabase/tests/company_remaining_data_preflight.sql`. It discovers the actual public tables, columns, RLS flags, policies, foreign keys and SECURITY DEFINER function definitions for Uber, Bolt, CarTrack, applications/candidates, profiles, documents, platform history, settings and audit data.
+Added read-only diagnostic `supabase/tests/operational_tenant_discovery_preflight.sql`. It discovers likely operational/import tables, actual columns, RLS flags, policies, foreign keys and SECURITY DEFINER function definitions for Uber, Bolt, CarTrack, applications/candidates, trip/activity and payment data. The diagnostic is intentionally broad and catalog-driven; review its results before authoring tenant policies.
 
 No tenant migration for these areas is generated yet. The next migration must be based on the returned schema and relationship map, not guessed table names or browser-supplied `company_id` values.
 

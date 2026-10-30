@@ -57,3 +57,20 @@ where active_from <= current_date
 group by driver_id
 having count(*) > 1
 order by active_assignment_count desc;
+
+-- 6. Invalid assignment date ranges (active_until must not precede active_from).
+select count(*) as invalid_assignment_date_ranges
+from public.vehicle_assignments
+where active_until is not null
+  and active_until < active_from;
+
+-- 7. Vehicles assigned to multiple drivers at the same time.
+-- Review these rows before release; the application currently treats multiple
+-- active assignments as a manual-review conflict during Bolt synchronization.
+select vehicle_id, count(*) as active_driver_count
+from public.vehicle_assignments
+where active_from <= current_date
+  and (active_until is null or active_until >= current_date)
+group by vehicle_id
+having count(*) > 1
+order by active_driver_count desc;

@@ -1347,8 +1347,16 @@ async function syncBolt() {
     renderApp();
     const drivers = data.drivers || {};
     const vehicles = data.vehicles || {};
-    const assignments = Number(data.assignmentsUpdated || 0);
-    showToast(`Bolt sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas ativos, ${vehicles.active ?? vehicles.received ?? 0} viaturas ativas e ${assignments} associações.`);
+    const assignments = data.assignments || null;
+    if (assignments) {
+      const created = Number(assignments.created || 0);
+      const conflicts = Number(assignments.conflictsRequiringReview || 0);
+      const summary = `Bolt sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas, ${vehicles.active ?? vehicles.received ?? 0} viaturas; ${created} novas associações.`;
+      showToast(conflicts > 0 ? `${summary} Atenção: ${conflicts} conflitos de associação precisam de revisão manual.` : summary);
+    } else {
+      const legacyAssignments = Number(data.assignmentsUpdated || 0);
+      showToast(`Bolt sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas ativos, ${vehicles.active ?? vehicles.received ?? 0} viaturas ativas e ${legacyAssignments} associações.`);
+    }
   } catch (error) {
     console.error("Bolt sync error", error);
     showToast(error?.message || "Não foi possível sincronizar a Bolt.");

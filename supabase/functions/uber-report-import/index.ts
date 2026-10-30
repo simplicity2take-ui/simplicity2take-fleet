@@ -51,15 +51,15 @@ function parseCsv(text: string) {
 function numberValue(v: string) {
   const input = String(v ?? "").trim();
   if (!input) return null;
-  let normalized = input.replace(/[€$£%\\s\\u00a0]/g, "");
+  let normalized = input.replace(/[€$£%\s\u00a0]/g, "");
   if (!normalized) return null;
   const comma = normalized.lastIndexOf(",");
   const dot = normalized.lastIndexOf(".");
   if (comma >= 0 && dot >= 0) {
-    if (comma > dot) normalized = normalized.replace(/\\./g, "").replace(",", ".");
+    if (comma > dot) normalized = normalized.replace(/\./g, "").replace(",", ".");
     else normalized = normalized.replace(/,/g, "");
   } else if (comma >= 0) {
-    normalized = normalized.replace(/\\./g, "").replace(",", ".");
+    normalized = normalized.replace(/\./g, "").replace(",", ".");
   }
   // Reject malformed values instead of stripping arbitrary characters
   // (which could silently turn e.g. "12abc" into 12).
@@ -186,7 +186,7 @@ function clockMinutes(v: string, fieldName = "duração") {
   if (!input) return null;
   // Uber time-and-distance reports use HH:MM:SS, unlike driver activity's
   // D:HH:MM columns. Preserve the original value in raw and store whole minutes.
-  const match = input.match(/^(\\d+):(\\d{2}):(\\d{2})$/);
+  const match = input.match(/^(\d+):(\d{2}):(\d{2})$/);
   if (!match) throw new Error("Valor inválido em " + fieldName + ": utilize horas:minutos:segundos.");
   const hours = Number(match[1]);
   const mins = Number(match[2]);

@@ -76,7 +76,7 @@ async function boltPost(path: string, token: string) {
   }
   throw new Error(lastError);
 }
-async function upsertVehicle(admin: any, vehicle: any, now: string) {
+async function upsertVehicle(admin: any, vehicle: any, now: string, companyId: string) {
   const boltId = normalizeVehicleId(vehicle);
   const plate = normalizePlate(vehicle);
   const model = clean(first(vehicle, ["model", "vehicle_model"]));
@@ -85,8 +85,8 @@ async function upsertVehicle(admin: any, vehicle: any, now: string) {
   const vin = clean(first(vehicle, ["vin", "VIN"]));
   const state = first(vehicle, ["state", "status"]);
   let existing: any = null;
-  if (boltId) existing = (await admin.from("vehicles").select("*").eq("bolt_vehicle_uuid", boltId).maybeSingle()).data;
-  if (!existing && plate) existing = (await admin.from("vehicles").select("*").eq("plate", plate).maybeSingle()).data;
+  if (boltId) existing = (await admin.from("vehicles").select("*").eq("bolt_vehicle_uuid", boltId).eq("company_id", companyId).maybeSingle()).data;
+  if (!existing && plate) existing = (await admin.from("vehicles").select("*").eq("plate", plate).eq("company_id", companyId).maybeSingle()).data;
   const payload: any = {
     plate: plate || existing?.plate || "",
     model: model || existing?.model || "",
@@ -101,11 +101,12 @@ async function upsertVehicle(admin: any, vehicle: any, now: string) {
     if (result.error) throw result.error;
     return { row: result.data, created: false };
   }
+  payload.company_id = companyId;
   const result = await admin.from("vehicles").insert(payload).select("*").single();
   if (result.error) throw result.error;
   return { row: result.data, created: true };
 }
-async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string, any>, vehicleByPlate: Map<string, any>, now: string) {
+async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string, any>, vehicleByPlate: Map<string, any>, now: string, companyId: string) {
   const boltId = normalizeDriverId(driver);
   const partnerUuid = clean(first(driver, ["partner_uuid", "partnerUuid"]));
   const firstName = clean(first(driver, ["first_name", "firstName"]));
@@ -118,9 +119,9 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   const activeVehicleId = normalizeVehicleId(activeVehicle);
   const activePlate = normalizePlate(activeVehicle);
   let existing: any = null;
-  if (boltId) existing = (await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).maybeSingle()).data;
-  if (!existing && email) existing = (await admin.from("drivers").select("*").ilike("email", email).maybeSingle()).data;
-  if (!existing && phone) existing = (await admin.from("drivers").select("*").eq("phone", phone).maybeSingle()).data;
+  if (boltId) existing = (await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).eq("company_id", companyId).maybeSingle()).data;
+  if (!existing && email) existing = (await admin.from("drivers").select("*").ilike("email", email).eq("company_id", companyId).maybeSingle()).data;
+  if (!existing && phone) existing = (await admin.from("drivers").select("*").eq("phone", phone).eq("company_id", companyId).maybeSingle()).data;
   const payload: any = {
     full_name: fullName || existing?.full_name || "Motorista Bolt",
     email: email || existing?.email || null,
@@ -136,6 +137,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     if (result.error) throw result.error;
     row = result.data;
   } else {
+    payload.company_id = companyId;
     const result = await admin.from("drivers").insert(payload).select("*").single();
     if (result.error) throw result.error;
     row = result.data; created = true;
@@ -166,6 +168,17 @@ Deno.serve(async (req: Request) => {
     const callerEmail = (authData.user.email || "").toLowerCase();
     if (callerEmail !== "simplicity2take@gmail.com") return json({ ok: false, error: "Apenas o administrador pode sincronizar a Bolt." }, 403);
 
+    // This integration currently belongs exclusively to Simplicity2Take.
+    // Resolve the trusted company key server-side; never accept company_id from the request.
+    const { data: company, error: companyError } = await admin
+      .from("companies")
+      .select("id")
+      .eq("slug", "simplicity2take")
+      .maybeSingle();
+    if (companyError) throw companyError;
+    if (!company?.id) return json({ ok: false, error: "Empresa Simplicity2Take não encontrada. Confirme primeiro a migração de empresas." }, 409);
+    const companyId = String(company.id);
+
     const token = await getBoltToken();
     const [driversPayload, vehiclesPayload] = await Promise.all([
       boltPost("/fleetIntegration/v1/getDrivers", token),
@@ -180,7 +193,7 @@ Deno.serve(async (req: Request) => {
     const vehicleByPlate = new Map<string, any>();
     let vehiclesCreated = 0;
     for (const vehicle of boltVehicles) {
-      const result = await upsertVehicle(admin, vehicle, now);
+      const result = await upsertVehicle(admin, vehicle, now, companyId);
       if (result.created) vehiclesCreated++;
       const boltId = normalizeVehicleId(vehicle);
       const plate = normalizePlate(vehicle);
@@ -189,7 +202,7 @@ Deno.serve(async (req: Request) => {
     }
     let driversCreated = 0, assignmentsUpdated = 0;
     for (const driver of boltDrivers) {
-      const result = await upsertDriver(admin, driver, vehicleByBoltId, vehicleByPlate, now);
+      const result = await upsertDriver(admin, driver, vehicleByBoltId, vehicleByPlate, now, companyId);
       if (result.created) driversCreated++;
       if (result.assignedVehicleId) assignmentsUpdated++;
     }

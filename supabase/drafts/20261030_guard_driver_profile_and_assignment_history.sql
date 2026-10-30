@@ -38,6 +38,13 @@ drop policy if exists "s2t assignments company admin delete"
   on public.vehicle_assignments;
 revoke delete on table public.vehicle_assignments from public, anon, authenticated;
 
+-- Parent rows must not be hard-deleted either: their existing foreign keys use
+-- ON DELETE CASCADE and would otherwise erase assignment history indirectly.
+drop policy if exists "s2t drivers global admin delete" on public.drivers;
+drop policy if exists "s2t vehicles global admin delete" on public.vehicles;
+revoke delete on table public.drivers from public, anon, authenticated;
+revoke delete on table public.vehicles from public, anon, authenticated;
+
 comment on function public.s2t_guard_company_ownership_change() is
   'Trigger-only guard: only global admins may change company ownership or drivers.profile_id.';
 comment on table public.vehicle_assignments is

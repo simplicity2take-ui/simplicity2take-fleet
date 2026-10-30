@@ -717,7 +717,7 @@ async function startAuthenticatedSession(user) {
   state.profile = { ...profile, email: profile.email || user.email };
   state.sessionUserId = user.id;
   await loadBackendData();
-  state.activeView = profile.role === "admin" ? "dashboard" : "vehicles";
+  state.activeView = profile.role === "admin" ? "dashboard" : state.currentCompanyRole ? "documents" : "vehicles";
   await openRequestedVehicle();
   selectors.loginScreen.classList.add("hidden");
   selectors.appShell.classList.remove("hidden");

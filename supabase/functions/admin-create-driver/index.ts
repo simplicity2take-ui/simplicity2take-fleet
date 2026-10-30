@@ -63,12 +63,14 @@ Deno.serve(async (request) => {
       return json({ ok: false, error: profileError.message }, 400);
     }
 
-    const { data: company, error: companyError } = await adminClient
+    const requestedCompanyId = String(body.companyId || "").trim();
+    const companyQuery = adminClient
       .from("companies")
       .select("id")
-      .eq("slug", "simplicity2take")
-      .eq("status", "Ativa")
-      .single();
+      .eq("status", "Ativa");
+    const { data: company, error: companyError } = requestedCompanyId
+      ? await companyQuery.eq("id", requestedCompanyId).single()
+      : await companyQuery.eq("slug", "simplicity2take").single();
     if (companyError || !company) {
       await adminClient.from("profiles").delete().eq("id", userId);
       await adminClient.auth.admin.deleteUser(userId);

@@ -2398,3 +2398,32 @@ textarea:focus {
     justify-content: flex-start;
   }
 }
+
+
+.company-membership-form {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 0.7fr) auto;
+  align-items: end;
+  gap: 0.8rem;
+  margin: 1rem 0;
+}
+.company-membership-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.company-membership-form select {
+  width: 100%;
+  min-height: 2.65rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--surface);
+  color: var(--text);
+}
+@media (max-width: 700px) {
+  .company-membership-form {
+    grid-template-columns: 1fr;
+  }
+}

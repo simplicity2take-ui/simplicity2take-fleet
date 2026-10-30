@@ -167,3 +167,22 @@ Updated `supabase/functions/uber-report-import/index.ts` with server-side author
 This is intentionally a global-admin-only interim control. It does not provide tenant-aware Uber imports for external companies. A future company import workflow must resolve the company from trusted membership on the server, scope every driver/vehicle lookup and every imported report row, and quarantine unmatched/ambiguous records.
 
 Validation: source inspection only. The Edge Function was not deployed and no CSV was imported. Staging tests are still required for unauthenticated, inactive, ordinary member, company_admin, global admin, duplicate identity matches and multi-company membership cases.
+
+
+## Uber import and Bolt sync — server-side access hardening (30 October 2026)
+
+Updated the Edge Function sources on the feature branch:
+
+- `uber-report-import` now resolves the S2T company by its fixed server-side slug after validating an active global administrator. Direct driver/vehicle matching for trip CSVs and status import preview/apply is restricted to that company's records. The endpoint does not accept a tenant ID from the CSV or request.
+- `uber-report-import` now logs internal failures server-side and returns a generic non-cacheable error to the caller.
+- `bolt-sync` now accepts POST only (plus CORS preflight), authorizes using an active global-admin profile instead of a hard-coded email address, resolves the S2T company server-side, and returns generic errors to callers.
+
+### Important remaining limitation
+
+These changes do **not** make Uber imports multi-tenant. Several Uber report types still call service-role SQL RPCs (`sync_uber_driver_status`, `sync_uber_driver_activity`, `sync_uber_vehicle_performance`, `sync_uber_vehicle_time_distance`, `sync_uber_driver_time_distance`, `sync_uber_driver_quality`, `sync_uber_driver_payments`). Their SQL definitions and tenant semantics must be inspected and updated before company-admin imports can be enabled. Until then, the endpoint remains global-admin-only and S2T-company-only.
+
+Bolt sync remains S2T-company-only and global-admin-only. Its provider pagination contract, transactional behavior and full fixture test matrix are still unverified. Neither function has been deployed or executed against live Bolt/Uber APIs as part of this change.
+
+### Validation
+
+Reviewed the GitHub diffs and confirmed the direct Uber driver/vehicle lookup URLs include the server-resolved S2T `company_id`; no unscoped driver lookup remains in those two matching paths. This is static source inspection only, not a TypeScript/Deno build or integration test. No secrets, database rows, external APIs or production deployments were changed.

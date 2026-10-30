@@ -190,6 +190,48 @@ function valueOf(row, ...keys) {
 }
 
 async function loadBackendData() {
+  const membershipResult = state.sessionUserId
+    ? await supabaseClient.from("company_memberships").select("company_id, role").eq("profile_id", state.sessionUserId).eq("status", "Ativo").limit(1).maybeSingle()
+    : { data: null, error: null };
+  if (membershipResult.error) throw membershipResult.error;
+  state.currentCompanyId = membershipResult.data?.company_id || null;
+  state.currentCompanyRole = membershipResult.data?.role || null;
+
+  if (currentUser()?.role !== "admin" && membershipResult.data) {
+    // Company members receive only the document data permitted by document RLS.
+    // Do not even request fleet, platform, application or CarTrack tables until
+    // those tables have complete company-scoped policies.
+    const documentsResult = await supabaseClient.from("documents").select("*");
+    if (documentsResult.error) throw documentsResult.error;
+    state.drivers = [];
+    state.vehicles = [];
+    state.activityEvents = [];
+    state.tripRecords = [];
+    state.cartrackVehicles = [];
+    state.cartrackSnapshots = [];
+    state.applications = [];
+    state.documents = (documentsResult.data || []).map(row => ({
+      id: row.id,
+      companyId: valueOf(row, "company_id"),
+      name: valueOf(row, "name", "title", "file_name"),
+      type: valueOf(row, "document_type", "type") || "Outros",
+      number: valueOf(row, "document_number", "number"),
+      policyNumber: valueOf(row, "policy_number"),
+      issueDate: valueOf(row, "issue_date"),
+      expiryDate: valueOf(row, "expiry_date"),
+      observations: valueOf(row, "observations", "notes"),
+      fileName: valueOf(row, "original_file_name", "file_name", "name"),
+      fileType: valueOf(row, "mime_type", "file_type"),
+      driveFileId: valueOf(row, "drive_file_id", "google_drive_file_id"),
+      driveUrl: valueOf(row, "drive_web_view_link", "drive_url", "web_view_link", "file_url"),
+      vehicleId: valueOf(row, "vehicle_id"),
+      driverId: valueOf(row, "driver_id"),
+      viewerDriverIds: [],
+      raw: row
+    }));
+    return;
+  }
+
   const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult] = await Promise.all([
     supabaseClient.from("drivers").select("*"),
     supabaseClient.from("vehicles").select("*"),
@@ -208,12 +250,6 @@ async function loadBackendData() {
   const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult].find(result => result.error)?.error;
   if (firstError) throw firstError;
 
-  const membershipResult = state.sessionUserId
-    ? await supabaseClient.from("company_memberships").select("company_id, role").eq("profile_id", state.sessionUserId).eq("status", "Ativo").limit(1).maybeSingle()
-    : { data: null, error: null };
-  if (membershipResult.error) throw membershipResult.error;
-  state.currentCompanyId = membershipResult.data?.company_id || null;
-  state.currentCompanyRole = membershipResult.data?.role || null;
   if (currentUser()?.role === "admin") {
     const companyResult = await supabaseClient.from("companies").select("id").eq("slug", "simplicity2take").maybeSingle();
     if (companyResult.error) throw companyResult.error;
@@ -729,6 +765,8 @@ async function logout() {
   documentBlobCache.clear();
   state.sessionUserId = null;
   state.profile = null;
+  state.currentCompanyId = null;
+  state.currentCompanyRole = null;
   selectors.appShell.classList.add("hidden");
   selectors.loginScreen.classList.remove("hidden");
   selectors.loginPassword.value = "";
@@ -2535,6 +2573,8 @@ function bindPortalEvents() {
       documentBlobCache.clear();
       state.sessionUserId = null;
       state.profile = null;
+      state.currentCompanyId = null;
+      state.currentCompanyRole = null;
       selectors.appShell.classList.add("hidden");
       selectors.loginScreen.classList.remove("hidden");
     }

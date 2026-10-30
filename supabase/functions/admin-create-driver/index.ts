@@ -46,6 +46,23 @@ Deno.serve(async (request) => {
     if (!fullName || !email || !password) return json({ ok: false, error: "Nome, email e palavra-passe são obrigatórios." }, 400);
     if (password.length < 8) return json({ ok: false, error: "A palavra-passe deve ter pelo menos 8 caracteres." }, 400);
 
+    const requestedCompanyId = String(body.companyId || "").trim();
+    const companyQuery = adminClient
+      .from("companies")
+      .select("id")
+      .eq("status", "Ativa");
+    const { data: company, error: companyError } = requestedCompanyId
+      ? await companyQuery.eq("id", requestedCompanyId).single()
+      : await companyQuery.eq("slug", "simplicity2take").single();
+    if (companyError || !company) {
+      return json({
+        ok: false,
+        error: requestedCompanyId
+          ? "A empresa selecionada não existe ou não está ativa."
+          : "A empresa Simplicity2Take não está configurada para criar motoristas."
+      }, requestedCompanyId ? 400 : 503);
+    }
+
     const { data: existing } = await adminClient.from("drivers").select("id").eq("email", email).maybeSingle();
     if (existing) return json({ ok: false, error: "Já existe um motorista com este email." }, 409);
 
@@ -61,20 +78,6 @@ Deno.serve(async (request) => {
     if (profileError) {
       await adminClient.auth.admin.deleteUser(userId);
       return json({ ok: false, error: profileError.message }, 400);
-    }
-
-    const requestedCompanyId = String(body.companyId || "").trim();
-    const companyQuery = adminClient
-      .from("companies")
-      .select("id")
-      .eq("status", "Ativa");
-    const { data: company, error: companyError } = requestedCompanyId
-      ? await companyQuery.eq("id", requestedCompanyId).single()
-      : await companyQuery.eq("slug", "simplicity2take").single();
-    if (companyError || !company) {
-      await adminClient.from("profiles").delete().eq("id", userId);
-      await adminClient.auth.admin.deleteUser(userId);
-      return json({ ok: false, error: "A empresa Simplicity2Take não está configurada para criar motoristas." }, 503);
     }
 
     const { data: driver, error: driverError } = await adminClient.from("drivers").insert({

@@ -162,10 +162,12 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   if (assignedVehicle?.id) {
     // Never delete assignment history during an external sync. If a different
     // active assignment exists, flag it for review instead of silently replacing it.
+    const assignmentDate = new Date().toISOString().slice(0, 10);
     const activeResult = await admin.from("vehicle_assignments")
       .select("id, vehicle_id")
       .eq("driver_id", row.id)
-      .is("active_until", null);
+      .lte("active_from", assignmentDate)
+      .or(`active_until.is.null,active_until.gte.${assignmentDate}`);
     if (activeResult.error) throw activeResult.error;
     const activeAssignments = activeResult.data || [];
 
@@ -175,7 +177,8 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     const vehicleActiveResult = await admin.from("vehicle_assignments")
       .select("id, driver_id")
       .eq("vehicle_id", assignedVehicle.id)
-      .is("active_until", null);
+      .lte("active_from", assignmentDate)
+      .or(`active_until.is.null,active_until.gte.${assignmentDate}`);
     if (vehicleActiveResult.error) throw vehicleActiveResult.error;
     const vehicleHasOtherDriver = hasOtherDriverAssignment(
       vehicleActiveResult.data || [],

@@ -37,6 +37,13 @@ export function hasArrayFrom(payload: any, keys: string[]): boolean {
   return false;
 }
 
+/** Existing Fleet status is administrative and must not be overwritten by provider sync. */
+export function statusForSync(sourceStatus: unknown, existingStatus: unknown): string {
+  const current = clean(existingStatus).trim();
+  if (current) return current;
+  return statusToPortal(sourceStatus, "Inativo");
+}
+
 export function statusToPortal(value: unknown, current = "Inativo"): string {
   const status = clean(value).trim().toLowerCase();
   if (!status) return current || "Ativo";

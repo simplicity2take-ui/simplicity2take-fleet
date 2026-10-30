@@ -14,7 +14,7 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway-v2";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, hasOtherDriverAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusToPortal, isBoltWriteAllowed } from "./normalization.ts";
+import { assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, hasOtherDriverAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusForSync, statusToPortal, isBoltWriteAllowed } from "./normalization.ts";
 import { extractBoltCompanies, fetchAllBoltPages } from "./bolt-v2.ts";
 
 async function getBoltToken() {
@@ -92,7 +92,7 @@ async function upsertVehicle(admin: any, vehicle: any, now: string) {
     model: model || existing?.model || "",
     vehicle_year: year || existing?.vehicle_year || null,
     vin: vin || existing?.vin || null,
-    status: statusToPortal(state, existing?.status || "Inativo"),
+    status: existing ? statusForSync(state, existing.status) : statusToPortal(state, "Inativo"),
     bolt_vehicle_uuid: boltId || existing?.bolt_vehicle_uuid || null,
     bolt_last_synced_at: now
   };
@@ -141,7 +141,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     full_name: fullName || existing?.full_name || "Motorista Bolt",
     email: email || existing?.email || null,
     phone: phone || existing?.phone || null,
-    status: statusToPortal(state, existing?.status || "Inativo"),
+    status: existing ? statusForSync(state, existing.status) : statusToPortal(state, "Inativo"),
     bolt_driver_uuid: boltId || existing?.bolt_driver_uuid || null,
     bolt_partner_uuid: partnerUuid || existing?.bolt_partner_uuid || null,
     bolt_last_synced_at: now

@@ -559,7 +559,7 @@ Deno.serve(async (req) => {
         accepted_trips: integerValue(r["Viagens aceites (excluindo radar de viagem ou semelhante)"], "Viagens aceites"),
         rejected_trips: integerValue(r["Viagens rejeitadas"], "Viagens rejeitadas"),
         cancelled_trips: integerValue(r["Viagens Canceladas"], "Viagens canceladas"),
-        driver_cancelled_trips: integerValue(r["Viagens canceladas por motoristas responsáveis"], "Viagens canceladas", "Viagens canceladas por motoristas"),
+        driver_cancelled_trips: integerValue(r["Viagens canceladas por motoristas responsáveis"], "Viagens canceladas por motoristas"),
         failed_trips: integerValue(r["Falha nas viagens"], "Falha nas viagens"),
         total_trip_assignments: integerValue(r["Total de Atribuições de Viagens"], "Total de atribuições de viagens"),
         ...baseDates(periodStart, periodEnd),

@@ -268,7 +268,7 @@ async function loadBackendData() {
       supabaseClient.from("company_memberships").select("id, company_id, profile_id, role, status").order("created_at", { ascending: false })
     ]);
     state.companyMembershipLoadError = profilesResult.error?.message || membershipsResult.error?.message || "";
-    state.companyProfiles = profilesResult.error ? [] : (profilesResult.data || []).filter(profile => profile.role !== "admin");
+    state.companyProfiles = profilesResult.error ? [] : (profilesResult.data || []).filter(profile => profile.role !== "admin" && profile.status === "Ativo");
     state.companyMemberships = membershipsResult.error ? [] : (membershipsResult.data || []);
     const selected = state.companies.find(company => company.id === state.currentCompanyId && company.status === "Ativa")
       || state.companies.find(company => company.slug === "simplicity2take" && company.status === "Ativa")

@@ -151,7 +151,6 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     const activeResult = await admin.from("vehicle_assignments")
       .select("id, vehicle_id")
       .eq("driver_id", row.id)
-      .eq("company_id", companyId)
       .is("active_until", null);
     if (activeResult.error) throw new Error("Não foi possível validar a associação ativa do motorista; sincronização interrompida.");
     const activeAssignments = activeResult.data || [];
@@ -164,7 +163,6 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
       const assignment = await admin.from("vehicle_assignments").insert({
         vehicle_id: assignedVehicle.id,
         driver_id: row.id,
-        company_id: companyId,
         active_from: new Date().toISOString().slice(0, 10),
         active_until: null,
         source: "bolt"

@@ -329,6 +329,19 @@ Deno.serve(async (req) => {
       throw new Error("Tipo de relatório inválido");
     }
 
+    // Every data row must carry its platform identity. Driver RPCs otherwise
+    // silently skip rows with an empty UUID, while vehicle RPCs hit NOT NULL
+    // constraints and fail the whole batch. Reject the CSV before any RPC call.
+    const identityHeader = type.startsWith("vehicle_") ? "UUID do veículo" : "UUID do motorista";
+    const rowsWithoutIdentity = rows
+      .map((row, index) => ({ rowNumber: index + 2, value: String(row[identityHeader] || "").trim() }))
+      .filter(item => !item.value);
+    if (rowsWithoutIdentity.length) {
+      const examples = rowsWithoutIdentity.slice(0, 5).map(item => String(item.rowNumber)).join(", ");
+      throw new Error("CSV inválido: existem " + rowsWithoutIdentity.length +
+        " linhas sem " + identityHeader + " (linha(s): " + examples + ").");
+    }
+
     if (type === "trip_activity") {
       const requiredTripHeaders = ["UUID da viagem", "UUID do motorista", "Estado da viagem"];
       const missingTripHeaders = requiredTripHeaders.filter(name => !headers.has(name));

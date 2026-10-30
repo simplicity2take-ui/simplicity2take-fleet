@@ -902,6 +902,7 @@ function renderDashboard() {
       ${metric("Sem validade", missingExpiry.length)}
     </section>
 
+    ${companyPanel}
     <section class="content-grid">
       <article class="panel">
         <div class="panel-heading">
@@ -1638,6 +1639,21 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
 
 function renderSettings() {
   selectors.pageTitle.textContent = "Configurações";
+  const companyPanel = currentUser()?.role === "admin" ? `
+    <article class="panel company-management-panel">
+      <div class="panel-heading">
+        <div><h2>Empresas</h2><p class="section-copy">Gerir as empresas e o respetivo acesso ao Fleet.</p></div>
+        <button class="primary-button" type="button" data-company-add>Adicionar empresa</button>
+      </div>
+      <div class="settings-list">
+        ${state.companies.map(company => `
+          <div class="settings-row company-management-row">
+            <div><strong>${escapeHtml(company.display_name || company.legal_name)}</strong><small>${escapeHtml(company.legal_name)} · ${escapeHtml(company.slug)}</small></div>
+            <div class="company-management-actions"><span class="tag active">Ativa</span><button class="secondary-button" type="button" data-company-edit="${escapeHtml(company.id)}">Editar</button><button class="ghost-button" type="button" data-company-deactivate="${escapeHtml(company.id)}">Desativar</button></div>
+          </div>`).join("") || '<p class="section-copy">Ainda não existem empresas ativas.</p>'}
+      </div>
+      <p class="section-copy">As empresas desativadas deixam de aparecer no seletor. O histórico e os registos não são eliminados.</p>
+    </article>` : "";
   const boltDrivers = state.drivers.filter(driver => driver.boltDriverUuid).length;
   const boltVehicles = state.vehicles.filter(vehicle => vehicle.boltVehicleUuid).length;
   const lastBoltSync = [...state.drivers, ...state.vehicles].map(item => item.boltLastSyncedAt).filter(Boolean).sort().pop();
@@ -1833,7 +1849,7 @@ function openModal(type, id = "", options = {}) {
     const existing = state.documents.find(item => item.id === id);
     state.documentContext = options.scope || (existing?.vehicleId ? "vehicle" : existing?.driverId ? "driver" : "company");
   }
-  const title = { driver: "motorista", vehicle: "veículo", document: "documento", "admin-password": "palavra-passe do motorista" }[type];
+  const title = { driver: "motorista", vehicle: "veículo", document: "documento", company: "empresa", "admin-password": "palavra-passe do motorista" }[type];
   const action = type === "admin-password" ? "Definir" : id && type !== "document" ? "Editar" : type === "document" ? "Carregar" : "Criar";
   selectors.modalTitle.textContent = `${action} ${title}`;
   selectors.modalFields.innerHTML = modalFields(type, id);
@@ -1853,6 +1869,18 @@ function modalFields(type, id) {
     ].join("");
   }
 
+  if (type === "company") {
+    if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir empresas.");
+    const company = state.companies.find(item => item.id === id) || {};
+    return [
+      field("legalName", "Denominação social", company.legal_name || "", "text", true),
+      field("displayName", "Nome de apresentação", company.display_name || "", "text", true),
+      field("slug", "Identificador (slug)", company.slug || "", "text", true, "", false),
+      field("taxNumber", "NIF (opcional)", company.tax_number || ""),
+      selectField("status", "Estado", ["Ativa", "Inativa"], company.status || "Ativa"),
+      `<div class="smartdocs-box span-full"><p>O identificador é permanente depois da criação. Desativar uma empresa não elimina os seus dados.</p></div>`
+    ].join("");
+  }
   if (type === "admin-password") {
     const driver = state.drivers.find(item => item.id === id) || {};
     return [`<div class="smartdocs-box span-full"><strong>Administrador</strong><p>Defina uma nova palavra-passe para ${escapeHtml(driver.name || "o motorista")}. Entregue-a diretamente ao motorista.</p></div>`, field("password", "Nova palavra-passe", "", "password", true), field("passwordConfirm", "Confirmar palavra-passe", "", "password", true)].join("");
@@ -2136,6 +2164,7 @@ async function submitModal(event) {
   try {
     if (type === "driver") await saveDriver(values, id);
     if (type === "vehicle") await saveVehicle(values, checked("driverIds"), id);
+    if (type === "company") await saveCompany(values, id);
     if (type === "document") await saveDocument(values, checked("viewerDriverIds"), id);
     if (type === "password") await savePassword(values.password);
     if (type === "admin-password") await saveAdminPassword(id, values.password, values.passwordConfirm);
@@ -2149,6 +2178,34 @@ async function submitModal(event) {
     submitButton.disabled = false;
     submitButton.textContent = "Guardar";
   }
+}
+
+async function saveCompany(values, id) {
+  if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir empresas.");
+  const legalName = String(values.legalName || "").trim();
+  const displayName = String(values.displayName || "").trim();
+  const taxNumber = String(values.taxNumber || "").trim();
+  if (!legalName || !displayName) throw new Error("Indique a denominação social e o nome de apresentação.");
+  const existing = state.companies.find(company => company.id === id);
+  const slug = id
+    ? existing?.slug
+    : String(values.slug || displayName).normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (!slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("O identificador deve conter apenas letras minúsculas, números e hífen.");
+  const payload = { legal_name: legalName, display_name: displayName, tax_number: taxNumber || null, status: values.status || "Ativa" };
+  if (!id) payload.slug = slug;
+  if (id && existing?.status === "Ativa" && payload.status === "Inativa") {
+    const activeCount = state.companies.filter(company => company.status === "Ativa").length;
+    if (activeCount <= 1) throw new Error("Não pode desativar a última empresa ativa.");
+  }
+  const query = id
+    ? supabaseClient.from("companies").update(payload).eq("id", id)
+    : supabaseClient.from("companies").insert(payload);
+  const { error } = await query;
+  if (error) {
+    if (error.code === "23505") throw new Error("Já existe uma empresa com esse identificador.");
+    throw error;
+  }
+  showToast(id ? "Empresa atualizada." : "Empresa criada.");
 }
 
 async function saveDriver(values, id) {
@@ -2451,6 +2508,19 @@ async function saveAdminPassword(driverId, password, confirmation) {
 }
 async function handleAdminAction(action) {
   try {
+    if (action.type === "deactivate-company") {
+      if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir empresas.");
+      const company = state.companies.find(item => item.id === action.id);
+      if (!company) return;
+      if (state.companies.filter(item => item.status === "Ativa").length <= 1) throw new Error("Não pode desativar a última empresa ativa.");
+      if (!confirm(`Desativar "${company.display_name || company.legal_name}"? Os dados e o histórico serão preservados.`)) return;
+      const { error } = await supabaseClient.from("companies").update({ status: "Inativa" }).eq("id", action.id);
+      if (error) throw error;
+      if (state.currentCompanyId === action.id) state.currentCompanyId = null;
+      await loadBackendData();
+      renderApp();
+      showToast("Empresa desativada. Os dados foram preservados.");
+    }
     if (action.type === "delete-document") {
       if (!confirm("Eliminar este documento do portal?")) return;
       const { error } = await supabaseClient.from("documents").delete().eq("id", action.id);
@@ -2585,6 +2655,9 @@ function bindPortalEvents() {
     if (target.id === "closeDocumentViewer") {
       return document.querySelector("#documentViewerModal")?.close();
     }
+    if (target.dataset.companyAdd !== undefined) return openModal("company");
+    if (target.dataset.companyEdit) return openModal("company", target.dataset.companyEdit);
+    if (target.dataset.companyDeactivate) return handleAdminAction({type:"deactivate-company",id:target.dataset.companyDeactivate});
     if (target.dataset.editDriver) return openModal("driver", target.dataset.editDriver);
     if (target.dataset.editVehicle) return openModal("vehicle", target.dataset.editVehicle);
     if (target.dataset.editDocument) return openModal("document", target.dataset.editDocument);

@@ -341,7 +341,7 @@ Deno.serve(async (req) => {
       const organization = normalizeStatusIdentity(row["Nome da organização"] || "");
       return Boolean(name && organization && name === organization);
     };
-    const rowsWithoutIdentity = rows
+    const rowsWithoutIdentity = type === "trip_activity" ? [] : rows
       .map((row, index) => ({ row, recordNumber: index + 2, value: String(row[identityHeader] || "").trim() }))
       .filter(item => !(type === "status" && isStatusOrganizationRow(item.row)) && !item.value);
     if (rowsWithoutIdentity.length) {

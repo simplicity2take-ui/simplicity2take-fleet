@@ -12,6 +12,9 @@ const state = {
   currentCompanyId: null,
   currentCompanyRole: null,
   companies: [],
+  companyProfiles: [],
+  companyMemberships: [],
+  companyMembershipLoadError: "",
   users: [
     { id: "admin", role: "admin", name: "Administrador Simplicity2Take", email: "admin@simplicity2take.pt", phone: "210000000" },
     { id: "u-joao", role: "driver", name: "João Silva", email: "joao@simplicity2take.pt", phone: "912345678", driverId: "d-joao" },
@@ -260,6 +263,13 @@ async function loadBackendData() {
     const companyResult = await supabaseClient.from("companies").select("id, slug, legal_name, display_name, tax_number, status").order("display_name");
     if (companyResult.error) throw companyResult.error;
     state.companies = companyResult.data || [];
+    const [profilesResult, membershipsResult] = await Promise.all([
+      supabaseClient.from("profiles").select("id, full_name, email, status, role").order("full_name"),
+      supabaseClient.from("company_memberships").select("id, company_id, profile_id, role, status").order("created_at", { ascending: false })
+    ]);
+    state.companyMembershipLoadError = profilesResult.error?.message || membershipsResult.error?.message || "";
+    state.companyProfiles = profilesResult.error ? [] : (profilesResult.data || []).filter(profile => profile.role !== "admin");
+    state.companyMemberships = membershipsResult.error ? [] : (membershipsResult.data || []);
     const selected = state.companies.find(company => company.id === state.currentCompanyId && company.status === "Ativa")
       || state.companies.find(company => company.slug === "simplicity2take" && company.status === "Ativa")
       || state.companies.find(company => company.status === "Ativa");
@@ -904,6 +914,7 @@ function renderDashboard() {
     </section>
 
     ${companyPanel}
+    ${membershipPanel}
     <section class="content-grid">
       <article class="panel">
         <div class="panel-heading">
@@ -1655,6 +1666,48 @@ function renderSettings() {
       </div>
       <p class="section-copy">As empresas desativadas deixam de aparecer no seletor. O histórico e os registos não são eliminados.</p>
     </article>` : "";
+  const selectedCompany = state.companies.find(company => company.id === state.currentCompanyId);
+  const companyMemberships = state.companyMemberships.filter(item => item.company_id === state.currentCompanyId);
+  const membershipPanel = currentUser()?.role === "admin" ? `
+    <article class="panel company-management-panel">
+      <div class="panel-heading">
+        <div><h2>Acessos à empresa</h2><p class="section-copy">${escapeHtml(selectedCompany?.display_name || "Selecione uma empresa")} · atribuir utilizadores e permissões.</p></div>
+      </div>
+      ${state.companyMembershipLoadError ? `<p class="integration-note">Não foi possível carregar a lista de acessos: ${escapeHtml(state.companyMembershipLoadError)}</p>` : ""}
+      ${selectedCompany ? `
+        <div class="company-membership-form">
+          <label>Utilizador existente
+            <select id="companyMembershipProfile">
+              <option value="">Selecionar utilizador</option>
+              ${state.companyProfiles.filter(profile => !companyMemberships.some(item => item.profile_id === profile.id && item.status === "Ativo")).map(profile => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.full_name || profile.email || profile.id)} · ${escapeHtml(profile.email || "sem email")}</option>`).join("")}
+            </select>
+          </label>
+          <label>Permissão
+            <select id="companyMembershipRole">
+              <option value="member">Utilizador</option>
+              <option value="company_admin">Administrador da empresa</option>
+            </select>
+          </label>
+          <button class="primary-button" type="button" data-membership-add>Associar utilizador</button>
+        </div>
+        <div class="settings-list">
+          ${companyMemberships.map(item => {
+            const profile = state.companyProfiles.find(candidate => candidate.id === item.profile_id);
+            const active = item.status === "Ativo";
+            return `<div class="settings-row company-management-row">
+              <div><strong>${escapeHtml(profile?.full_name || "Utilizador sem nome")}</strong><small>${escapeHtml(profile?.email || item.profile_id)}</small></div>
+              <div class="company-management-actions">
+                <span class="tag">${item.role === "company_admin" ? "Administrador" : "Utilizador"}</span>
+                <span class="tag ${active ? "active" : "expiring"}">${active ? "Ativo" : "Inativo"}</span>
+                <button class="secondary-button" type="button" data-membership-role="${escapeHtml(item.id)}" data-role="${item.role === "company_admin" ? "member" : "company_admin"}">${item.role === "company_admin" ? "Tornar utilizador" : "Promover admin"}</button>
+                <button class="ghost-button" type="button" data-membership-toggle="${escapeHtml(item.id)}" data-status="${active ? "Inativo" : "Ativo"}">${active ? "Retirar acesso" : "Reativar"}</button>
+              </div>
+            </div>`;
+          }).join("") || '<p class="section-copy">Ainda não existem utilizadores associados a esta empresa.</p>'}
+        </div>
+        <p class="section-copy">Só associa contas já existentes. O envio de convites e a criação de contas ficam para uma fase posterior.</p>
+      ` : '<p class="section-copy">Selecione uma empresa ativa no seletor superior.</p>'}
+    </article>` : "";
   const boltDrivers = state.drivers.filter(driver => driver.boltDriverUuid).length;
   const boltVehicles = state.vehicles.filter(vehicle => vehicle.boltVehicleUuid).length;
   const lastBoltSync = [...state.drivers, ...state.vehicles].map(item => item.boltLastSyncedAt).filter(Boolean).sort().pop();
@@ -2181,6 +2234,35 @@ async function submitModal(event) {
   }
 }
 
+async function addCompanyMembership() {
+  if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir acessos.");
+  const profileId = $("#companyMembershipProfile")?.value;
+  const role = $("#companyMembershipRole")?.value;
+  if (!state.currentCompanyId) throw new Error("Selecione uma empresa.");
+  if (!profileId) throw new Error("Selecione um utilizador.");
+  if (!["member", "company_admin"].includes(role)) throw new Error("Permissão inválida.");
+  const { error } = await supabaseClient.from("company_memberships").upsert({
+    company_id: state.currentCompanyId, profile_id: profileId, role, status: "Ativo"
+  }, { onConflict: "company_id,profile_id" });
+  if (error) throw error;
+  await loadBackendData();
+  renderApp();
+  showToast("Acesso associado à empresa.");
+}
+
+async function updateCompanyMembership(id, changes) {
+  if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir acessos.");
+  const membership = state.companyMemberships.find(item => item.id === id);
+  if (!membership || membership.company_id !== state.currentCompanyId) throw new Error("Acesso não encontrado nesta empresa.");
+  if (changes.role && !["member", "company_admin"].includes(changes.role)) throw new Error("Permissão inválida.");
+  if (changes.status && !["Ativo", "Inativo"].includes(changes.status)) throw new Error("Estado inválido.");
+  const { error } = await supabaseClient.from("company_memberships").update(changes).eq("id", id).eq("company_id", state.currentCompanyId);
+  if (error) throw error;
+  await loadBackendData();
+  renderApp();
+  showToast("Acesso atualizado.");
+}
+
 async function saveCompany(values, id) {
   if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir empresas.");
   const legalName = String(values.legalName || "").trim();
@@ -2668,6 +2750,9 @@ function bindPortalEvents() {
     if (target.dataset.companyEdit) return openModal("company", target.dataset.companyEdit);
     if (target.dataset.companyDeactivate) return handleAdminAction({type:"deactivate-company",id:target.dataset.companyDeactivate});
     if (target.dataset.companyActivate) return handleAdminAction({type:"activate-company",id:target.dataset.companyActivate});
+    if (target.dataset.membershipAdd !== undefined) return addCompanyMembership();
+    if (target.dataset.membershipToggle) return updateCompanyMembership(target.dataset.membershipToggle, { status: target.dataset.status });
+    if (target.dataset.membershipRole) return updateCompanyMembership(target.dataset.membershipRole, { role: target.dataset.role });
     if (target.dataset.editDriver) return openModal("driver", target.dataset.editDriver);
     if (target.dataset.editVehicle) return openModal("vehicle", target.dataset.editVehicle);
     if (target.dataset.editDocument) return openModal("document", target.dataset.editDocument);

@@ -137,7 +137,7 @@ The read-only query bundle is saved as `supabase/tests/cartrack_tenant_inventory
 6. **Extend odometer history deliberately.** Add CarTrack as an allowed source only in a reviewed migration, and define an idempotency key for provider observations. Preserve existing Tesla/manual constraints and reject null, negative, malformed or older readings from overwriting a newer current value.
 7. **Replace the writer contract.** Replace the global-registration upsert with an account-scoped RPC that validates account status, company ownership, mapping, input ranges and timestamp order in one transaction. Keep execution restricted to the server integration role; do not rely on RLS to constrain service_role.
 8. **Enforce tenant reads.** Company policies must derive ownership through the canonical Fleet vehicle/mapping relation. Test company A and B in separate authenticated sessions; a service-role query is not an RLS test.
-9. **Remove unnecessary TRUNCATE privileges.** Revoke unexpected TRUNCATE privileges from `anon` and `authenticated` on CarTrack tables after confirming no legitimate maintenance workflow depends on them. RLS does not filter TRUNCATE operations.
+9. **Remove unnecessary TRUNCATE privileges.** Revoke unexpected TRUNCATE privileges from `anon`, `authenticated` and `service_role` on CarTrack tables after confirming no legitimate maintenance workflow depends on them. RLS does not filter TRUNCATE operations.
 10. **Only then enable multi-company sync.** Until account credentials, provider pagination/completeness, mapping and rollback tests are ready, keep the current integration limited to the global administrator and one configured account.
 
 ## Explicit non-goals for the current review

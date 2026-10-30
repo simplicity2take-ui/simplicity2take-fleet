@@ -77,7 +77,7 @@ Added draft migration `20261030220000_company_documents_rls.sql` and read-only d
 - Adds `documents.company_id` and derives it from the linked driver/vehicle ownership.
 - If both links exist but belong to different companies, ownership remains NULL (fail closed for company-member access).
 - Documents without a driver or vehicle are assigned to the existing `simplicity2take` company.
-- Global administrators and company administrators can read documents in their authorized scope.
+- Global administrators and company administrators can read documents in their authorized scope; ordinary company members can read company-level documents without a driver/vehicle link.
 - Drivers retain existing access to their own documents, currently assigned vehicles, and explicit viewer grants.
 - Company administrators can inspect viewer grants only for documents belonging to their company.
 - Existing administrator-only write policies are retained; no company-member document write workflow is granted.

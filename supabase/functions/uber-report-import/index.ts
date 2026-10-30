@@ -151,6 +151,21 @@ Deno.serve(async (req) => {
       });
     }
 
+    // This endpoint remains an S2T global-admin workflow until every Uber RPC
+    // has an explicit tenant parameter and company-scoped SQL implementation.
+    // Resolve the owning company on the server; never accept company_id from CSV,
+    // query parameters or the browser.
+    const companies = await getRestRows(
+      "companies?select=id,slug&slug=eq.simplicity2take&limit=1"
+    );
+    const companyId = String((companies as any[])[0]?.id || "");
+    if (!companyId) {
+      return new Response(JSON.stringify({ error: "Empresa de importação não configurada." }), {
+        status: 409,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
+      });
+    }
+
     const url = new URL(req.url);
     const requestedType = url.searchParams.get("type") || "status";
     // The frontend uses a hyphenated type for individual trip CSV previews.
@@ -179,8 +194,8 @@ Deno.serve(async (req) => {
       const requiredTripHeaders = ["UUID da viagem", "UUID do motorista", "Estado da viagem"];
       const missingTripHeaders = requiredTripHeaders.filter(name => !headers.has(name));
       if (missingTripHeaders.length) throw new Error("CSV de viagens incompleto. Colunas em falta: " + missingTripHeaders.join(", ") + ".");
-      const driverRows = await getRestRows("drivers?select=id,uber_driver_uuid,full_name&limit=1000");
-      const vehicleRows = await getRestRows("vehicles?select=id,uber_vehicle_uuid,plate&limit=1000");
+      const driverRows = await getRestRows("drivers?select=id,uber_driver_uuid,full_name&company_id=eq." + encodeURIComponent(companyId) + "&limit=1000");
+      const vehicleRows = await getRestRows("vehicles?select=id,uber_vehicle_uuid,plate&company_id=eq." + encodeURIComponent(companyId) + "&limit=1000");
       const driversByUuid = new Map(driverRows.filter((item: any) => item.uber_driver_uuid).map((item: any) => [item.uber_driver_uuid, item.id]));
       const normalizePersonName = (value: string) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-PT");
       const driverIdsByName = new Map<string, string[]>();
@@ -298,7 +313,7 @@ Deno.serve(async (req) => {
         const seenPhones = new Map<string, string>();
         const matchedDriverIds = new Set<string>();
         let duplicateUuidRows = 0, matchedExisting = 0, wouldCreate = 0, ambiguousMatches = 0;
-        const existingDrivers = await getRestRows("drivers?select=id,email,phone,uber_driver_uuid&limit=1000");
+        const existingDrivers = await getRestRows("drivers?select=id,email,phone,uber_driver_uuid&company_id=eq." + encodeURIComponent(companyId) + "&limit=1000");
         for (const row of eligibleRows as any[]) {
           const uuid = String(row["UUID do motorista"] || "").trim();
           if (seenUuids.has(uuid)) duplicateUuidRows++;
@@ -529,7 +544,11 @@ Deno.serve(async (req) => {
 
     throw new Error("Tipo de relatório inválido");
   } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 400, headers: { "Content-Type": "application/json" } });
+    console.error("uber-report-import failed", e);
+    return new Response(JSON.stringify({ ok: false, error: "Não foi possível concluir a importação. Verifique o ficheiro e as permissões ou tente novamente." }), {
+      status: 400,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
+    });
   }
   })();
   const headers = new Headers(response.headers);

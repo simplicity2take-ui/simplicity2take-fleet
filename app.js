@@ -257,7 +257,7 @@ async function loadBackendData() {
   if (firstError) throw firstError;
 
   if (currentUser()?.role === "admin") {
-    const companyResult = await supabaseClient.from("companies").select("id, slug, legal_name, display_name, status").order("display_name");
+    const companyResult = await supabaseClient.from("companies").select("id, slug, legal_name, display_name, status").eq("status", "Ativa").order("display_name");
     if (companyResult.error) throw companyResult.error;
     state.companies = companyResult.data || [];
     const selected = state.companies.find(company => company.id === state.currentCompanyId && company.status === "Ativa")

@@ -154,7 +154,7 @@ begin
     values(v_company_id,d_id,v_uuid,nullif(r->>'driver_name',''),nullif(r->>'completed_trips','')::integer,
       nullif(r->>'online_duration_minutes','')::integer,nullif(r->>'trip_duration_minutes','')::integer,
       nullif(r->>'period_start','')::date,nullif(r->>'period_end','')::date,coalesce(r->'raw','{}'::jsonb))
-    on conflict(uber_driver_uuid,period_start,period_end) do update set
+    on conflict(company_id,uber_driver_uuid,period_start,period_end) do update set
       driver_id=excluded.driver_id,driver_name=excluded.driver_name,completed_trips=excluded.completed_trips,
       online_duration_minutes=excluded.online_duration_minutes,trip_duration_minutes=excluded.trip_duration_minutes,
       raw=excluded.raw,imported_at=now()
@@ -182,7 +182,7 @@ begin
       (r->>'cash_received')::numeric,(r->>'fare')::numeric,(r->>'taxes')::numeric,(r->>'service_fee')::numeric,
       (r->>'tolls')::numeric,(r->>'tips')::numeric,(r->>'adjustments')::numeric,
       (r->>'period_start')::date,(r->>'period_end')::date,coalesce(r->'raw','{}'::jsonb),now())
-    on conflict(uber_driver_uuid,period_start,period_end) do update set
+    on conflict(company_id,uber_driver_uuid,period_start,period_end) do update set
       driver_id=excluded.driver_id,driver_name=excluded.driver_name,paid_to_you=excluded.paid_to_you,
       earnings=excluded.earnings,cash_received=excluded.cash_received,fare=excluded.fare,taxes=excluded.taxes,
       service_fee=excluded.service_fee,tolls=excluded.tolls,tips=excluded.tips,adjustments=excluded.adjustments,
@@ -214,7 +214,7 @@ begin
       (r->>'cancelled_trips')::int,(r->>'driver_cancelled_trips')::int,(r->>'failed_trips')::int,
       (r->>'total_trip_assignments')::int,(r->>'period_start')::date,(r->>'period_end')::date,
       coalesce(r->'raw','{}'::jsonb),now())
-    on conflict(uber_driver_uuid,period_start,period_end) do update set
+    on conflict(company_id,uber_driver_uuid,period_start,period_end) do update set
       driver_id=excluded.driver_id,driver_name=excluded.driver_name,completed_trips=excluded.completed_trips,
       acceptance_rate=excluded.acceptance_rate,cancellation_rate=excluded.cancellation_rate,
       completion_rate=excluded.completion_rate,rating_last_4_weeks=excluded.rating_last_4_weeks,
@@ -248,7 +248,7 @@ begin
       (r->>'route_distance_km')::numeric,(r->>'trip_distance_km')::numeric,
       (r->>'unavailable_distance_km')::numeric,(r->>'period_start')::date,(r->>'period_end')::date,
       coalesce(r->'raw','{}'::jsonb),now())
-    on conflict(uber_driver_uuid,period_start,period_end) do update set
+    on conflict(company_id,uber_driver_uuid,period_start,period_end) do update set
       driver_id=excluded.driver_id,driver_name=excluded.driver_name,opening_minutes=excluded.opening_minutes,
       route_minutes=excluded.route_minutes,trip_minutes=excluded.trip_minutes,unavailable_minutes=excluded.unavailable_minutes,
       free_distance_km=excluded.free_distance_km,route_distance_km=excluded.route_distance_km,
@@ -283,7 +283,7 @@ begin
       (r->>'accepted_trips')::int,(r->>'rejected_trips')::int,(r->>'cancelled_trips')::int,
       (r->>'failed_trips')::int,(r->>'total_trip_assignments')::int,(r->>'period_start')::date,
       (r->>'period_end')::date,coalesce(r->'raw','{}'::jsonb),now())
-    on conflict(uber_vehicle_uuid,period_start,period_end) do update set
+    on conflict(company_id,uber_vehicle_uuid,period_start,period_end) do update set
       vehicle_id=excluded.vehicle_id,plate=excluded.plate,total_earnings=excluded.total_earnings,
       earnings_per_hour=excluded.earnings_per_hour,cash_received=excluded.cash_received,
       trips_per_hour=excluded.trips_per_hour,online_hours=excluded.online_hours,trip_hours=excluded.trip_hours,
@@ -319,7 +319,7 @@ begin
       (r->>'free_distance_km')::numeric,(r->>'route_distance_km')::numeric,
       (r->>'trip_distance_km')::numeric,(r->>'unavailable_distance_km')::numeric,
       (r->>'period_start')::date,(r->>'period_end')::date,coalesce(r->'raw','{}'::jsonb),now())
-    on conflict(uber_vehicle_uuid,period_start,period_end) do update set
+    on conflict(company_id,uber_vehicle_uuid,period_start,period_end) do update set
       vehicle_id=excluded.vehicle_id,plate=excluded.plate,opening_minutes=excluded.opening_minutes,
       route_minutes=excluded.route_minutes,trip_minutes=excluded.trip_minutes,
       unavailable_minutes=excluded.unavailable_minutes,free_distance_km=excluded.free_distance_km,
@@ -341,6 +341,28 @@ alter table public.uber_driver_quality alter column company_id set not null;
 alter table public.uber_driver_time_distance alter column company_id set not null;
 alter table public.uber_vehicle_performance alter column company_id set not null;
 alter table public.uber_vehicle_time_distance alter column company_id set not null;
+
+-- The legacy unique keys omitted company_id. Replace them with tenant-scoped
+-- keys so the same provider identity/period can exist independently per company.
+drop index if exists public.uber_driver_activity_uber_driver_uuid_period_start_period_e_key;
+drop index if exists public.uber_driver_payments_uber_driver_uuid_period_start_period_e_key;
+drop index if exists public.uber_driver_quality_uber_driver_uuid_period_start_period_en_key;
+drop index if exists public.uber_driver_time_distance_uber_driver_uuid_period_start_per_key;
+drop index if exists public.uber_vehicle_performance_uber_vehicle_uuid_period_start_per_key;
+drop index if exists public.uber_vehicle_time_distance_uber_vehicle_uuid_period_start_p_key;
+
+create unique index if not exists uber_driver_activity_company_identity_period_uidx
+  on public.uber_driver_activity(company_id, uber_driver_uuid, period_start, period_end);
+create unique index if not exists uber_driver_payments_company_identity_period_uidx
+  on public.uber_driver_payments(company_id, uber_driver_uuid, period_start, period_end);
+create unique index if not exists uber_driver_quality_company_identity_period_uidx
+  on public.uber_driver_quality(company_id, uber_driver_uuid, period_start, period_end);
+create unique index if not exists uber_driver_time_distance_company_identity_period_uidx
+  on public.uber_driver_time_distance(company_id, uber_driver_uuid, period_start, period_end);
+create unique index if not exists uber_vehicle_performance_company_identity_period_uidx
+  on public.uber_vehicle_performance(company_id, uber_vehicle_uuid, period_start, period_end);
+create unique index if not exists uber_vehicle_time_distance_company_identity_period_uidx
+  on public.uber_vehicle_time_distance(company_id, uber_vehicle_uuid, period_start, period_end);
 
 -- Keep these privileged import RPCs callable only by the server-side service role.
 revoke all on function public.sync_uber_driver_status(jsonb) from public, anon, authenticated;

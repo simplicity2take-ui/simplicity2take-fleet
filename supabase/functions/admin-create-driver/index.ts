@@ -63,8 +63,20 @@ Deno.serve(async (request) => {
       return json({ ok: false, error: profileError.message }, 400);
     }
 
+    const { data: company, error: companyError } = await adminClient
+      .from("companies")
+      .select("id")
+      .eq("slug", "simplicity2take")
+      .eq("status", "Ativa")
+      .single();
+    if (companyError || !company) {
+      await adminClient.from("profiles").delete().eq("id", userId);
+      await adminClient.auth.admin.deleteUser(userId);
+      return json({ ok: false, error: "A empresa Simplicity2Take não está configurada para criar motoristas." }, 503);
+    }
+
     const { data: driver, error: driverError } = await adminClient.from("drivers").insert({
-      profile_id: userId, full_name: fullName, email, phone: phone || null, status
+      company_id: company.id, profile_id: userId, full_name: fullName, email, phone: phone || null, status
     }).select("id").single();
 
     if (driverError) {

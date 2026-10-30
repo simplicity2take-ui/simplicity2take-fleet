@@ -23,10 +23,12 @@ begin
     raise exception 'Sessão não autenticada' using errcode = '42501';
   end if;
 
+  -- Serialize edits to this vehicle before reading or changing its assignments.
   select v.company_id
     into v_company_id
   from public.vehicles v
-  where v.id = p_vehicle_id;
+  where v.id = p_vehicle_id
+  for update;
 
   if v_company_id is null then
     raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
@@ -57,6 +59,15 @@ begin
     raise exception 'Todos os motoristas têm de pertencer à empresa da viatura' using errcode = '23514';
   end if;
 
+  -- Lock requested drivers in a stable order. This prevents two concurrent
+  -- vehicle edits from assigning the same driver to different vehicles.
+  perform d.id
+  from public.drivers d
+  join unnest(v_driver_ids) as requested(driver_id)
+    on requested.driver_id = d.id
+  order by d.id
+  for update;
+
   if exists (
     select 1
     from public.vehicle_assignments va
@@ -67,6 +78,20 @@ begin
       and (va.active_until is null or va.active_until >= current_date)
   ) then
     raise exception 'Pelo menos um motorista já está atribuído a outra viatura' using errcode = '23505';
+  end if;
+
+  -- Date-only history cannot represent an assignment that starts and ends
+  -- on the same day without creating an inverted interval. Refuse that edit
+  -- rather than corrupting the historical record; it can be changed tomorrow.
+  if exists (
+    select 1
+    from public.vehicle_assignments va
+    where va.vehicle_id = p_vehicle_id
+      and va.active_from = current_date
+      and (va.active_until is null or va.active_until >= current_date)
+      and not (va.driver_id = any(v_driver_ids))
+  ) then
+    raise exception 'Uma atribuição iniciada hoje não pode ser terminada com segurança usando datas. Tente novamente amanhã.' using errcode = '22023';
   end if;
 
   -- Preserve completed assignment history; close active rows omitted by the new selection.

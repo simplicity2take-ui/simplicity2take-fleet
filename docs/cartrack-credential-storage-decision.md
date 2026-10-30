@@ -85,3 +85,18 @@ A source review of the default-branch `app.js` found direct frontend reads of `c
 ## Release gate
 
 Multi-company CarTrack remains **BLOCKED** until the credential store is approved, tenant mapping is implemented, direct table reads are company-scoped, the RPC validates ownership transactionally, and the tests above pass in a disposable environment. Production changes, deployment and live synchronization require separate explicit approval.
+
+
+## Production catalog checks (read-only, 30 October 2026)
+
+A further SELECT-only catalog inspection confirmed:
+
+- Supabase Vault is already installed as extension `supabase_vault` version `0.3.1`, and the `vault` schema exists.
+- The `vault` schema grants USAGE to `service_role` and `postgres`; it does not grant USAGE to `anon` or `authenticated`.
+- `vault.decrypted_secrets` grants SELECT to `service_role` and `postgres`; it does not grant SELECT to `anon` or `authenticated`.
+- Therefore, Vault is present and the public client roles do not currently have direct schema/view access. However, the service role can read decrypted secrets. Any Edge Function using the service-role key is consequently part of the trusted secret-handling boundary and must be reviewed as privileged code.
+- `public.get_cartrack_fleet_data()` is owned by `postgres`, is SECURITY DEFINER, uses `search_path=public`, and has EXECUTE grants to `authenticated` and `postgres`. Its body returns complete JSON rows from both CarTrack tables and applies `public.s2t_is_admin()`.
+- The catalog dependency query found no registered routine-to-routine dependency on `get_cartrack_fleet_data()`. This does not rule out dynamic SQL, frontend calls, external clients or dependencies not tracked by `pg_depend`; do not revoke or change grants on that basis alone.
+- No grant, function, extension, secret or production setting was changed.
+
+**Implication:** Supabase Vault is a realistic no-new-vendor candidate, but the existing service-role access to decrypted secrets makes least-privilege controls and Edge Function review mandatory. The credential resolver must not become a broadly callable public RPC, and the application must never receive decrypted credentials.

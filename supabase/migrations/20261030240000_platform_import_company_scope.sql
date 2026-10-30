@@ -4,7 +4,10 @@
 --
 -- Existing platform and Uber report rows are historical records of the sole configured
 -- integration tenant. They are therefore backfilled to the fixed S2T company.
--- This migration deliberately does not grant browser access or change RLS policies.
+-- This migration deliberately leaves company_id nullable on the legacy Uber report tables
+-- until all seven Uber RPCs are replaced. The platform tables become mandatory tenant rows
+-- for new Bolt writes; the Uber direct-import path must be updated before tightening its columns.
+-- It does not grant browser access or change RLS policies.
 
 do $block$
 begin
@@ -59,14 +62,6 @@ update public.uber_vehicle_time_distance
 set company_id = (select id from public.companies where slug = 'simplicity2take')
 where company_id is null;
 
-alter table public.platform_activity_events alter column company_id set not null;
-alter table public.platform_trip_records alter column company_id set not null;
-alter table public.uber_driver_activity alter column company_id set not null;
-alter table public.uber_driver_payments alter column company_id set not null;
-alter table public.uber_driver_quality alter column company_id set not null;
-alter table public.uber_driver_time_distance alter column company_id set not null;
-alter table public.uber_vehicle_performance alter column company_id set not null;
-alter table public.uber_vehicle_time_distance alter column company_id set not null;
 
 create index if not exists platform_activity_events_company_observed_idx
   on public.platform_activity_events(company_id, observed_at desc);

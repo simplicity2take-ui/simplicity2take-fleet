@@ -175,7 +175,7 @@ Deno.serve(async (req) => {
     // Resolve the owning company on the server; never accept company_id from CSV,
     // query parameters or the browser.
     const companies = await getRestRows(
-      "companies?select=id,slug&slug=eq.simplicity2take&limit=1"
+      "companies?select=id,slug,status&slug=eq.simplicity2take&status=eq.Ativa&limit=1"
     );
     const companyId = String((companies as any[])[0]?.id || "");
     if (!companyId) {
@@ -297,22 +297,12 @@ Deno.serve(async (req) => {
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
         });
       }
-      const response = await fetch(SUPABASE_URL + "/rest/v1/platform_trip_records?on_conflict=platform,source_trip_id", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SERVICE_ROLE_KEY,
-          Authorization: "Bearer " + SERVICE_ROLE_KEY,
-          Prefer: "resolution=merge-duplicates,return=minimal"
-        },
-        body: JSON.stringify(uniqueTrips)
-      });
-      const responseText = await response.text();
-      if (!response.ok) throw new Error("Falha ao guardar viagens Uber (" + response.status + "): " + responseText);
+      const importResult = await rpc("sync_uber_trip_activity", { p_trips: uniqueTrips });
+      const saved = Number(importResult?.saved || 0);
       return new Response(JSON.stringify({
         ok: true, type, rows: uniqueTrips.length,
-        result: { saved: uniqueTrips.length, skipped: rows.length - uniqueTrips.length, linkedDrivers, linkedVehicles, duplicateRowsInCsv, alreadyImported, newTrips }
-      }), { headers: { "Content-Type": "application/json" } });
+        result: { saved, skipped: rows.length - uniqueTrips.length + (uniqueTrips.length - saved), linkedDrivers, linkedVehicles, duplicateRowsInCsv, alreadyImported, newTrips }
+      }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     }
 
     if (type === "status") {

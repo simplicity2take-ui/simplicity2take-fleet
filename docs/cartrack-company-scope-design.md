@@ -106,3 +106,22 @@ Use synthetic records only. Tests of RLS must use separate authenticated session
 ## Zero-cost and production-safety rules
 
 Use only existing local tooling and synthetic fixtures. Do not provision a paid Supabase project or branch. If the isolated test environment is unavailable, mark the integration tests BLOCKED and continue with static review. Do not apply migrations, alter production rows, deploy Edge Functions, or call the live CarTrack API as part of this design.
+
+
+## Verified current-schema inventory (read-only inspection, 30 October 2026)
+
+The production catalog was inspected with SELECT/catalog queries only. No data or schema was changed.
+
+- `cartrack_vehicles.vehicle_id` is a nullable `bigint` provider identifier, not a foreign key to `public.vehicles.id` (UUID).
+- `cartrack_vehicle_snapshots.vehicle_id` is also a nullable `bigint` provider identifier. Snapshots have no foreign key to the canonical Fleet vehicle or the mapping row.
+- `cartrack_vehicles.registration` has a global unique constraint. This prevents the same registration being represented in two provider accounts/tenants and is not an appropriate multi-account key.
+- `cartrack_vehicle_snapshots` is indexed by registration and observed time, not by a canonical vehicle FK.
+- `vehicle_odometer_readings.vehicle_id` is already a canonical UUID FK to `vehicles(id)`, but its source CHECK currently permits only `tesla` and `manual`. It does not yet accept `cartrack`.
+- All three tables have RLS enabled but not forced. Their current SELECT policies are global-admin-only; no company-scoped policy exists.
+- The existing `sync_cartrack_data(jsonb,jsonb)` is `SECURITY DEFINER`, uses `search_path=public`, checks for the `service_role` claim, and upserts the vehicle table by global registration. It does not resolve or validate a canonical Fleet vehicle/company before writing.
+- The current Edge Function sends provider IDs into the bigint `vehicle_id` columns, uses one global CarTrack credential pair, and returns raw provider error text / database exception details. Error redaction is being handled separately in PR #38.
+- The aggregate match check found 23 CarTrack mapping rows: 21 matched exactly one current Fleet vehicle by normalized registration, 2 had no match, and none were ambiguous. These two unmatched rows must remain unresolved/quarantined; no automatic matching or row edits were performed.
+- The existing CarTrack tables show an effective `TRUNCATE` privilege for `anon` and `authenticated` despite RLS being enabled. This is an unexpected grant because RLS does not govern TRUNCATE; its source and necessity must be reviewed and revoked in a separately validated migration. No privilege was changed.
+- The existing odometer table has a cascading FK to vehicles. Before tenant enablement, parent deletion protection must be coordinated with the fleet-history protection work so telemetry history cannot be erased indirectly.
+
+The read-only query bundle is saved as `supabase/tests/cartrack_tenant_inventory_preflight.sql`. It returns catalog metadata and aggregate counts, not registration values or provider payloads.

@@ -134,3 +134,22 @@ Also test assignment rows with missing parents, duplicate active assignments, re
 These are source drafts only. No SQL has been executed. The preflight must confirm the deployed `vehicle_assignments` primary key and columns (`id`, `driver_id`, `vehicle_id`, `active`) before the migration is considered runnable. Check for any additional permissive policies in the live database: PostgreSQL permissive policies are combined with OR, so an overlooked legacy policy could widen access. Run the full matrix with separate authenticated sessions in a disposable database before enabling company fleet navigation.
 
 The frontend intentionally remains docs-only for company members until the fleet RLS migration has been tested and applied in the intended environment. No company-member fleet queries, migrations, syncs or deployments were enabled by adding this draft.
+
+
+## Remaining data inventory — next isolation phase (30 October 2026)
+
+Added read-only diagnostic `supabase/tests/company_remaining_data_preflight.sql`. It discovers the actual public tables, columns, RLS flags, policies, foreign keys and SECURITY DEFINER function definitions for Uber, Bolt, CarTrack, applications/candidates, profiles, documents, platform history, settings and audit data.
+
+No tenant migration for these areas is generated yet. The next migration must be based on the returned schema and relationship map, not guessed table names or browser-supplied `company_id` values.
+
+### Required decisions before the next SQL migration
+
+- **Uber reports:** determine whether each row links to a trusted driver UUID, provider driver ID, import batch, or only a file. Rows with ambiguous identity must remain admin-only.
+- **CarTrack:** scope through a verified Fleet vehicle mapping. Unknown/unmatched tracker IDs must remain inaccessible to company members.
+- **Applications/candidates:** establish which company owns each recruitment campaign/application and ensure private candidate documents/messages inherit that scope. Do not make candidate data visible to all company members by default.
+- **Profiles:** use `company_memberships` as the staff-company relationship unless schema review establishes a stronger trusted relation. Avoid email-domain or client-supplied tenant inference.
+- **SECURITY DEFINER / service-role functions:** inspect each import/sync function separately. RLS does not protect operations performed with the service role; each function must resolve the caller and company server-side and reject ambiguous scope.
+
+### Validation status
+
+The new diagnostic is SELECT-only and has been committed to the feature branch. It has not been run against staging or production. No additional tenant policies, schema changes, external syncs or deployments were made in this phase.

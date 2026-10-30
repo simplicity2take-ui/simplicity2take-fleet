@@ -247,6 +247,9 @@ Deno.serve(async (req) => {
       const vehiclesByPlate = new Map(vehicleRows.filter((item: any) => item.plate).map((item: any) => [String(item.plate).replace(/[^A-Z0-9]/gi, "").toUpperCase(), item.id]));
       const normalized = rows.map(r => {
         const tripId = (r["UUID da viagem"] || "").trim();
+        if (tripId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tripId)) {
+          throw new Error("O CSV contém um UUID de viagem inválido: " + tripId);
+        }
         const driverUuid = (r["UUID do motorista"] || "").trim();
         const driverName = ((r["Nome próprio do motorista"] || "") + " " + (r["Apelido do motorista"] || "")).trim();
         const nameMatches = driverIdsByName.get(normalizePersonName(driverName)) || [];
@@ -276,7 +279,15 @@ Deno.serve(async (req) => {
         };
       }).filter(r => r.source_trip_id);
       if (!normalized.length) throw new Error("O CSV não contém UUIDs de viagem válidos.");
-      const uniqueTrips = Array.from(new Map(normalized.map((row: any) => [row.source_trip_id, row])).values());
+      const tripsById = new Map<string, any>();
+      for (const trip of normalized as any[]) {
+        const previous = tripsById.get(trip.source_trip_id);
+        if (previous && JSON.stringify(previous) !== JSON.stringify(trip)) {
+          throw new Error("O UUID de viagem " + trip.source_trip_id + " aparece repetido com dados diferentes no CSV. Corrija o ficheiro antes de importar.");
+        }
+        if (!previous) tripsById.set(trip.source_trip_id, trip);
+      }
+      const uniqueTrips = Array.from(tripsById.values());
       const duplicateRowsInCsv = normalized.length - uniqueTrips.length;
       const linkedDrivers = uniqueTrips.filter((r: any) => r.driver_id).length;
       const linkedVehicles = uniqueTrips.filter((r: any) => r.vehicle_id).length;

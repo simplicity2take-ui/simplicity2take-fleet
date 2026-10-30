@@ -165,6 +165,7 @@ const selectors = {
   sessionName: $("#sessionName"),
   pageTitle: $("#pageTitle"),
   companySwitcher: $("#companySwitcher"),
+  companySwitcherWrap: $("#companySwitcherWrap"),
   modal: $("#entityModal"),
   form: $("#entityForm"),
   modalTitle: $("#modalTitle"),
@@ -380,8 +381,8 @@ async function loadBackendData() {
     state.vehicles = state.vehicles.filter(vehicle => vehicleIds.has(vehicle.id));
     state.vehicles.forEach(vehicle => { vehicle.driverIds = vehicle.driverIds.filter(driverId => driverIds.has(driverId)); });
     state.documents = state.documents.filter(document => document.companyId === state.currentCompanyId);
-    state.activityEvents = state.activityEvents.filter(event => event.raw?.company_id === state.currentCompanyId || driverIds.has(event.driverId) || vehicleIds.has(event.vehicleId));
-    state.tripRecords = state.tripRecords.filter(trip => trip.raw?.company_id === state.currentCompanyId || driverIds.has(trip.driverId) || vehicleIds.has(trip.vehicleId));
+    state.activityEvents = state.activityEvents.filter(event => event.raw?.company_id === state.currentCompanyId);
+    state.tripRecords = state.tripRecords.filter(trip => trip.raw?.company_id === state.currentCompanyId);
     state.cartrackVehicles = state.cartrackVehicles.filter(vehicle => vehicleIds.has(vehicle.vehicleId));
     state.cartrackSnapshots = state.cartrackSnapshots.filter(snapshot => vehicleIds.has(snapshot.vehicleId));
     if (selectedCompany?.slug !== "simplicity2take") state.applications = [];
@@ -799,7 +800,7 @@ function navigationForUser() {
 function renderCompanySwitcher() {
   const isAdmin = currentUser()?.role === "admin";
   if (!selectors.companySwitcher) return;
-  selectors.companySwitcher.classList.toggle("hidden", !isAdmin);
+  selectors.companySwitcherWrap?.classList.toggle("hidden", !isAdmin);
   if (!isAdmin) return;
   selectors.companySwitcher.innerHTML = state.companies.map(company =>
     `<option value="${escapeHtml(company.id)}" ${company.id === state.currentCompanyId ? "selected" : ""}>${escapeHtml(company.display_name || company.legal_name)}</option>`
@@ -2505,6 +2506,24 @@ function printQr() {
 }
 
 function bindPortalEvents() {
+  selectors.companySwitcher?.addEventListener("change", async event => {
+    const nextCompanyId = event.target.value;
+    if (!nextCompanyId || nextCompanyId === state.currentCompanyId) return;
+    const previousCompanyId = state.currentCompanyId;
+    state.currentCompanyId = nextCompanyId;
+    selectors.companySwitcher.disabled = true;
+    try {
+      await loadBackendData();
+      renderApp();
+    } catch (error) {
+      state.currentCompanyId = previousCompanyId;
+      console.error(error);
+      showToast(error?.message || "Não foi possível mudar de empresa.");
+      renderCompanySwitcher();
+    } finally {
+      selectors.companySwitcher.disabled = false;
+    }
+  });
   selectors.loginForm?.addEventListener("submit", event => {
     event.preventDefault();
     login(selectors.loginIdentifier.value, selectors.loginPassword.value);

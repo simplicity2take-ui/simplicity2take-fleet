@@ -36,7 +36,7 @@ for each row execute function public.s2t_guard_company_ownership_change();
 -- a replacement; exceptional retention belongs in a separately audited process.
 drop policy if exists "s2t assignments company admin delete"
   on public.vehicle_assignments;
-revoke delete on table public.vehicle_assignments from anon, authenticated;
+revoke delete on table public.vehicle_assignments from public, anon, authenticated;
 
 comment on function public.s2t_guard_company_ownership_change() is
   'Trigger-only guard: only global admins may change company ownership or drivers.profile_id.';

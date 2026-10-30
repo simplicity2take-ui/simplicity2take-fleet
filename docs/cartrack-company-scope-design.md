@@ -125,3 +125,25 @@ The production catalog was inspected with SELECT/catalog queries only. No data o
 - The existing odometer table has a cascading FK to vehicles. Before tenant enablement, parent deletion protection must be coordinated with the fleet-history protection work so telemetry history cannot be erased indirectly.
 
 The read-only query bundle is saved as `supabase/tests/cartrack_tenant_inventory_preflight.sql`. It returns catalog metadata and aggregate counts, not registration values or provider payloads.
+
+
+## Proposed implementation sequence after the schema inventory
+
+1. **Preserve the legacy provider identifier.** Keep the existing bigint `cartrack_vehicles.vehicle_id` and snapshot `vehicle_id` as CarTrack provider IDs. Do not reinterpret or overwrite either column with a Fleet UUID.
+2. **Introduce an explicit account boundary.** Add a server-managed CarTrack account record associated with one `company_id`; store only a secret reference in the database, never the username/password. The Edge Function resolves credentials and account scope server-side. No account ID or company ID from the browser is authoritative.
+3. **Create a canonical mapping relation.** Map `(CarTrack account, provider vehicle ID)` to one `public.vehicles.id`. Derive the company from the canonical Fleet vehicle and validate it against the account's company. Add account-scoped uniqueness rather than relying on global registration uniqueness.
+4. **Link snapshots to the mapping.** Add a UUID FK from each new snapshot to the mapping row. Keep the old registration/provider-ID columns during a controlled backfill and audit window; do not drop or repurpose them until all retained snapshots are reconciled.
+5. **Resolve existing rows conservatively.** The aggregate read-only check reports 21 uniquely matched registrations and 2 unmatched records. The 21 are candidates for an explicit reviewed mapping; the 2 unmatched rows stay quarantined. No bulk update should run until each candidate is confirmed against trusted fleet records and provider account data.
+6. **Extend odometer history deliberately.** Add CarTrack as an allowed source only in a reviewed migration, and define an idempotency key for provider observations. Preserve existing Tesla/manual constraints and reject null, negative, malformed or older readings from overwriting a newer current value.
+7. **Replace the writer contract.** Replace the global-registration upsert with an account-scoped RPC that validates account status, company ownership, mapping, input ranges and timestamp order in one transaction. Keep execution restricted to the server integration role; do not rely on RLS to constrain service_role.
+8. **Enforce tenant reads.** Company policies must derive ownership through the canonical Fleet vehicle/mapping relation. Test company A and B in separate authenticated sessions; a service-role query is not an RLS test.
+9. **Remove unnecessary TRUNCATE privileges.** Revoke unexpected TRUNCATE privileges from `anon` and `authenticated` on CarTrack tables after confirming no legitimate maintenance workflow depends on them. RLS does not filter TRUNCATE operations.
+10. **Only then enable multi-company sync.** Until account credentials, provider pagination/completeness, mapping and rollback tests are ready, keep the current integration limited to the global administrator and one configured account.
+
+## Explicit non-goals for the current review
+
+- Do not attempt to resolve the two unmatched CarTrack rows by guessing from a registration or provider ID.
+- Do not change the existing 23 mapping rows or 69 snapshots.
+- Do not change production grants, RLS, function definitions or data.
+- Do not call CarTrack's live API or deploy the Edge Function.
+- Do not claim tenant isolation merely because the tables have RLS enabled: the current policies are global-admin-only, and the service-role writer bypasses RLS.

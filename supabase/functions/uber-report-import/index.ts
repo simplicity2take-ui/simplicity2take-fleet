@@ -241,7 +241,18 @@ Deno.serve(async (req) => {
       if (missingTripHeaders.length) throw new Error("CSV de viagens incompleto. Colunas em falta: " + missingTripHeaders.join(", ") + ".");
       const driverRows = await getRestRows("drivers?select=id,uber_driver_uuid,full_name&company_id=eq." + encodeURIComponent(companyId) + "&limit=1000");
       const vehicleRows = await getRestRows("vehicles?select=id,uber_vehicle_uuid,plate&company_id=eq." + encodeURIComponent(companyId) + "&limit=1000");
-      const driversByUuid = new Map(driverRows.filter((item: any) => item.uber_driver_uuid).map((item: any) => [item.uber_driver_uuid, item.id]));
+      const buildUniqueIdMap = (items: any[], keyOf: (item: any) => string) => {
+        const matches = new Map<string, string[]>();
+        for (const item of items) {
+          const key = keyOf(item);
+          if (!key) continue;
+          const ids = matches.get(key) || [];
+          ids.push(item.id);
+          matches.set(key, ids);
+        }
+        return new Map(Array.from(matches.entries()).map(([key, ids]) => [key, ids.length === 1 ? ids[0] : null]));
+      };
+      const driversByUuid = buildUniqueIdMap(driverRows, item => String(item.uber_driver_uuid || ""));
       const normalizePersonName = (value: string) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-PT");
       const driverIdsByName = new Map<string, string[]>();
       for (const driver of driverRows as any[]) {
@@ -251,8 +262,8 @@ Deno.serve(async (req) => {
         ids.push(driver.id);
         driverIdsByName.set(normalizedName, ids);
       }
-      const vehiclesByUuid = new Map(vehicleRows.filter((item: any) => item.uber_vehicle_uuid).map((item: any) => [item.uber_vehicle_uuid, item.id]));
-      const vehiclesByPlate = new Map(vehicleRows.filter((item: any) => item.plate).map((item: any) => [String(item.plate).replace(/[^A-Z0-9]/gi, "").toUpperCase(), item.id]));
+      const vehiclesByUuid = buildUniqueIdMap(vehicleRows, item => String(item.uber_vehicle_uuid || ""));
+      const vehiclesByPlate = buildUniqueIdMap(vehicleRows, item => String(item.plate || "").replace(/[^A-Z0-9]/gi, "").toUpperCase());
       const normalized = rows.map(r => {
         const tripId = (r["UUID da viagem"] || "").trim();
         if (tripId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tripId)) {
@@ -264,6 +275,7 @@ Deno.serve(async (req) => {
         const matchedDriverId = driversByUuid.get(driverUuid) || (nameMatches.length === 1 ? nameMatches[0] : null);
         const vehicleUuid = (r["UUID do veículo"] || "").trim();
         const plate = (r["Matrícula"] || "").trim();
+        const normalizedPlate = plate.replace(/[^A-Z0-9]/gi, "").toUpperCase();
         const status = (r["Estado da viagem"] || "").trim().toLowerCase();
         const requestedAt = localLisbonTimestamp(r["Hora do pedido de viagem"] || "");
         const arrivedAt = localLisbonTimestamp(r["Hora de chegada da viagem"] || "");
@@ -273,7 +285,7 @@ Deno.serve(async (req) => {
           platform: "uber",
           source_trip_id: tripId,
           driver_id: matchedDriverId,
-          vehicle_id: vehiclesByUuid.get(vehicleUuid) || vehiclesByPlate.get(plate.replace(/[^A-Z0-9]/gi, "").toUpperCase()) || null,
+          vehicle_id: vehiclesByUuid.get(vehicleUuid) || vehiclesByPlate.get(normalizedPlate) || null,
           platform_driver_uuid: driverUuid || null,
           platform_vehicle_uuid: vehicleUuid || null,
           vehicle_plate: plate || null,

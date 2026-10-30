@@ -58,3 +58,16 @@
 - both RPCs are SECURITY INVOKER and executable by authenticated but not anon.
 
 This preflight is not a substitute for behavioral tests with two authenticated users in two companies. It has not been run because no disposable database has been provisioned.
+
+
+## Cascade-delete protection discovered during schema inspection
+
+A read-only inspection of the current production catalog confirmed:
+- `vehicle_assignments.driver_id` references `drivers(id) ON DELETE CASCADE`;
+- `vehicle_assignments.vehicle_id` references `vehicles(id) ON DELETE CASCADE`;
+- the existing unique key `(vehicle_id, driver_id, active_from)` supports the RPC's idempotent insert;
+- `authenticated` currently has a DELETE table grant on `vehicle_assignments`.
+
+Because parent deletion would erase assignment rows through FK cascades, the proposed patch also removes the global-admin DELETE policies and revokes DELETE on `drivers` and `vehicles` for `PUBLIC`, `anon` and `authenticated`. The app now archives/deactivates instead of hard-deleting these records.
+
+This catalog inspection was read-only. No grants, policies, constraints or rows were changed in production.

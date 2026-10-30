@@ -209,6 +209,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return json({ ok: false, error: "Método não permitido." }, 405);
   try {
     const authHeader = req.headers.get("Authorization") || "";
     const userToken = authHeader.replace(/^Bearer\s+/i, "");

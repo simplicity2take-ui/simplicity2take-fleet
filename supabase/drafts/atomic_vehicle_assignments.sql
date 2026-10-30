@@ -53,7 +53,8 @@ begin
   from unnest(v_driver_ids) as requested(driver_id)
   join public.drivers d
     on d.id = requested.driver_id
-   and d.company_id = v_company_id;
+   and d.company_id = v_company_id
+   and coalesce(d.status, 'Ativo') = 'Ativo';
 
   if v_valid_count <> v_requested_count then
     raise exception 'Todos os motoristas têm de pertencer à empresa da viatura' using errcode = '23514';
@@ -134,3 +135,87 @@ grant execute on function public.s2t_replace_vehicle_assignments(uuid, uuid[]) t
 
 comment on function public.s2t_replace_vehicle_assignments(uuid, uuid[]) is
   'Atomically replaces active vehicle assignments, preserving completed history and enforcing company-admin authorization under RLS.';
+
+
+-- Deactivate a driver without deleting their identity or assignment history.
+-- Uses the same lock order as s2t_replace_vehicle_assignments: vehicles first,
+-- then driver. The replace RPC also rejects inactive drivers after acquiring
+-- the driver row lock, preventing a concurrent new assignment after deactivation.
+create or replace function public.s2t_deactivate_driver(p_driver_id uuid)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $function$
+declare
+  v_company_id uuid;
+  v_closed_count integer := 0;
+begin
+  if auth.uid() is null then
+    raise exception 'Sessão não autenticada' using errcode = '42501';
+  end if;
+
+  -- Lock all vehicles currently associated with this driver in stable order.
+  perform v.id
+  from public.vehicles v
+  join public.vehicle_assignments va on va.vehicle_id = v.id
+  where va.driver_id = p_driver_id
+    and va.active_from <= current_date
+    and (va.active_until is null or va.active_until >= current_date)
+  order by v.id
+  for update of v;
+
+  -- Then lock the driver row, matching the assignment RPC lock order.
+  select d.company_id
+    into v_company_id
+  from public.drivers d
+  where d.id = p_driver_id
+  for update;
+
+  if v_company_id is null then
+    raise exception 'Motorista não encontrado ou sem empresa associada' using errcode = 'P0002';
+  end if;
+
+  if not public.s2t_is_admin()
+     and not public.s2t_is_company_admin(v_company_id) then
+    raise exception 'Sem permissões para desativar este motorista' using errcode = '42501';
+  end if;
+
+  -- Date-only intervals cannot encode a same-day end without an inverted range.
+  if exists (
+    select 1
+    from public.vehicle_assignments va
+    where va.driver_id = p_driver_id
+      and va.active_from = current_date
+      and (va.active_until is null or va.active_until >= current_date)
+  ) then
+    raise exception 'O motorista tem uma associação iniciada hoje. Para preservar o histórico, a desativação só poderá ser concluída amanhã.'
+      using errcode = '22023';
+  end if;
+
+  update public.vehicle_assignments va
+     set active_until = current_date - 1
+   where va.driver_id = p_driver_id
+     and va.active_from < current_date
+     and (va.active_until is null or va.active_until >= current_date);
+
+  get diagnostics v_closed_count = row_count;
+
+  update public.drivers
+     set status = 'Inativo'
+   where id = p_driver_id
+     and company_id = v_company_id;
+
+  return jsonb_build_object(
+    'driver_id', p_driver_id,
+    'closed_assignments', v_closed_count,
+    'status', 'Inativo'
+  );
+end;
+$function$;
+
+revoke all on function public.s2t_deactivate_driver(uuid) from public, anon;
+grant execute on function public.s2t_deactivate_driver(uuid) to authenticated;
+
+comment on function public.s2t_deactivate_driver(uuid) is
+  'Atomically deactivates a driver and closes active vehicle assignments without deleting operational history. Refuses same-day interval closure.';

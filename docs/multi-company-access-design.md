@@ -48,12 +48,13 @@ The inspected RLS policies currently use administrator/assigned-driver access fo
 1. Test the existing company-foundation migration in an isolated development database.
 2. Decide the driver-transfer policy and confirm company membership roles.
 3. Review the draft membership/integrity migration; it introduces memberships and blocks cross-company driver/vehicle assignments, but it does not finish tenant RLS.
-4. Add company scoping and integrity constraints to documents and document viewers.
-5. Add RLS to operational history, imports, reports and CarTrack data.
-6. Update server-side functions to validate tenant scope.
-7. Add automated negative tests proving Company A cannot read or modify Company B data.
-8. Add company selector and the Empresa → Viaturas → Motoristas UI only after the database/API contract is stable.
+4. Draft migration `20261030210000_platform_history_company_rls.sql` scopes platform activity and trip-history reads to the linked driver's/vehicle's single owning company, while retaining driver self-access and global-admin access. Conflicting driver/vehicle company mappings fail closed for company members.
+5. Add company scoping and integrity constraints to documents and document viewers.
+6. Add RLS to Uber report tables, imports and CarTrack data.
+7. Update every server-side function using the service role to validate tenant scope explicitly.
+8. Add automated negative tests proving Company A cannot read or modify Company B data.
+9. Add company selector and the Empresa → Viaturas → Motoristas UI only after the database/API contract is stable.
 
 ## Current safety boundary
 
-Do not apply the draft migration to production and do not enable external-company accounts until the above controls are implemented and tested. No production writes were performed as part of this design review.
+Do not apply the draft migrations to production and do not enable external-company accounts until the above controls are implemented and tested. The platform-history RLS migration is a draft and has not been executed. No production writes were performed as part of this design review.

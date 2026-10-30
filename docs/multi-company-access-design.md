@@ -101,3 +101,36 @@ The portal now resolves the authenticated user's active `company_memberships` ro
 Company-member navigation is limited to the company-document view and account settings. This is deliberately restrictive until dedicated company-scoped RLS policies and company-admin write workflows exist for each operational table. A company membership must not be treated as authorization to query the whole fleet.
 
 The company-member view is read-only. Ordinary members see company-level documents only; company-admin document write and linked driver/vehicle document browsing remain incomplete. Do not enable external company onboarding until the relevant RLS policies, isolated-database tests, and UI workflows are completed.
+
+
+## Core fleet RLS — company-scoped draft (30 October 2026)
+
+Added draft migration `20261030230000_company_fleet_rls.sql` and read-only diagnostic `supabase/tests/company_fleet_rls_preflight.sql`.
+
+Proposed policy behavior:
+
+- Company members can read drivers and vehicles owned by their active company.
+- Drivers retain self access to their own driver row and access to currently assigned vehicles.
+- Company administrators can insert/update drivers and vehicles in their company. Deletion remains global-admin-only to preserve operational history.
+- Company members can read assignments only when the driver and vehicle resolve to the same company.
+- Company administrators can create, update and delete assignments only when both records belong to their company.
+- A trigger rejects driver/vehicle company ownership changes by non-global administrators.
+- Assignment read checks use a SECURITY DEFINER helper to avoid a recursive RLS dependency between vehicles and vehicle_assignments.
+
+### Required isolated-database test matrix
+
+| Actor | Read own company fleet | Read another company | Create/update own fleet | Cross-company assignment | Delete fleet record |
+|---|---:|---:|---:|---:|---:|
+| Global admin | Yes | Yes | Yes | No (integrity trigger) | Yes |
+| Company admin A | Yes | No | Yes | No | No |
+| Ordinary member A | Yes | No | No | No | No |
+| Driver A | Own driver + assigned vehicles | No | No | No | No |
+| Unaffiliated user | No | No | No | No | No |
+
+Also test assignment rows with missing parents, duplicate active assignments, reassignment between vehicles in the same company, attempted company_id changes, and a user with memberships in more than one company.
+
+### Validation status and caveats
+
+These are source drafts only. No SQL has been executed. The preflight must confirm the deployed `vehicle_assignments` primary key and columns (`id`, `driver_id`, `vehicle_id`, `active`) before the migration is considered runnable. Check for any additional permissive policies in the live database: PostgreSQL permissive policies are combined with OR, so an overlooked legacy policy could widen access. Run the full matrix with separate authenticated sessions in a disposable database before enabling company fleet navigation.
+
+The frontend intentionally remains docs-only for company members until the fleet RLS migration has been tested and applied in the intended environment. No company-member fleet queries, migrations, syncs or deployments were enabled by adding this draft.

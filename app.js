@@ -2328,7 +2328,7 @@ async function saveDriver(values, id) {
     showToast("Motorista criado. Entregue a palavra-passe diretamente.");
     return;
   }
-  const { error } = await supabaseClient.from("drivers").update(payload).eq("id", id);
+  const { error } = await supabaseClient.from("drivers").update(payload).eq("id", id).eq("company_id", state.currentCompanyId);
 
   if (error) throw error;
   showToast("Motorista atualizado.");
@@ -2343,13 +2343,19 @@ async function saveVehicle(values, driverIds, id) {
     vin: values.vin,
     status: values.status
   };
-  if (!id) {
-    if (!state.currentCompanyId) throw new Error("Não foi possível determinar a empresa para esta viatura.");
-    payload.company_id = state.currentCompanyId;
+  if (!state.currentCompanyId) throw new Error("Não foi possível determinar a empresa para esta viatura.");
+  if (!id) payload.company_id = state.currentCompanyId;
+  else if (state.vehicles.find(item => item.id === id)?.raw?.company_id !== state.currentCompanyId) {
+    throw new Error("A viatura não pertence à empresa selecionada.");
   }
-  if (!id) {
-    if (!state.currentCompanyId) throw new Error("Não foi possível determinar a empresa para esta viatura.");
-    payload.company_id = state.currentCompanyId;
+
+  const selectedDrivers = new Set(
+    state.drivers
+      .filter(driver => driver.raw?.company_id === state.currentCompanyId)
+      .map(driver => driver.id)
+  );
+  if (driverIds.some(driverId => !selectedDrivers.has(driverId))) {
+    throw new Error("Só pode associar motoristas da mesma empresa da viatura.");
   }
   const query = id
     ? supabaseClient.from("vehicles").update(payload).eq("id", id).select().single()

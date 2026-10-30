@@ -58,3 +58,14 @@ The inspected RLS policies currently use administrator/assigned-driver access fo
 ## Current safety boundary
 
 Do not apply the draft migrations to production and do not enable external-company accounts until the above controls are implemented and tested. The platform-history RLS migration is a draft and has not been executed. No production writes were performed as part of this design review.
+
+## Bolt sync — assignment-history safeguard (30 October 2026)
+
+The company-foundation branch now scopes Bolt driver/vehicle identity lookups and inserts to the server-resolved Simplicity2Take company. The assignment step has also been changed to preserve history:
+
+- One active assignment already pointing to the Bolt-reported vehicle is left unchanged.
+- Any existing active assignment that differs, or multiple active assignments, is preserved and counted as a conflict for manual review.
+- A new assignment is inserted only when no active assignment exists.
+- The sync no longer deletes all assignments for a driver.
+
+This is a safeguard, not a complete multi-company integration. The Bolt function still uses the existing global-admin email gate, service-role access, and sequential writes. The provider endpoint/pagination contract and transactional all-or-nothing apply phase remain unverified. The branch's assignment behavior has not yet been exercised against a disposable database with fixtures for matching, conflicting, multiple-active and no-active cases. Do not deploy or run a live sync based on this change alone.

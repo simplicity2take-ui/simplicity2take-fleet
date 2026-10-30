@@ -94,6 +94,30 @@ begin
   end if;
 
   if not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 's2t_replace_vehicle_assignments'
+      and position('v.status' in pg_get_functiondef(p.oid)) > 0
+      and position('viatura inativa ou arquivada' in pg_get_functiondef(p.oid)) > 0
+  ) then
+    raise exception 'FAIL: assignment replacement does not reject inactive/archived vehicles';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 's2t_archive_vehicle'
+      and position('v.status' in pg_get_functiondef(p.oid)) > 0
+      and position('já está inativa ou arquivada' in pg_get_functiondef(p.oid)) > 0
+  ) then
+    raise exception 'FAIL: vehicle archive RPC does not guard current vehicle status';
+  end if;
+
+  if not exists (
     select 1 from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'

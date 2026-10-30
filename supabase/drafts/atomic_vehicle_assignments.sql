@@ -233,3 +233,72 @@ grant execute on function public.s2t_deactivate_driver(uuid) to authenticated;
 
 comment on function public.s2t_deactivate_driver(uuid) is
   'Atomically deactivates a driver and closes active vehicle assignments without deleting operational history. Refuses same-day interval closure.';
+
+
+-- Archive a vehicle and close its active assignments atomically.
+create or replace function public.s2t_archive_vehicle(p_vehicle_id uuid)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $function$
+declare
+  v_company_id uuid;
+  v_closed_count integer := 0;
+begin
+  if auth.uid() is null then
+    raise exception 'Sessão não autenticada' using errcode = '42501';
+  end if;
+
+  select v.company_id
+    into v_company_id
+  from public.vehicles v
+  where v.id = p_vehicle_id
+  for update;
+
+  if v_company_id is null then
+    raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
+  end if;
+
+  if not public.s2t_is_admin()
+     and not public.s2t_is_company_admin(v_company_id) then
+    raise exception 'Sem permissões para arquivar esta viatura' using errcode = '42501';
+  end if;
+
+  if exists (
+    select 1
+    from public.vehicle_assignments va
+    where va.vehicle_id = p_vehicle_id
+      and va.active_from = current_date
+      and (va.active_until is null or va.active_until >= current_date)
+  ) then
+    raise exception 'A viatura tem uma associação iniciada hoje. Para preservar o histórico, o arquivo só poderá ser concluído amanhã.'
+      using errcode = '22023';
+  end if;
+
+  update public.vehicle_assignments va
+     set active_until = current_date - 1
+   where va.vehicle_id = p_vehicle_id
+     and va.active_from < current_date
+     and (va.active_until is null or va.active_until >= current_date);
+
+  get diagnostics v_closed_count = row_count;
+
+  update public.vehicles
+     set status = 'Inativo'
+   where id = p_vehicle_id
+     and company_id = v_company_id;
+
+  return jsonb_build_object(
+    'vehicle_id', p_vehicle_id,
+    'closed_assignments', v_closed_count,
+    'status', 'Inativo'
+  );
+end;
+$function$;
+
+revoke all on function public.s2t_archive_vehicle(uuid) from public, anon;
+grant execute on function public.s2t_archive_vehicle(uuid) to authenticated;
+
+comment on function public.s2t_archive_vehicle(uuid) is
+  'Atomically archives a vehicle and closes active assignments without deleting history. Refuses same-day interval closure.';

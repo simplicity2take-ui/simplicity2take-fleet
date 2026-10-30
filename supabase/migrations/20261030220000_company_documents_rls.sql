@@ -16,14 +16,19 @@ alter table public.documents
 update public.documents d
 set company_id = case
   when d.driver_id is not null and d.vehicle_id is not null then
-    case when dr.company_id = vh.company_id then dr.company_id else null end
-  when d.driver_id is not null then dr.company_id
-  when d.vehicle_id is not null then vh.company_id
-  else (select c.id from public.companies c where c.slug = 'simplicity2take')
+    case
+      when (select dr.company_id from public.drivers dr where dr.id = d.driver_id)
+         = (select vh.company_id from public.vehicles vh where vh.id = d.vehicle_id)
+      then (select dr.company_id from public.drivers dr where dr.id = d.driver_id)
+      else null
+    end
+  when d.driver_id is not null then
+    (select dr.company_id from public.drivers dr where dr.id = d.driver_id)
+  when d.vehicle_id is not null then
+    (select vh.company_id from public.vehicles vh where vh.id = d.vehicle_id)
+  else
+    (select c.id from public.companies c where c.slug = 'simplicity2take')
 end
-from (select 1) as seed
-left join public.drivers dr on dr.id = d.driver_id
-left join public.vehicles vh on vh.id = d.vehicle_id
 where d.company_id is null;
 
 create index if not exists documents_company_id_idx

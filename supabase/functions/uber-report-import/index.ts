@@ -77,14 +77,20 @@ async function getRestRows(path: string) {
   return await response.json();
 }
 function localLisbonTimestamp(value: string) {
-  if (!value) return null;
-  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
-  if (!match) {
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-  }
+  const input = String(value || "").trim();
+  if (!input) return null;
+  // Uber trip CSV export uses local Lisbon time as YYYY-MM-DD HH:mm:ss.
+  // Do not let JavaScript guess ambiguous formats or silently shift invalid dates.
+  const match = input.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+  if (!match) throw new Error("Data/hora de viagem inválida: utilize AAAA-MM-DD HH:MM:SS.");
   const [, year, month, day, hour, minute, second] = match;
-  const probe = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)));
+  const parts = [year, month, day, hour, minute, second].map(Number);
+  const [y, m, d, h, min, sec] = parts;
+  const probe = new Date(Date.UTC(y, m - 1, d, h, min, sec));
+  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== m - 1 ||
+      probe.getUTCDate() !== d || h > 23 || min > 59 || sec > 59) {
+    throw new Error("Data/hora de viagem inválida: confirme o dia e a hora no CSV.");
+  }
   const zone = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Lisbon", timeZoneName: "shortOffset" })
     .formatToParts(probe).find(part => part.type === "timeZoneName")?.value || "GMT+0";
   const offset = zone.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
@@ -96,12 +102,21 @@ function rateValue(v: string) {
   if (n === null) return null;
   return v.includes("%") ? n / 100 : n;
 }
-function minutes(v: string) {
-  if (!v) return null;
-  const p = v.split(":").map(Number);
-  if (p.some(Number.isNaN)) return null;
-  if (p.length === 3) return p[0] * 24 * 60 + p[1] * 60 + p[2];
-  return null;
+function minutes(v: string, fieldName = "duração") {
+  const input = String(v || "").trim();
+  if (!input) return null;
+  // Uber duration columns are exported as days:hours:minutes.
+  const match = input.match(/^(\d+):(\d{1,2}):(\d{1,2})$/);
+  if (!match) throw new Error("Valor inválido em " + fieldName + ": utilize dias:horas:minutos.");
+  const days = Number(match[1]);
+  const hours = Number(match[2]);
+  const mins = Number(match[3]);
+  if (!Number.isSafeInteger(days) || hours > 23 || mins > 59) {
+    throw new Error("Duração inválida em " + fieldName + ": horas devem ser 0–23 e minutos 0–59.");
+  }
+  const total = days * 24 * 60 + hours * 60 + mins;
+  if (!Number.isSafeInteger(total)) throw new Error("Duração demasiado elevada em " + fieldName + ".");
+  return total;
 }
 async function rpc(name: string, body: unknown) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
@@ -437,8 +452,8 @@ Deno.serve(async (req) => {
         uber_driver_uuid: r["UUID do motorista"],
         driver_name: [r["Nome próprio do motorista"], r["Apelido do motorista"]].filter(Boolean).join(" "),
         completed_trips: numberValue(r["Viagens concluídas"]),
-        online_duration_minutes: minutes(r["Tempo online (dias: horas: minutos)"]),
-        trip_duration_minutes: minutes(r["Tempo em viagem (dias: horas: minutos)"]),
+        online_duration_minutes: minutes(r["Tempo online (dias: horas: minutos)"], "Tempo online"),
+        trip_duration_minutes: minutes(r["Tempo em viagem (dias: horas: minutos)"], "Tempo em viagem"),
         ...baseDates(periodStart, periodEnd),
         raw: r
       }));
@@ -476,10 +491,10 @@ Deno.serve(async (req) => {
       const normalized = rows.map(r => ({
         uber_vehicle_uuid: r["UUID do veículo"],
         plate: r["Matrícula do veículo"],
-        opening_minutes: minutes(r["Hora de abertura"]),
-        route_minutes: minutes(r["Tempo em rota"]),
-        trip_minutes: minutes(r["Tempo em viagem"]),
-        unavailable_minutes: minutes(r["Tempo indisponível"]),
+        opening_minutes: minutes(r["Hora de abertura"], "Hora de abertura"),
+        route_minutes: minutes(r["Tempo em rota"], "Tempo em rota"),
+        trip_minutes: minutes(r["Tempo em viagem"], "Tempo em viagem"),
+        unavailable_minutes: minutes(r["Tempo indisponível"], "Tempo indisponível"),
         free_distance_km: numberValue(r["Distância livre"]),
         route_distance_km: numberValue(r["Distância em rota"]),
         trip_distance_km: numberValue(r["Distância em viagem"]),
@@ -495,10 +510,10 @@ Deno.serve(async (req) => {
       const normalized = rows.map(r => ({
         uber_driver_uuid: r["UUID do motorista"],
         driver_name: [r["Nome próprio do motorista"], r["Apelido do motorista"]].filter(Boolean).join(" "),
-        opening_minutes: minutes(r["Hora de abertura"]),
-        route_minutes: minutes(r["Tempo em rota"]),
-        trip_minutes: minutes(r["Tempo em viagem"]),
-        unavailable_minutes: minutes(r["Tempo indisponível"]),
+        opening_minutes: minutes(r["Hora de abertura"], "Hora de abertura"),
+        route_minutes: minutes(r["Tempo em rota"], "Tempo em rota"),
+        trip_minutes: minutes(r["Tempo em viagem"], "Tempo em viagem"),
+        unavailable_minutes: minutes(r["Tempo indisponível"], "Tempo indisponível"),
         free_distance_km: numberValue(r["Distância livre"]),
         route_distance_km: numberValue(r["Distância em rota"]),
         trip_distance_km: numberValue(r["Distância em viagem"]),

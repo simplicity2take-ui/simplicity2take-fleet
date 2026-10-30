@@ -2190,7 +2190,7 @@ async function saveCompany(values, id) {
   const existing = state.companies.find(company => company.id === id);
   const slug = id
     ? existing?.slug
-    : String(values.slug || displayName).normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    : String(values.slug || displayName).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("O identificador deve conter apenas letras minúsculas, números e hífen.");
   const payload = { legal_name: legalName, display_name: displayName, tax_number: taxNumber || null, status: values.status || "Ativa" };
   if (!id) payload.slug = slug;

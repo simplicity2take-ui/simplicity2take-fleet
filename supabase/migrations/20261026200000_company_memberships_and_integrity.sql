@@ -44,6 +44,24 @@ $function$;
 revoke all on function public.s2t_is_admin() from public, anon;
 grant execute on function public.s2t_is_admin() to authenticated;
 
+-- The existing driver identity helper is also used by RLS policies. Pin its
+-- search path and restrict direct execution to authenticated sessions.
+create or replace function public.s2t_driver_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = ''
+as $function$
+  select d.id
+  from public.drivers d
+  where d.profile_id = auth.uid()
+  limit 1;
+$function$;
+
+revoke all on function public.s2t_driver_id() from public, anon;
+grant execute on function public.s2t_driver_id() to authenticated;
+
 -- These helpers deliberately use SECURITY DEFINER to evaluate membership without
 -- depending on caller visibility of other membership rows. Pin the search path and
 -- schema-qualify every relation/function to prevent object-shadowing attacks.

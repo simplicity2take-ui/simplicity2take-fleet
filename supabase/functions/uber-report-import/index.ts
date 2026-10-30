@@ -104,22 +104,48 @@ function uberStatusTimestamp(v: string) {
 function localLisbonTimestamp(value: string) {
   const input = String(value || "").trim();
   if (!input) return null;
-  // Uber trip CSV export uses local Lisbon time as YYYY-MM-DD HH:mm:ss.
-  // Do not let JavaScript guess ambiguous formats or silently shift invalid dates.
+  // Uber trip exports contain Lisbon wall-clock time without an offset.
+  // Resolve the actual UTC instant by testing both Lisbon offsets around the
+  // date; never infer the offset from the same wall-clock value treated as UTC.
   const match = input.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
   if (!match) throw new Error("Data/hora de viagem inválida: utilize AAAA-MM-DD HH:MM:SS.");
   const [, year, month, day, hour, minute, second] = match;
-  const parts = [year, month, day, hour, minute, second].map(Number);
-  const [y, m, d, h, min, sec] = parts;
-  const probe = new Date(Date.UTC(y, m - 1, d, h, min, sec));
-  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== m - 1 ||
-      probe.getUTCDate() !== d || h > 23 || min > 59 || sec > 59) {
+  const [y, m, d, h, min, sec] = [year, month, day, hour, minute, second].map(Number);
+  const wallUtc = Date.UTC(y, m - 1, d, h, min, sec);
+  const wallProbe = new Date(wallUtc);
+  if (wallProbe.getUTCFullYear() !== y || wallProbe.getUTCMonth() !== m - 1 ||
+      wallProbe.getUTCDate() !== d || h > 23 || min > 59 || sec > 59) {
     throw new Error("Data/hora de viagem inválida: confirme o dia e a hora no CSV.");
   }
-  const zone = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Lisbon", timeZoneName: "shortOffset" })
-    .formatToParts(probe).find(part => part.type === "timeZoneName")?.value || "GMT+0";
-  const offset = zone.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
-  const suffix = offset ? offset[1] + offset[2].padStart(2, "0") + ":" + (offset[3] || "00") : "+00:00";
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
+  });
+  const localPartsAt = (timestamp: number) => {
+    const values = Object.fromEntries(formatter.formatToParts(new Date(timestamp))
+      .filter(part => part.type !== "literal").map(part => [part.type, Number(part.value)]));
+    return [values.year, values.month, values.day, values.hour, values.minute, values.second];
+  };
+  const offsets = new Set<number>();
+  for (const probe of [wallUtc - 36 * 60 * 60 * 1000, wallUtc, wallUtc + 36 * 60 * 60 * 1000]) {
+    const [py, pm, pd, ph, pmin, ps] = localPartsAt(probe);
+    offsets.add((Date.UTC(py, pm - 1, pd, ph, pmin, ps) - probe) / 60000);
+  }
+  const expected = [y, m, d, h, min, sec];
+  const candidates = Array.from(offsets).map(offset => ({
+    offset, timestamp: wallUtc - offset * 60000
+  })).filter(candidate => localPartsAt(candidate.timestamp).every((part, index) => part === expected[index]));
+  if (candidates.length === 0) {
+    throw new Error("Data/hora de viagem inexistente em Lisboa devido à mudança da hora.");
+  }
+  if (candidates.length > 1) {
+    throw new Error("Data/hora de viagem ambígua em Lisboa devido à mudança da hora; é necessária confirmação.");
+  }
+  const offset = candidates[0].offset;
+  const sign = offset >= 0 ? "+" : "-";
+  const absolute = Math.abs(offset);
+  const suffix = sign + String(Math.floor(absolute / 60)).padStart(2, "0") + ":" +
+    String(absolute % 60).padStart(2, "0");
   return year + "-" + month + "-" + day + "T" + hour + ":" + minute + ":" + second + suffix;
 }
 function integerValue(v: string, fieldName = "quantidade") {

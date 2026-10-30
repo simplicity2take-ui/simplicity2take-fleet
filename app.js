@@ -198,17 +198,26 @@ function valueOf(row, ...keys) {
 
 async function loadBackendData() {
   const membershipResult = state.sessionUserId
-    ? await supabaseClient.from("company_memberships").select("company_id, role").eq("profile_id", state.sessionUserId).eq("status", "Ativo").limit(1).maybeSingle()
-    : { data: null, error: null };
+    ? await supabaseClient.from("company_memberships").select("company_id, role").eq("profile_id", state.sessionUserId).eq("status", "Ativo").order("created_at", { ascending: true })
+    : { data: [], error: null };
   if (membershipResult.error) throw membershipResult.error;
+  const activeMemberships = currentUser()?.role === "admin" ? [] : (membershipResult.data || []);
+  let selectedMembership = null;
   if (currentUser()?.role !== "admin") {
-    state.currentCompanyId = membershipResult.data?.company_id || null;
-    state.currentCompanyRole = membershipResult.data?.role || null;
+    const companyResult = await supabaseClient.from("companies").select("id, slug, legal_name, display_name, status").eq("status", "Ativa").order("display_name");
+    if (companyResult.error) throw companyResult.error;
+    const membershipByCompany = new Map(activeMemberships.map(item => [item.company_id, item]));
+    state.companies = (companyResult.data || []).filter(company => membershipByCompany.has(company.id));
+    selectedMembership = activeMemberships.find(item => item.company_id === state.currentCompanyId && state.companies.some(company => company.id === item.company_id))
+      || activeMemberships.find(item => state.companies.some(company => company.id === item.company_id))
+      || null;
+    state.currentCompanyId = selectedMembership?.company_id || null;
+    state.currentCompanyRole = selectedMembership?.role || null;
   } else {
     state.currentCompanyRole = null;
   }
 
-  if (currentUser()?.role !== "admin" && membershipResult.data) {
+  if (currentUser()?.role !== "admin" && selectedMembership) {
     // Company members receive only the document data permitted by document RLS.
     // Do not even request fleet, platform, application or CarTrack tables until
     // those tables have complete company-scoped policies.
@@ -830,9 +839,10 @@ function requireS2TIntegration() {
 }
 function renderCompanySwitcher() {
   const isAdmin = currentUser()?.role === "admin";
+  const canSwitchCompany = isAdmin || Boolean(state.currentCompanyRole);
   if (!selectors.companySwitcher) return;
-  selectors.companySwitcherWrap?.classList.toggle("hidden", !isAdmin);
-  if (!isAdmin) return;
+  selectors.companySwitcherWrap?.classList.toggle("hidden", !canSwitchCompany);
+  if (!canSwitchCompany) return;
   const activeCompanies = state.companies.filter(company => company.status === "Ativa");
   selectors.companySwitcher.innerHTML = activeCompanies.map(company =>
     `<option value="${escapeHtml(company.id)}" ${company.id === state.currentCompanyId ? "selected" : ""}>${escapeHtml(company.display_name || company.legal_name)}</option>`

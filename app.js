@@ -1876,8 +1876,8 @@ function modalFields(type, id) {
     return [
       field("legalName", "Denominação social", company.legal_name || "", "text", true),
       field("displayName", "Nome de apresentação", company.display_name || "", "text", true),
-      field("slug", "Identificador (slug)", company.slug || "", "text", true, "", false),
-      field("taxNumber", "NIF (opcional)", company.tax_number || ""),
+      field("slug", "Identificador (slug)", company.slug || "", "text", true, id ? "readonly" : "", false),
+      field("taxNumber", "NIF (opcional)", company.tax_number || "", "text", false, "", false),
       selectField("status", "Estado", ["Ativa", "Inativa"], company.status || "Ativa"),
       `<div class="smartdocs-box span-full"><p>O identificador é permanente depois da criação. Desativar uma empresa não elimina os seus dados.</p></div>`
     ].join("");

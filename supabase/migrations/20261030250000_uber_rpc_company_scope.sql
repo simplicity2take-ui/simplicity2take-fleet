@@ -452,7 +452,7 @@ begin
     observed_at timestamptz
   )
   where nullif(x.source_trip_id, '') is not null
-  on conflict (platform, source_trip_id) do update set
+  on conflict (company_id, platform, source_trip_id) do update set
     company_id = excluded.company_id,
     driver_id = excluded.driver_id,
     vehicle_id = excluded.vehicle_id,

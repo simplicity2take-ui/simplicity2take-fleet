@@ -168,3 +168,52 @@ The catalog ACL inspection confirmed that `postgres` explicitly granted `TRUNCAT
 The existing writer is a `SECURITY DEFINER` RPC owned by `postgres`, so it does not need direct TRUNCATE permission for the current upsert flow. This proposal has not been applied. Validate it in a disposable database and check any operational maintenance jobs before promoting it to a migration.
 
 The current frontend `app.js` reads the two CarTrack tables directly; a repository-wide caller/dependency review is still required before changing or revoking `get_cartrack_fleet_data()`. For the future design, prefer an invoker-scoped/allowlisted read path and avoid returning the raw provider JSON payload to the browser.
+
+
+## Concrete logical schema proposal (not yet SQL)
+
+The following names are a design proposal only; exact DDL waits for the disposable database and confirmation of the credential storage mechanism.
+
+### Account registry
+
+`cartrack_accounts`
+- `id uuid primary key`
+- `company_id uuid not null references companies(id)`
+- `provider_account_key text not null` — stable non-secret account identifier
+- `credential_ref text not null` — opaque reference to a server-side secret, never the username/password
+- `status text`, timestamps
+- unique `(company_id, provider_account_key)`
+
+The Edge Function must resolve `credential_ref` through a server-only secret manager. The current single pair of Edge Function environment variables is not a multi-company credential store. Selecting a provider account in the browser must not grant access to its credentials.
+
+### Canonical vehicle mapping
+
+`cartrack_vehicle_mappings`
+- `id uuid primary key`
+- `account_id uuid not null`
+- `company_id uuid not null`
+- `provider_vehicle_id bigint not null` — preserve the provider's existing bigint identifier
+- `fleet_vehicle_id uuid not null` — canonical `public.vehicles.id`
+- `mapping_status` (active, quarantined, retired), mapping provenance and timestamps
+- unique `(account_id, provider_vehicle_id)`
+- unique `(account_id, fleet_vehicle_id)` if the provider contract guarantees one CarTrack asset per Fleet vehicle per account
+- composite foreign keys must enforce that `account_id` and `fleet_vehicle_id` both belong to the same `company_id`; a trigger is acceptable only if a declarative composite FK cannot be made practical.
+
+### Snapshot and odometer facts
+
+- Add nullable `cartrack_mapping_id uuid` to `cartrack_vehicle_snapshots`, referencing the mapping row. Keep the existing bigint `vehicle_id` as the provider ID during the transition; do not reuse it for a Fleet UUID.
+- Snapshot RLS follows `mapping -> account -> company`; drivers receive no snapshot access unless an explicit product requirement and least-field projection are approved.
+- Extend `vehicle_odometer_readings.source` to include `cartrack` only after the source migration is tested.
+- Add a nullable server-generated `source_record_key` with a unique partial index on `(vehicle_id, source, source_record_key)` for non-null keys, to make repeated imports idempotent without guessing whether timestamp-only uniqueness is safe.
+- Keep the canonical `vehicle_odometer_readings.vehicle_id` UUID FK and derive tenant ownership through `vehicles.company_id`.
+
+### Quarantine and backfill
+
+- Add a restricted mapping-review/quarantine queue for unknown, ambiguous, cross-company and duplicate provider identifiers. Do not expose raw provider payloads to ordinary company members.
+- Backfill only records explicitly confirmed by an authorized reviewer. A unique normalized registration match is a candidate, not authorization by itself.
+- The current two unmatched rows remain unresolved. Existing snapshots are not automatically linked merely because their registration text matches.
+- Record mapping provenance (manual confirmation, provider identifier, reviewer and timestamp) so a later audit can explain every link.
+
+### Credential decision still required
+
+Before implementing multi-company sync, choose and test a server-only credential storage approach compatible with the existing Supabase project. Do not store CarTrack usernames/passwords in `app_settings`, browser-accessible tables, company profile data or raw JSON. Until that choice is made, the only safe supported mode remains the current single configured CarTrack account under the global-admin gate.

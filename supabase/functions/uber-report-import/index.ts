@@ -63,7 +63,7 @@ function numberValue(v: string) {
   }
   // Reject malformed values instead of stripping arbitrary characters
   // (which could silently turn e.g. "12abc" into 12).
-  if (!/^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)$/.test(normalized)) {
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) {
     throw new Error("Valor numérico inválido no CSV: " + input.slice(0, 40));
   }
   const n = Number(normalized);

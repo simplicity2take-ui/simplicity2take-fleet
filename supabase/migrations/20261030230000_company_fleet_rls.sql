@@ -133,7 +133,8 @@ using (
     select 1 from public.vehicle_assignments va
     where va.vehicle_id = vehicles.id
       and va.driver_id = public.s2t_driver_id()
-      and coalesce(va.active, true) = true
+      and va.active_from <= current_date
+      and (va.active_until is null or va.active_until >= current_date)
   )
 );
 

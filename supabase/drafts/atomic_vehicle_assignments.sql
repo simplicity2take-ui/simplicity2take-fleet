@@ -13,6 +13,7 @@ set search_path = ''
 as $function$
 declare
   v_company_id uuid;
+  v_vehicle_status text;
   v_requested_count integer := 0;
   v_valid_count integer := 0;
   v_closed_count integer := 0;
@@ -24,14 +25,18 @@ begin
   end if;
 
   -- Serialize edits to this vehicle before reading or changing its assignments.
-  select v.company_id
-    into v_company_id
+  select v.company_id, v.status
+    into v_company_id, v_vehicle_status
   from public.vehicles v
   where v.id = p_vehicle_id
   for update;
 
   if v_company_id is null then
     raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
+  end if;
+
+  if coalesce(v_vehicle_status, 'Ativo') <> 'Ativo' then
+    raise exception 'Não é possível atribuir motoristas a uma viatura inativa ou arquivada' using errcode = '23514';
   end if;
 
   if not public.s2t_is_admin()
@@ -244,20 +249,26 @@ set search_path = ''
 as $function$
 declare
   v_company_id uuid;
+  v_vehicle_status text;
   v_closed_count integer := 0;
 begin
   if auth.uid() is null then
     raise exception 'Sessão não autenticada' using errcode = '42501';
   end if;
 
-  select v.company_id
-    into v_company_id
+  -- Serialize with assignment replacement and inspect status under the same lock.
+  select v.company_id, v.status
+    into v_company_id, v_vehicle_status
   from public.vehicles v
   where v.id = p_vehicle_id
   for update;
 
   if v_company_id is null then
     raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
+  end if;
+
+  if coalesce(v_vehicle_status, 'Ativo') <> 'Ativo' then
+    raise exception 'A viatura já está inativa ou arquivada' using errcode = '23514';
   end if;
 
   if not public.s2t_is_admin()

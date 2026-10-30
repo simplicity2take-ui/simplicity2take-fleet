@@ -150,3 +150,8 @@ Instead, after the account/mapping schema is implemented:
 ### Current impact and release decision
 
 No production data, RLS policy, table grant, RPC, frontend code or Edge Function was changed. The current global-admin-only policy remains intact. The frontend read-path refactor is **blocked** until the canonical mapping relation and allowlisted read endpoint can be tested together in an isolated database.
+
+
+### Confirmation of the existing administrator predicate
+
+The production definition of `public.s2t_is_admin()` was inspected read-only. It returns true only when `auth.uid()` matches a `public.profiles.id` row with `role = 'admin'` and `status = 'Ativo'`. It is SECURITY DEFINER, owned by postgres, with `search_path=public`. This confirms the current CarTrack table policies and the legacy JSON RPC are intended for active global admins, not company administrators. It does not establish tenant isolation for future multi-company access. No function definition or grant was changed.

@@ -15,7 +15,7 @@ from information_schema.columns
 where table_schema = 'public'
   and (
     (table_name in ('drivers', 'vehicles') and column_name in ('id', 'company_id', 'profile_id'))
-    or (table_name = 'vehicle_assignments' and column_name in ('id', 'driver_id', 'vehicle_id', 'active'))
+    or (table_name = 'vehicle_assignments' and column_name in ('id', 'driver_id', 'vehicle_id', 'active_from', 'active_until'))
   )
 order by table_name, ordinal_position;
 
@@ -49,10 +49,11 @@ select 'vehicles',
        count(*) filter (where company_id is null)
 from public.vehicles;
 
--- 5. Duplicate active assignments (informational; schema-specific active semantics).
+-- 5. Duplicate currently active assignments (date-range semantics).
 select driver_id, count(*) as active_assignment_count
 from public.vehicle_assignments
-where coalesce(active, true) = true
+where active_from <= current_date
+  and (active_until is null or active_until >= current_date)
 group by driver_id
 having count(*) > 1
 order by active_assignment_count desc;

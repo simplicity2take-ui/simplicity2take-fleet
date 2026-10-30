@@ -2133,7 +2133,8 @@ async function saveDriver(values, id) {
   if (!id) {
     if (!values.password || values.password.length < 8) throw new Error("Use pelo menos 8 caracteres na palavra-passe inicial.");
     if (values.password !== values.passwordConfirm) throw new Error("As palavras-passe não coincidem.");
-    const { data, error } = await supabaseClient.functions.invoke("admin-create-driver", { body: { fullName: values.name, email: values.email, phone: values.phone, status: values.status, password: values.password } });
+    if (!state.currentCompanyId) throw new Error("Selecione uma empresa antes de criar o motorista.");
+    const { data, error } = await supabaseClient.functions.invoke("admin-create-driver", { body: { companyId: state.currentCompanyId, fullName: values.name, email: values.email, phone: values.phone, status: values.status, password: values.password } });
     if (error) throw error;
     if (!data?.ok) throw new Error(data?.error || "Não foi possível criar o motorista.");
     showToast("Motorista criado. Entregue a palavra-passe diretamente.");

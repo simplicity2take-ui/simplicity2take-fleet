@@ -37,6 +37,12 @@ export function hasArrayFrom(payload: any, keys: string[]): boolean {
   return false;
 }
 
+/** Only an active global Fleet administrator may invoke privileged sync. */
+export function isActiveGlobalAdmin(profile: { role?: unknown; status?: unknown } | null | undefined): boolean {
+  return clean(profile?.role).trim().toLowerCase() === "admin" &&
+    clean(profile?.status).trim().toLowerCase() === "ativo";
+}
+
 /** Existing Fleet status is administrative and must not be overwritten by provider sync. */
 export function statusForSync(sourceStatus: unknown, existingStatus: unknown): string {
   const current = clean(existingStatus).trim();

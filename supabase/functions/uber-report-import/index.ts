@@ -49,20 +49,26 @@ function parseCsv(text: string) {
   );
 }
 function numberValue(v: string) {
-  if (!v) return null;
-  let normalized = String(v).trim().replace(/[%€$£\s]/g, "");
+  const input = String(v ?? "").trim();
+  if (!input) return null;
+  let normalized = input.replace(/[€$£%\\s\\u00a0]/g, "");
   if (!normalized) return null;
   const comma = normalized.lastIndexOf(",");
   const dot = normalized.lastIndexOf(".");
   if (comma >= 0 && dot >= 0) {
-    if (comma > dot) normalized = normalized.replace(/\./g, "").replace(",", ".");
+    if (comma > dot) normalized = normalized.replace(/\\./g, "").replace(",", ".");
     else normalized = normalized.replace(/,/g, "");
   } else if (comma >= 0) {
-    normalized = normalized.replace(/\./g, "").replace(",", ".");
+    normalized = normalized.replace(/\\./g, "").replace(",", ".");
   }
-  normalized = normalized.replace(/[^0-9+\-.]/g, "");
+  // Reject malformed values instead of stripping arbitrary characters
+  // (which could silently turn e.g. "12abc" into 12).
+  if (!/^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)$/.test(normalized)) {
+    throw new Error("Valor numérico inválido no CSV: " + input.slice(0, 40));
+  }
   const n = Number(normalized);
-  return normalized && Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) throw new Error("Valor numérico fora do intervalo permitido.");
+  return n;
 }
 async function getRestRows(path: string) {
   const response = await fetch(SUPABASE_URL + "/rest/v1/" + path, {

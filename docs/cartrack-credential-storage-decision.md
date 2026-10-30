@@ -100,3 +100,53 @@ A further SELECT-only catalog inspection confirmed:
 - No grant, function, extension, secret or production setting was changed.
 
 **Implication:** Supabase Vault is a realistic no-new-vendor candidate, but the existing service-role access to decrypted secrets makes least-privilege controls and Edge Function review mandatory. The credential resolver must not become a broadly callable public RPC, and the application must never receive decrypted credentials.
+
+
+## Frontend read-path review and tenant-safe API contract (30 October 2026)
+
+### Verified current behavior
+
+A review of the default-branch `app.js` (lines 184–204) confirms that `loadBackendData()` directly queries:
+
+- `cartrack_vehicles.select("*")`, ordered by registration;
+- `cartrack_vehicle_snapshots.select("*")`, ordered by observation time and limited to 5,000 rows.
+
+The current RLS catalog confirms:
+
+- Both CarTrack tables have RLS enabled, not forced.
+- Each table has one SELECT policy for `authenticated` using `s2t_is_admin()`.
+- `authenticated` has SELECT privilege on both tables; `anon` does not.
+- Therefore the present direct reads are global-admin-only through RLS. Company admins and drivers are not yet granted company-scoped CarTrack reads.
+- The frontend requests every column, including raw JSON payload fields. The policy currently limits this to global admins, but this is too broad as the eventual multi-company read contract.
+- `get_cartrack_fleet_data()` is executable by `authenticated`, but its SECURITY DEFINER body returns the full two-table JSON result only when `s2t_is_admin()` is true. This is not a tenant-scoped read API.
+
+### Required future read contract
+
+Do not simply replace the global-admin policy with `company_id = ...` on the legacy CarTrack tables. Their current provider IDs are not canonical Fleet vehicle UUIDs and they do not have a trustworthy company ownership column.
+
+Instead, after the account/mapping schema is implemented:
+
+1. The browser calls one purpose-built read endpoint for the current authenticated user's permitted company scope. It does not supply an authoritative company ID, provider account ID or secret reference.
+2. The server derives the user's memberships/role from trusted authorization data.
+3. The query joins the snapshot to its canonical mapping and then to the Fleet vehicle and account; it verifies that mapping company, account company and vehicle company agree.
+4. The response is an explicit allowlist only, for example: canonical vehicle UUID, safe registration display value, observation timestamp, odometer km, speed, ignition/idling and freshness indicator. No `raw` JSON, terminal serial, credentials, provider diagnostics or internal account references are returned by default.
+5. A driver-facing projection, if approved, is separately constrained to a currently assigned vehicle and the minimum fields required for that screen.
+6. Global administrators may have a separate fleet-wide administrative view, but it must still use the allowlisted projection and be auditable.
+7. The existing direct table reads are removed only in the same reviewed change that introduces and tests the replacement read path. Do not remove them prematurely and break the current administrator screen.
+
+### Test cases for the read path
+
+- Global admin sees only the allowlisted fields for all explicitly managed companies.
+- Company A admin sees Company A mappings/snapshots and no Company B records.
+- Company B admin sees Company B mappings/snapshots and no Company A records.
+- A company admin cannot change the requested company/account by editing browser request parameters.
+- A user with no active company membership receives no company telemetry.
+- A driver receives no telemetry unless the driver-view requirement is explicitly enabled; if enabled, only currently assigned vehicle data is returned.
+- Raw provider JSON and internal terminal/account identifiers are absent from every client response.
+- A cross-company or inactive mapping is rejected even when invoked by service_role.
+- Direct REST SELECT against legacy tables does not provide a bypass to non-admin company members.
+- A global admin's UI remains functional after moving from `SELECT *` to the allowlisted endpoint.
+
+### Current impact and release decision
+
+No production data, RLS policy, table grant, RPC, frontend code or Edge Function was changed. The current global-admin-only policy remains intact. The frontend read-path refactor is **blocked** until the canonical mapping relation and allowlisted read endpoint can be tested together in an isolated database.

@@ -141,7 +141,7 @@ create or replace function public.sync_uber_driver_activity(p_rows jsonb)
 returns jsonb language plpgsql security definer set search_path = ''
 as $function$
 declare
-  r jsonb; n integer := 0; d_id uuid; v_company_id uuid; v_uuid text;
+  r jsonb; n integer := 0; affected integer := 0; d_id uuid; v_company_id uuid; v_uuid text;
 begin
   if current_setting('request.jwt.claim.role', true) <> 'service_role' then raise exception 'service_role required' using errcode='42501'; end if;
   select id into v_company_id from public.companies where slug='simplicity2take' and status='Ativa' limit 1;

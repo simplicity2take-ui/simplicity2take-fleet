@@ -334,12 +334,12 @@ Deno.serve(async (req) => {
     // constraints and fail the whole batch. Reject the CSV before any RPC call.
     const identityHeader = type.startsWith("vehicle_") ? "UUID do veículo" : "UUID do motorista";
     const rowsWithoutIdentity = rows
-      .map((row, index) => ({ rowNumber: index + 2, value: String(row[identityHeader] || "").trim() }))
+      .map((row, index) => ({ recordNumber: index + 2, value: String(row[identityHeader] || "").trim() }))
       .filter(item => !item.value);
     if (rowsWithoutIdentity.length) {
-      const examples = rowsWithoutIdentity.slice(0, 5).map(item => String(item.rowNumber)).join(", ");
+      const examples = rowsWithoutIdentity.slice(0, 5).map(item => String(item.recordNumber)).join(", ");
       throw new Error("CSV inválido: existem " + rowsWithoutIdentity.length +
-        " linhas sem " + identityHeader + " (linha(s): " + examples + ").");
+        " registo(s) sem " + identityHeader + " (registo(s): " + examples + ").");
     }
 
     if (type === "trip_activity") {

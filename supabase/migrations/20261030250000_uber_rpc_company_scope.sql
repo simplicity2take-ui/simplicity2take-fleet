@@ -130,7 +130,8 @@ begin
       online_duration_minutes=excluded.online_duration_minutes,trip_duration_minutes=excluded.trip_duration_minutes,
       raw=excluded.raw,imported_at=now()
     where public.uber_driver_activity.company_id=excluded.company_id;
-    n:=n+1;
+    get diagnostics affected = row_count;
+    n:=n+affected;
   end loop;
   return jsonb_build_object('saved',n);
 end;
@@ -139,7 +140,7 @@ $function$;
 create or replace function public.sync_uber_driver_payments(p_rows jsonb)
 returns jsonb language plpgsql security definer set search_path = ''
 as $function$
-declare r jsonb; n integer:=0; d_id uuid; v_company_id uuid; v_uuid text;
+declare r jsonb; n integer:=0; affected integer:=0; d_id uuid; v_company_id uuid; v_uuid text;
 begin
   if current_setting('request.jwt.claim.role', true) <> 'service_role' then raise exception 'service_role required' using errcode='42501'; end if;
   select id into v_company_id from public.companies where slug='simplicity2take' and status='Ativa' limit 1;
@@ -158,7 +159,8 @@ begin
       service_fee=excluded.service_fee,tolls=excluded.tolls,tips=excluded.tips,adjustments=excluded.adjustments,
       raw=excluded.raw,imported_at=now()
     where public.uber_driver_payments.company_id=excluded.company_id;
-    n:=n+1;
+    get diagnostics affected = row_count;
+    n:=n+affected;
   end loop;
   return jsonb_build_object('saved',n);
 end;
@@ -167,7 +169,7 @@ $function$;
 create or replace function public.sync_uber_driver_quality(p_rows jsonb)
 returns jsonb language plpgsql security definer set search_path = ''
 as $function$
-declare r jsonb; n integer:=0; d_id uuid; v_company_id uuid; v_uuid text;
+declare r jsonb; n integer:=0; affected integer:=0; d_id uuid; v_company_id uuid; v_uuid text;
 begin
   if current_setting('request.jwt.claim.role', true) <> 'service_role' then raise exception 'service_role required' using errcode='42501'; end if;
   select id into v_company_id from public.companies where slug='simplicity2take' and status='Ativa' limit 1;
@@ -193,7 +195,8 @@ begin
       driver_cancelled_trips=excluded.driver_cancelled_trips,failed_trips=excluded.failed_trips,
       total_trip_assignments=excluded.total_trip_assignments,raw=excluded.raw,imported_at=now()
     where public.uber_driver_quality.company_id=excluded.company_id;
-    n:=n+1;
+    get diagnostics affected = row_count;
+    n:=n+affected;
   end loop;
   return jsonb_build_object('saved',n);
 end;
@@ -202,7 +205,7 @@ $function$;
 create or replace function public.sync_uber_driver_time_distance(p_rows jsonb)
 returns jsonb language plpgsql security definer set search_path = ''
 as $function$
-declare r jsonb; n integer:=0; d_id uuid; v_company_id uuid; v_uuid text;
+declare r jsonb; n integer:=0; affected integer:=0; d_id uuid; v_company_id uuid; v_uuid text;
 begin
   if current_setting('request.jwt.claim.role', true) <> 'service_role' then raise exception 'service_role required' using errcode='42501'; end if;
   select id into v_company_id from public.companies where slug='simplicity2take' and status='Ativa' limit 1;
@@ -223,7 +226,8 @@ begin
       trip_distance_km=excluded.trip_distance_km,unavailable_distance_km=excluded.unavailable_distance_km,
       raw=excluded.raw,imported_at=now()
     where public.uber_driver_time_distance.company_id=excluded.company_id;
-    n:=n+1;
+    get diagnostics affected = row_count;
+    n:=n+affected;
   end loop;
   return jsonb_build_object('saved',n);
 end;
@@ -232,7 +236,7 @@ $function$;
 create or replace function public.sync_uber_vehicle_performance(p_rows jsonb)
 returns jsonb language plpgsql security definer set search_path = ''
 as $function$
-declare r jsonb; n integer:=0; v_id uuid; v_company_id uuid; v_uuid text; v_plate text;
+declare r jsonb; n integer:=0; affected integer:=0; v_id uuid; v_company_id uuid; v_uuid text; v_plate text;
 begin
   if current_setting('request.jwt.claim.role', true) <> 'service_role' then raise exception 'service_role required' using errcode='42501'; end if;
   select id into v_company_id from public.companies where slug='simplicity2take' and status='Ativa' limit 1;
@@ -260,7 +264,8 @@ begin
       failed_trips=excluded.failed_trips,total_trip_assignments=excluded.total_trip_assignments,
       raw=excluded.raw,imported_at=now()
     where public.uber_vehicle_performance.company_id=excluded.company_id;
-    n:=n+1;
+    get diagnostics affected = row_count;
+    n:=n+affected;
   end loop;
   return jsonb_build_object('saved',n);
 end;
@@ -269,7 +274,7 @@ $function$;
 create or replace function public.sync_uber_vehicle_time_distance(p_rows jsonb)
 returns jsonb language plpgsql security definer set search_path = ''
 as $function$
-declare r jsonb; n integer:=0; v_id uuid; v_company_id uuid; v_uuid text; v_plate text;
+declare r jsonb; n integer:=0; affected integer:=0; v_id uuid; v_company_id uuid; v_uuid text; v_plate text;
 begin
   if current_setting('request.jwt.claim.role', true) <> 'service_role' then raise exception 'service_role required' using errcode='42501'; end if;
   select id into v_company_id from public.companies where slug='simplicity2take' and status='Ativa' limit 1;
@@ -292,7 +297,8 @@ begin
       route_distance_km=excluded.route_distance_km,trip_distance_km=excluded.trip_distance_km,
       unavailable_distance_km=excluded.unavailable_distance_km,raw=excluded.raw,imported_at=now()
     where public.uber_vehicle_time_distance.company_id=excluded.company_id;
-    n:=n+1;
+    get diagnostics affected = row_count;
+    n:=n+affected;
   end loop;
   return jsonb_build_object('saved',n);
 end;

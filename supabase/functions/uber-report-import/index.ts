@@ -294,17 +294,37 @@ Deno.serve(async (req) => {
     const rows = parseCsv(await req.text());
     if (!rows.length) throw new Error("CSV vazio ou sem linhas de dados.");
     const headers = new Set(Object.keys(rows[0] || {}));
-    const requireAnyHeader = (names: string[], description: string) => {
-      if (!names.some(name => headers.has(name))) {
-        throw new Error(`Este CSV não parece ser um relatório de ${description}. Colunas esperadas: ${names.join(" ou ")}.`);
+    const requireHeaders = (names: string[], description: string) => {
+      const missing = names.filter(name => !headers.has(name));
+      if (missing.length) {
+        throw new Error("CSV de " + description + " incompleto. Colunas em falta: " + missing.join(", ") + ".");
       }
     };
-    if (type === "status" || type === "activity" || type === "driver_time_distance" || type === "driver_quality" || type === "driver_payments" || type === "trip_activity") {
-      requireAnyHeader(["UUID do motorista"], "motoristas");
+    const requireAnyHeader = (names: string[], description: string) => {
+      if (!names.some(name => headers.has(name))) {
+        throw new Error("Este CSV não parece ser um relatório de " + description + ". Colunas esperadas: " + names.join(" ou ") + ".");
+      }
+    };
+    if (type === "status") {
+      requireHeaders(["UUID do motorista", "Estado", "Última vez online"], "estado dos motoristas");
+    } else if (type === "activity") {
+      requireHeaders(["UUID do motorista", "Viagens concluídas", "Tempo online (dias: horas: minutos)", "Tempo em viagem (dias: horas: minutos)"], "atividade dos motoristas");
+    } else if (type === "driver_time_distance") {
+      requireHeaders(["UUID do motorista", "Hora de abertura", "Tempo em rota", "Tempo em viagem", "Tempo indisponível", "Distância livre", "Distância em rota", "Distância em viagem", "Distância indisponível"], "tempo e distância dos motoristas");
+    } else if (type === "driver_quality") {
+      requireHeaders(["UUID do motorista", "Viagens concluídas", "Taxa de aceitação", "Taxa de cancelamento", "Taxa de conclusão", "Classificações do motorista (últimas 4 semanas)", "Classificações do motorista (500 viagens anteriores)", "Taxa de aceitação atual do motorista, tal como apresentada na aplicação para motoristas", "Taxa de cancelamento atual do motorista, tal como apresentada na aplicação para motoristas", "Viagens aceites (excluindo radar de viagem ou semelhante)", "Viagens rejeitadas", "Viagens Canceladas", "Viagens canceladas por motoristas responsáveis", "Falha nas viagens", "Total de Atribuições de Viagens"], "qualidade dos motoristas");
+    } else if (type === "driver_payments") {
+      requireHeaders(["UUID do motorista", "Pago a si", "Pago a si : Os seus rendimentos"], "pagamentos dos motoristas");
+      requireAnyHeader(["Pago a si : Os seus rendimentos : Taxa de serviço", "Pago a si:Os seus rendimentos:Taxa de serviço"], "pagamentos dos motoristas");
+      requireAnyHeader(["Pago a si : Saldo da viagem : Reembolsos : Portagem", "Pago a si:Saldo da viagem:Reembolsos:Portagem"], "pagamentos dos motoristas");
+      requireAnyHeader(["Pago a si : Os seus rendimentos : Gratificação", "Pago a si:Os seus rendimentos:Gratificação"], "pagamentos dos motoristas");
+      requireAnyHeader(["Pago a si : Os seus rendimentos : Outros rendimentos : Ajustes após a viagem", "Pago a si:Os seus rendimentos:Outros rendimentos:Ajustes após a viagem"], "pagamentos dos motoristas");
     } else if (type === "vehicle_performance") {
-      requireAnyHeader(["UUID do veículo", "Número da matrícula do veículo"], "desempenho de viaturas");
+      requireHeaders(["UUID do veículo", "Número da matrícula do veículo", "Rendimentos totais", "Rendimentos/hora", "Dinheiro recebido", "Viagens/hora", "Horas online", "Horas em viagem", "Horas de trabalho", "Total Trips", "Acceptance Rate", "Taxa de cancelamento", "Viagens aceites (excluindo radar de viagem ou semelhante)", "Viagens rejeitadas", "Viagens Canceladas", "Falha nas viagens", "Total de Atribuições de Viagens"], "desempenho de viaturas");
     } else if (type === "vehicle_time_distance") {
-      requireAnyHeader(["UUID do veículo", "Matrícula do veículo"], "tempo e distância de viaturas");
+      requireHeaders(["UUID do veículo", "Matrícula do veículo", "Hora de abertura", "Tempo em rota", "Tempo em viagem", "Tempo indisponível", "Distância livre", "Distância em rota", "Distância em viagem", "Distância indisponível"], "tempo e distância de viaturas");
+    } else if (type === "trip_activity") {
+      requireAnyHeader(["UUID do motorista"], "motoristas");
     } else {
       throw new Error("Tipo de relatório inválido");
     }

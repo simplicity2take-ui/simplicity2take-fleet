@@ -147,3 +147,15 @@ The read-only query bundle is saved as `supabase/tests/cartrack_tenant_inventory
 - Do not change production grants, RLS, function definitions or data.
 - Do not call CarTrack's live API or deploy the Edge Function.
 - Do not claim tenant isolation merely because the tables have RLS enabled: the current policies are global-admin-only, and the service-role writer bypasses RLS.
+
+
+## Additional CarTrack security-advisor finding
+
+A read-only Supabase Security Advisor check (30 October 2026) reported `public.get_cartrack_fleet_data()` as a SECURITY DEFINER function executable by `authenticated`. Inspection confirms it:
+- uses `SECURITY DEFINER` with `search_path=public`;
+- returns complete `to_jsonb` rows from both CarTrack tables, including the stored raw provider payloads;
+- applies `where public.s2t_is_admin()` before returning the JSON.
+
+This is not, by itself, proof of an authorization bypass: the function has an explicit global-admin predicate. It is nevertheless a privileged public-schema RPC with a broad result shape and should be reviewed for least privilege. The target design should expose only allowlisted telemetry fields, keep raw provider payloads server-side, pin an empty search_path with fully qualified object names, and restrict EXECUTE to the narrowest required role. Do not change the existing function's grants until its callers and dependencies have been checked.
+
+The advisor also reported three other SECURITY DEFINER helper functions and a disabled leaked-password protection setting. Those are tracked as separate platform-wide security work, not silently changed in this CarTrack task.

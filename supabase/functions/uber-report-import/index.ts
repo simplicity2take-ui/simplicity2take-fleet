@@ -114,7 +114,11 @@ function integerValue(v: string, fieldName = "quantidade") {
 function rateValue(v: string) {
   const n = numberValue(v);
   if (n === null) return null;
-  return v.includes("%") ? n / 100 : n;
+  const rate = v.includes("%") ? n / 100 : n;
+  if (rate < 0 || rate > 1) {
+    throw new Error("Taxa inválida no CSV: é esperado um valor entre 0% e 100%.");
+  }
+  return rate;
 }
 function minutes(v: string, fieldName = "duração") {
   const input = String(v || "").trim();

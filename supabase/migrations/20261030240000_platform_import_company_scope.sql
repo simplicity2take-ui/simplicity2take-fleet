@@ -67,6 +67,15 @@ where company_id is null;
 alter table public.platform_activity_events alter column company_id set not null;
 alter table public.platform_trip_records alter column company_id set not null;
 
+-- Replace legacy global provider keys with tenant-scoped keys.
+drop index if exists public.platform_activity_events_event_key_key;
+drop index if exists public.platform_trip_records_platform_source_trip_id_key;
+
+create unique index if not exists platform_activity_events_company_event_key_uidx
+  on public.platform_activity_events(company_id, event_key);
+create unique index if not exists platform_trip_records_company_platform_trip_uidx
+  on public.platform_trip_records(company_id, platform, source_trip_id);
+
 create index if not exists platform_activity_events_company_observed_idx
   on public.platform_activity_events(company_id, observed_at desc);
 create index if not exists platform_trip_records_company_observed_idx
@@ -133,7 +142,7 @@ begin
    and v.company_id = s2t_company_id
   where nullif(e->>'event_key','') is not null
     and nullif(e->>'created_at','') is not null
-  on conflict (event_key) do update set
+  on conflict (company_id, event_key) do update set
     driver_id = excluded.driver_id,
     vehicle_id = excluded.vehicle_id,
     status = excluded.status,
@@ -178,7 +187,7 @@ begin
     )
    and v.company_id = s2t_company_id
   where nullif(t->>'source_trip_id','') is not null
-  on conflict (platform, source_trip_id) do update set
+  on conflict (company_id, platform, source_trip_id) do update set
     driver_id = excluded.driver_id,
     vehicle_id = excluded.vehicle_id,
     platform_driver_uuid = excluded.platform_driver_uuid,

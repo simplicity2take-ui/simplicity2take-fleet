@@ -37,6 +37,19 @@ export function hasArrayFrom(payload: any, keys: string[]): boolean {
   return false;
 }
 
+/** Only an active global Fleet administrator may invoke privileged sync. */
+export function isActiveGlobalAdmin(profile: { role?: unknown; status?: unknown } | null | undefined): boolean {
+  return clean(profile?.role).trim().toLowerCase() === "admin" &&
+    clean(profile?.status).trim().toLowerCase() === "ativo";
+}
+
+/** Existing Fleet status is administrative and must not be overwritten by provider sync. */
+export function statusForSync(sourceStatus: unknown, existingStatus: unknown): string {
+  const current = clean(existingStatus).trim();
+  if (current) return current;
+  return statusToPortal(sourceStatus, "Inativo");
+}
+
 export function statusToPortal(value: unknown, current = "Inativo"): string {
   const status = clean(value).trim().toLowerCase();
   if (!status) return current || "Ativo";
@@ -136,4 +149,13 @@ export function safeSyncError(_error: unknown): { code: string; message: string 
 /** Write mode is denied unless both independent opt-ins are explicit. */
 export function isBoltWriteAllowed(serverOptIn: unknown, requestConfirmation: unknown): boolean {
   return serverOptIn === "true" && requestConfirmation === true;
+}
+
+
+/** Detect whether a target vehicle is already active for a different driver. */
+export function hasOtherDriverAssignment(
+  activeAssignments: Array<{ driver_id: string | number | null }>,
+  driverId: string | number,
+): boolean {
+  return activeAssignments.some((assignment) => assignment.driver_id !== driverId);
 }

@@ -14,7 +14,7 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway-v2";
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
-import { assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusToPortal, isBoltWriteAllowed } from "./normalization.ts";
+import { assertCompatibleExternalId, assertNoDuplicateExternalIdentity, assertRequiredExternalIdentities, clean, decideAssignment, hasOtherDriverAssignment, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, safeSyncError, statusForSync, statusToPortal, isBoltWriteAllowed, isActiveGlobalAdmin } from "./normalization.ts";
 import { extractBoltCompanies, fetchAllBoltPages } from "./bolt-v2.ts";
 
 async function getBoltToken() {
@@ -92,7 +92,7 @@ async function upsertVehicle(admin: any, vehicle: any, now: string) {
     model: model || existing?.model || "",
     vehicle_year: year || existing?.vehicle_year || null,
     vin: vin || existing?.vin || null,
-    status: statusToPortal(state, existing?.status || "Inativo"),
+    status: existing ? statusForSync(state, existing.status) : statusToPortal(state, "Inativo"),
     bolt_vehicle_uuid: boltId || existing?.bolt_vehicle_uuid || null,
     bolt_last_synced_at: now
   };
@@ -141,7 +141,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     full_name: fullName || existing?.full_name || "Motorista Bolt",
     email: email || existing?.email || null,
     phone: phone || existing?.phone || null,
-    status: statusToPortal(state, existing?.status || "Inativo"),
+    status: existing ? statusForSync(state, existing.status) : statusToPortal(state, "Inativo"),
     bolt_driver_uuid: boltId || existing?.bolt_driver_uuid || null,
     bolt_partner_uuid: partnerUuid || existing?.bolt_partner_uuid || null,
     bolt_last_synced_at: now
@@ -162,14 +162,33 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   if (assignedVehicle?.id) {
     // Never delete assignment history during an external sync. If a different
     // active assignment exists, flag it for review instead of silently replacing it.
+    const assignmentDate = new Date().toISOString().slice(0, 10);
     const activeResult = await admin.from("vehicle_assignments")
       .select("id, vehicle_id")
       .eq("driver_id", row.id)
-      .is("active_until", null);
+      .lte("active_from", assignmentDate)
+      .or(`active_until.is.null,active_until.gte.${assignmentDate}`);
     if (activeResult.error) throw activeResult.error;
     const activeAssignments = activeResult.data || [];
+
+    // Check the other side of the relationship as well: another driver may
+    // already have this vehicle active. This is a fail-closed pre-insert check;
+    // a database transaction/constraint is still required to prevent races.
+    const vehicleActiveResult = await admin.from("vehicle_assignments")
+      .select("id, driver_id")
+      .eq("vehicle_id", assignedVehicle.id)
+      .lte("active_from", assignmentDate)
+      .or(`active_until.is.null,active_until.gte.${assignmentDate}`);
+    if (vehicleActiveResult.error) throw vehicleActiveResult.error;
+    const vehicleHasOtherDriver = hasOtherDriverAssignment(
+      vehicleActiveResult.data || [],
+      row.id,
+    );
+
     const decision = decideAssignment(activeAssignments, assignedVehicle.id);
-    if (decision === "unchanged") {
+    if (vehicleHasOtherDriver) {
+      assignmentAction = "conflict";
+    } else if (decision === "unchanged") {
       assignmentAction = "unchanged";
     } else if (decision === "conflict") {
       assignmentAction = "conflict";
@@ -190,6 +209,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return json({ ok: false, error: "Método não permitido." }, 405);
   try {
     const authHeader = req.headers.get("Authorization") || "";
     const userToken = authHeader.replace(/^Bearer\s+/i, "");
@@ -199,8 +219,14 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(supabaseUrl, serviceRoleKey);
     const { data: authData, error: authError } = await admin.auth.getUser(userToken);
     if (authError || !authData.user) return json({ ok: false, error: "Sessão inválida." }, 401);
-    const callerEmail = (authData.user.email || "").toLowerCase();
-    if (callerEmail !== "simplicity2take@gmail.com") return json({ ok: false, error: "Apenas o administrador pode sincronizar a Bolt." }, 403);
+    const { data: profile, error: profileError } = await admin
+      .from("profiles")
+      .select("role,status")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+    if (profileError || !isActiveGlobalAdmin(profile)) {
+      return json({ ok: false, error: "Apenas um administrador ativo pode sincronizar a Bolt." }, 403);
+    }
 
     const token = await getBoltToken();
     const companiesPayload = await boltPost("/fleetIntegration/v2/getCompanies", token);

@@ -5,11 +5,14 @@ import {
   assertNoDuplicateExternalIdentity,
   assertRequiredExternalIdentities,
   decideAssignment,
+  hasOtherDriverAssignment,
   normalizeActiveVehicle,
   normalizeDriverId,
   normalizePlate,
   normalizeVehicleId,
   statusToPortal,
+  statusForSync,
+  isActiveGlobalAdmin,
   safeSyncError,
   isBoltWriteAllowed,
 } from "./normalization.ts";
@@ -241,3 +244,43 @@ Deno.test("safe sync error also hides secrets from non-Error thrown values", () 
   }
 });
 
+
+
+Deno.test("vehicle assignment conflict is detected when another driver already owns the active vehicle", () => {
+  assertEquals(hasOtherDriverAssignment([{ driver_id: "driver-a" }], "driver-b"), true);
+  assertEquals(hasOtherDriverAssignment([{ driver_id: "driver-a" }], "driver-a"), false);
+  assertEquals(hasOtherDriverAssignment([], "driver-b"), false);
+  assertEquals(hasOtherDriverAssignment([
+    { driver_id: "driver-b" },
+    { driver_id: "driver-a" },
+  ], "driver-b"), true);
+});
+
+
+Deno.test("Bolt sync preserves an existing manually inactive Fleet vehicle", () => {
+  assertEquals(statusForSync("active", "Inativo"), "Inativo");
+});
+
+Deno.test("Bolt sync preserves an existing manually active Fleet vehicle", () => {
+  assertEquals(statusForSync("inactive", "Ativo"), "Ativo");
+});
+
+Deno.test("Bolt sync preserves any existing Fleet status verbatim", () => {
+  assertEquals(statusForSync("active", "Em manutenção"), "Em manutenção");
+});
+
+Deno.test("Bolt sync maps provider status only when creating a new Fleet record", () => {
+  assertEquals(statusForSync("active", ""), "Ativo");
+  assertEquals(statusForSync("inactive", ""), "Inativo");
+  assertEquals(statusForSync("", ""), "Inativo");
+});
+
+
+Deno.test("Bolt sync authorization requires an active global admin profile", () => {
+  assertEquals(isActiveGlobalAdmin({ role: "admin", status: "Ativo" }), true);
+  assertEquals(isActiveGlobalAdmin({ role: "admin", status: "Inativo" }), false);
+  assertEquals(isActiveGlobalAdmin({ role: "company_admin", status: "Ativo" }), false);
+  assertEquals(isActiveGlobalAdmin({ role: "driver", status: "Ativo" }), false);
+  assertEquals(isActiveGlobalAdmin(null), false);
+  assertEquals(isActiveGlobalAdmin(undefined), false);
+});

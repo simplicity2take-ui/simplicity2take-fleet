@@ -40,3 +40,21 @@
 - No migration generated or deployed.
 - No assignment history deleted or modified.
 - No PR merged.
+
+
+## Application integration added in PR #37
+
+- Editing a vehicle now calls `s2t_replace_vehicle_assignments`; the browser no longer deletes/reinserts assignment rows directly.
+- The vehicle action is now **Arquivar**: active assignments are closed through the RPC and the vehicle status is set to `Inativo`; the vehicle row is retained.
+- The driver action is now **Desativar**: `s2t_deactivate_driver` closes active assignments and sets the driver status to `Inativo` in one transaction; the driver row and documents remain.
+- Assignment replacement now rejects inactive drivers, preventing them from being newly assigned.
+
+## Additional SQL preflight
+
+`supabase/tests/assignment_history_guard_preflight.sql` checks, without creating fixtures, that:
+- the driver trigger includes `profile_id`;
+- the trigger function contains the global-admin guard;
+- no authenticated/public DELETE policy or table DELETE grant remains on `vehicle_assignments`;
+- both RPCs are SECURITY INVOKER and executable by authenticated but not anon.
+
+This preflight is not a substitute for behavioral tests with two authenticated users in two companies. It has not been run because no disposable database has been provisioned.

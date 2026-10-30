@@ -454,7 +454,7 @@ function alertLevel(doc) {
 
 function visibleDocuments() {
   const user = currentUser();
-  if (user.role === "admin" || state.currentCompanyRole === "company_admin") return companyDocuments();
+  if (user.role === "admin" || state.currentCompanyRole) return companyDocuments();
   return driverDocuments();
 }
 
@@ -734,9 +734,15 @@ async function logout() {
   selectors.loginPassword.value = "";
 }
 
+function navigationForUser() {
+  if (currentUser().role === "admin") return navByRole.admin;
+  if (state.currentCompanyRole) return [["documents", "Documentos da Empresa", "DO"], ["account", "Minha Conta", "EU"]];
+  return navByRole.driver;
+}
+
 function renderApp() {
   const user = currentUser();
-  selectors.sessionRole.textContent = user.role === "admin" ? "Administrador" : "Motorista";
+  selectors.sessionRole.textContent = user.role === "admin" ? "Administrador" : state.currentCompanyRole ? "Utilizador da Empresa" : "Motorista";
   selectors.sessionName.textContent = user.name;
   renderNav();
   renderContent();
@@ -744,7 +750,7 @@ function renderApp() {
 
 function renderNav() {
   const user = currentUser();
-  selectors.sideNav.innerHTML = navByRole[user.role].map(([view, label, icon]) => `
+  selectors.sideNav.innerHTML = navigationForUser().map(([view, label, icon]) => `
     <button class="nav-item ${state.activeView === view ? "active" : ""}" type="button" data-view="${view}">
       <span class="nav-icon">${icon}</span>
       <span>${label}</span>
@@ -753,7 +759,7 @@ function renderNav() {
 }
 
 function setView(view) {
-  const allowed = navByRole[currentUser().role].some(item => item[0] === view);
+  const allowed = navigationForUser().some(item => item[0] === view);
   if (!allowed) return;
   state.activeView = view;
   renderApp();
@@ -1008,7 +1014,7 @@ function driverRow(driver) {
 
 function renderDocuments() {
   const globalAdmin = currentUser().role === "admin";
-  const companyAdmin = globalAdmin || state.currentCompanyRole === "company_admin";
+  const companyAdmin = globalAdmin || Boolean(state.currentCompanyRole);
   const documents = companyAdmin ? companyDocuments() : driverDocuments();
   selectors.pageTitle.textContent = companyAdmin ? "Documentos da Empresa" : "Meus Documentos";
   selectors.content.innerHTML = `

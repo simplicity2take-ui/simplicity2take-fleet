@@ -82,6 +82,25 @@ async function getRestRows(path: string) {
   }
   return await response.json();
 }
+function uberStatusTimestamp(v: string) {
+  const input = String(v || "").trim();
+  if (!input) return null;
+  // Uber status exports include an explicit numeric offset and a timezone label,
+  // e.g. "2026-10-14 15:03:37.044 +0100 WEST".
+  const match = input.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))? ([+-])(\d{2})(\d{2})(?: [A-Za-z_+-]+)?$/);
+  if (!match) throw new Error("Última vez online inválida no CSV: formato de data/hora não reconhecido.");
+  const [, year, month, day, hour, minute, second, fraction = "", sign, offsetHour, offsetMinute] = match;
+  const [y, mo, d, h, mi, sec, oh, om] = [year, month, day, hour, minute, second, offsetHour, offsetMinute].map(Number);
+  const probe = new Date(Date.UTC(y, mo - 1, d, h, mi, sec));
+  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== mo - 1 ||
+      probe.getUTCDate() !== d || h > 23 || mi > 59 || sec > 59 ||
+      oh > 14 || om > 59 || (oh === 14 && om !== 0)) {
+    throw new Error("Última vez online inválida no CSV: confirme a data, hora e fuso horário.");
+  }
+  const milliseconds = (fraction + "000").slice(0, 3);
+  return year + "-" + month + "-" + day + "T" + hour + ":" + minute + ":" + second +
+    (milliseconds !== "000" ? "." + milliseconds : "") + sign + offsetHour + ":" + offsetMinute;
+}
 function localLisbonTimestamp(value: string) {
   const input = String(value || "").trim();
   if (!input) return null;
@@ -496,7 +515,7 @@ Deno.serve(async (req) => {
         full_name: r["Nome do motorista"],
         email: r["E-mail do motorista"],
         phone: r["Telemóvel"],
-        last_online_at: r["Última vez online"],
+        last_online_at: uberStatusTimestamp(r["Última vez online"]),
         observed_at: new Date().toISOString(),
         raw: r
       }));

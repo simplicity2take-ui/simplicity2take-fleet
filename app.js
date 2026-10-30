@@ -11,6 +11,7 @@ const state = {
   documentContext: "company",
   currentCompanyId: null,
   currentCompanyRole: null,
+  companies: [],
   users: [
     { id: "admin", role: "admin", name: "Administrador Simplicity2Take", email: "admin@simplicity2take.pt", phone: "210000000" },
     { id: "u-joao", role: "driver", name: "João Silva", email: "joao@simplicity2take.pt", phone: "912345678", driverId: "d-joao" },
@@ -163,6 +164,7 @@ const selectors = {
   sessionRole: $("#sessionRole"),
   sessionName: $("#sessionName"),
   pageTitle: $("#pageTitle"),
+  companySwitcher: $("#companySwitcher"),
   modal: $("#entityModal"),
   form: $("#entityForm"),
   modalTitle: $("#modalTitle"),
@@ -249,9 +251,13 @@ async function loadBackendData() {
   if (firstError) throw firstError;
 
   if (currentUser()?.role === "admin") {
-    const companyResult = await supabaseClient.from("companies").select("id").eq("slug", "simplicity2take").maybeSingle();
+    const companyResult = await supabaseClient.from("companies").select("id, slug, legal_name, display_name, status").order("display_name");
     if (companyResult.error) throw companyResult.error;
-    state.currentCompanyId = companyResult.data?.id || null;
+    state.companies = companyResult.data || [];
+    const selected = state.companies.find(company => company.id === state.currentCompanyId && company.status === "Ativa")
+      || state.companies.find(company => company.slug === "simplicity2take" && company.status === "Ativa")
+      || state.companies.find(company => company.status === "Ativa");
+    state.currentCompanyId = selected?.id || null;
   }
 
   const assignments = assignmentsResult.data || [];
@@ -312,7 +318,7 @@ async function loadBackendData() {
   state.activityEvents = (activityResult.data || []).map(row => ({
     id: row.id, driverId: row.driver_id, vehicleId: row.vehicle_id,
     driverUuid: row.platform_driver_uuid, vehicleUuid: row.platform_vehicle_uuid,
-    status: row.status, observedAt: row.observed_at, eventKey: row.event_key
+    status: row.status, observedAt: row.observed_at, eventKey: row.event_key, raw: row
   }));
   state.cartrackVehicles = (cartrackVehiclesResult.data || []).map(row => ({
     registration: row.registration,
@@ -337,7 +343,7 @@ async function loadBackendData() {
     id: row.id, platform: row.platform || "bolt", sourceTripId: row.source_trip_id, driverId: row.driver_id, vehicleId: row.vehicle_id,
     driverUuid: row.platform_driver_uuid, vehicleUuid: row.platform_vehicle_uuid, plate: row.vehicle_plate,
     status: row.order_status, acceptedAt: row.accepted_at, pickupAt: row.pickup_at,
-    dropoffAt: row.dropoff_at, finishedAt: row.finished_at, distance: row.ride_distance_km, observedAt: row.observed_at
+    dropoffAt: row.dropoff_at, finishedAt: row.finished_at, distance: row.ride_distance_km, observedAt: row.observed_at, raw: row
   }));
   const applicationDocuments = applicationDocumentsResult.data || [];
   const applicationMessages = applicationMessagesResult.data || [];
@@ -366,6 +372,20 @@ async function loadBackendData() {
     })),
     raw: row
   }));
+  if (currentUser()?.role === "admin") {
+    const selectedCompany = state.companies.find(company => company.id === state.currentCompanyId);
+    const driverIds = new Set(state.drivers.filter(driver => driver.raw?.company_id === state.currentCompanyId).map(driver => driver.id));
+    const vehicleIds = new Set(state.vehicles.filter(vehicle => vehicle.raw?.company_id === state.currentCompanyId).map(vehicle => vehicle.id));
+    state.drivers = state.drivers.filter(driver => driverIds.has(driver.id));
+    state.vehicles = state.vehicles.filter(vehicle => vehicleIds.has(vehicle.id));
+    state.vehicles.forEach(vehicle => { vehicle.driverIds = vehicle.driverIds.filter(driverId => driverIds.has(driverId)); });
+    state.documents = state.documents.filter(document => document.companyId === state.currentCompanyId);
+    state.activityEvents = state.activityEvents.filter(event => event.raw?.company_id === state.currentCompanyId || driverIds.has(event.driverId) || vehicleIds.has(event.vehicleId));
+    state.tripRecords = state.tripRecords.filter(trip => trip.raw?.company_id === state.currentCompanyId || driverIds.has(trip.driverId) || vehicleIds.has(trip.vehicleId));
+    state.cartrackVehicles = state.cartrackVehicles.filter(vehicle => vehicleIds.has(vehicle.vehicleId));
+    state.cartrackSnapshots = state.cartrackSnapshots.filter(snapshot => vehicleIds.has(snapshot.vehicleId));
+    if (selectedCompany?.slug !== "simplicity2take") state.applications = [];
+  }
   state.backendReady = true;
 }
 
@@ -776,10 +796,21 @@ function navigationForUser() {
   return navByRole.driver;
 }
 
+function renderCompanySwitcher() {
+  const isAdmin = currentUser()?.role === "admin";
+  if (!selectors.companySwitcher) return;
+  selectors.companySwitcher.classList.toggle("hidden", !isAdmin);
+  if (!isAdmin) return;
+  selectors.companySwitcher.innerHTML = state.companies.map(company =>
+    `<option value="${escapeHtml(company.id)}" ${company.id === state.currentCompanyId ? "selected" : ""}>${escapeHtml(company.display_name || company.legal_name)}</option>`
+  ).join("");
+  selectors.companySwitcher.disabled = !state.companies.length;
+}
 function renderApp() {
   const user = currentUser();
   selectors.sessionRole.textContent = user.role === "admin" ? "Administrador" : state.currentCompanyRole ? "Utilizador da Empresa" : "Motorista";
   selectors.sessionName.textContent = user.name;
+  renderCompanySwitcher();
   renderNav();
   renderContent();
 }

@@ -298,6 +298,15 @@ begin
 end;
 $function$;
 
+-- The preceding platform-import migration backfills every legacy report row.
+-- Require ownership on all Uber report records before these RPCs are enabled.
+alter table public.uber_driver_activity alter column company_id set not null;
+alter table public.uber_driver_payments alter column company_id set not null;
+alter table public.uber_driver_quality alter column company_id set not null;
+alter table public.uber_driver_time_distance alter column company_id set not null;
+alter table public.uber_vehicle_performance alter column company_id set not null;
+alter table public.uber_vehicle_time_distance alter column company_id set not null;
+
 -- Keep these privileged import RPCs callable only by the server-side service role.
 revoke all on function public.sync_uber_driver_status(jsonb) from public, anon, authenticated;
 revoke all on function public.sync_uber_driver_activity(jsonb) from public, anon, authenticated;

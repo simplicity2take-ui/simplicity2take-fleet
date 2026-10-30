@@ -198,8 +198,12 @@ async function loadBackendData() {
     ? await supabaseClient.from("company_memberships").select("company_id, role").eq("profile_id", state.sessionUserId).eq("status", "Ativo").limit(1).maybeSingle()
     : { data: null, error: null };
   if (membershipResult.error) throw membershipResult.error;
-  state.currentCompanyId = membershipResult.data?.company_id || null;
-  state.currentCompanyRole = membershipResult.data?.role || null;
+  if (currentUser()?.role !== "admin") {
+    state.currentCompanyId = membershipResult.data?.company_id || null;
+    state.currentCompanyRole = membershipResult.data?.role || null;
+  } else {
+    state.currentCompanyRole = null;
+  }
 
   if (currentUser()?.role !== "admin" && membershipResult.data) {
     // Company members receive only the document data permitted by document RLS.

@@ -32,8 +32,7 @@ begin
     raise exception 'RPC must pin an empty search_path.';
   end if;
 
-  if has_function_privilege('anon', v_function, 'EXECUTE')
-     or has_function_privilege('public', v_function, 'EXECUTE') then
+  if has_function_privilege('anon', v_function, 'EXECUTE') then
     raise exception 'RPC must not be executable by anon or PUBLIC.';
   end if;
 

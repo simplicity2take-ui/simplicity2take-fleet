@@ -34,6 +34,9 @@ where d.company_id is null;
 create index if not exists documents_company_id_idx
   on public.documents(company_id);
 
+alter table public.documents enable row level security;
+alter table public.document_viewers enable row level security;
+
 -- Remove the old permissive document read policy before replacing it with a
 -- single policy that combines global admin, company-admin and driver access.
 drop policy if exists "s2t_documents_admin_or_authorized_driver" on public.documents;
@@ -47,6 +50,12 @@ using (
   or (
     company_id is not null
     and public.s2t_is_company_admin(company_id)
+  )
+  or (
+    company_id is not null
+    and driver_id is null
+    and vehicle_id is null
+    and public.s2t_is_company_member(company_id)
   )
   or (
     driver_id is not null

@@ -86,7 +86,22 @@ async function upsertVehicle(admin: any, vehicle: any, now: string, companyId: s
   const state = first(vehicle, ["state", "status"]);
   let existing: any = null;
   if (boltId) existing = (await admin.from("vehicles").select("*").eq("bolt_vehicle_uuid", boltId).eq("company_id", companyId).maybeSingle()).data;
-  if (!existing && plate) existing = (await admin.from("vehicles").select("*").eq("plate", plate).eq("company_id", companyId).maybeSingle()).data;
+  if (!existing && boltId) {
+    const identityResult = await admin.from("vehicles").select("*").eq("bolt_vehicle_uuid", boltId).maybeSingle();
+    if (identityResult.error) throw new Error("Não foi possível validar a identidade Bolt da viatura.");
+    if (identityResult.data && identityResult.data.company_id !== companyId) {
+      throw new Error("Conflito Bolt: esta viatura já está registada noutra empresa. Não foi alterada.");
+    }
+    existing = identityResult.data;
+  }
+  if (!existing && plate) {
+    const plateResult = await admin.from("vehicles").select("*").ilike("plate", plate).maybeSingle();
+    if (plateResult.error) throw new Error("Não foi possível validar a matrícula da viatura.");
+    if (plateResult.data && plateResult.data.company_id !== companyId) {
+      throw new Error("Conflito de matrícula: esta viatura já está registada noutra empresa. Não foi alterada.");
+    }
+    existing = plateResult.data;
+  }
   const payload: any = {
     plate: plate || existing?.plate || "",
     model: model || existing?.model || "",
@@ -120,6 +135,14 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   const activePlate = normalizePlate(activeVehicle);
   let existing: any = null;
   if (boltId) existing = (await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).eq("company_id", companyId).maybeSingle()).data;
+  if (!existing && boltId) {
+    const identityResult = await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).maybeSingle();
+    if (identityResult.error) throw new Error("Não foi possível validar a identidade Bolt do motorista.");
+    if (identityResult.data && identityResult.data.company_id !== companyId) {
+      throw new Error("Conflito Bolt: este motorista já está registado noutra empresa. Não foi alterado.");
+    }
+    existing = identityResult.data;
+  }
   if (!existing && email) existing = (await admin.from("drivers").select("*").ilike("email", email).eq("company_id", companyId).maybeSingle()).data;
   if (!existing && phone) existing = (await admin.from("drivers").select("*").eq("phone", phone).eq("company_id", companyId).maybeSingle()).data;
   const payload: any = {

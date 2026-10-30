@@ -43,12 +43,42 @@ begin
     raise exception 'FAIL: vehicle_assignments still has a DELETE/ALL policy for authenticated/public';
   end if;
 
-  if has_table_privilege('authenticated', 'public.vehicle_assignments', 'DELETE') then
-    raise exception 'FAIL: authenticated still has DELETE table privilege on vehicle_assignments';
+  if exists (
+    select 1
+    from unnest(array['drivers', 'vehicles', 'vehicle_assignments']) as target(table_name)
+    where has_table_privilege('authenticated', format('public.%I', target.table_name), 'DELETE')
+       or has_table_privilege('anon', format('public.%I', target.table_name), 'DELETE')
+  ) then
+    raise exception 'FAIL: anon/authenticated still has DELETE table privilege on a protected fleet table';
   end if;
 
-  if has_table_privilege('anon', 'public.vehicle_assignments', 'DELETE') then
-    raise exception 'FAIL: anon still has DELETE table privilege on vehicle_assignments';
+  if exists (
+    select 1
+    from pg_policies p
+    where p.schemaname = 'public'
+      and p.tablename in ('drivers', 'vehicles')
+      and p.cmd in ('DELETE', 'ALL')
+      and ('authenticated' = any(p.roles) or 'public' = any(p.roles))
+  ) then
+    raise exception 'FAIL: a fleet parent table still has a DELETE/ALL policy for authenticated/public';
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint c
+    where c.conrelid = 'public.vehicle_assignments'::regclass
+      and c.contype = 'f'
+      and c.confdeltype = 'c'
+      and c.conkey = array[(select attnum from pg_attribute where attrelid='public.vehicle_assignments'::regclass and attname='driver_id')]::smallint[]
+  ) or not exists (
+    select 1
+    from pg_constraint c
+    where c.conrelid = 'public.vehicle_assignments'::regclass
+      and c.contype = 'f'
+      and c.confdeltype = 'c'
+      and c.conkey = array[(select attnum from pg_attribute where attrelid='public.vehicle_assignments'::regclass and attname='vehicle_id')]::smallint[]
+  ) then
+    raise exception 'FAIL: expected cascade foreign keys changed; review deletion assumptions';
   end if;
 
   if not exists (

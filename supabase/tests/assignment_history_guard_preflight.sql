@@ -75,6 +75,18 @@ begin
     raise exception 'FAIL: driver deactivation RPC missing or has unsafe execution grants';
   end if;
 
+  if not exists (
+    select 1 from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 's2t_archive_vehicle'
+      and p.prosecdef = false
+      and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+      and not has_function_privilege('anon', p.oid, 'EXECUTE')
+  ) then
+    raise exception 'FAIL: vehicle archive RPC missing or has unsafe execution grants';
+  end if;
+
   raise notice 'PASS: profile guard, assignment delete prohibition and invoker RPC grants are present';
 end;
 $test$;

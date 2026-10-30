@@ -2750,9 +2750,18 @@ function bindPortalEvents() {
     if (target.dataset.companyEdit) return openModal("company", target.dataset.companyEdit);
     if (target.dataset.companyDeactivate) return handleAdminAction({type:"deactivate-company",id:target.dataset.companyDeactivate});
     if (target.dataset.companyActivate) return handleAdminAction({type:"activate-company",id:target.dataset.companyActivate});
-    if (target.dataset.membershipAdd !== undefined) return addCompanyMembership();
-    if (target.dataset.membershipToggle) return updateCompanyMembership(target.dataset.membershipToggle, { status: target.dataset.status });
-    if (target.dataset.membershipRole) return updateCompanyMembership(target.dataset.membershipRole, { role: target.dataset.role });
+    if (target.dataset.membershipAdd !== undefined) {
+      try { await addCompanyMembership(); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível associar o utilizador."); }
+      return;
+    }
+    if (target.dataset.membershipToggle) {
+      try { await updateCompanyMembership(target.dataset.membershipToggle, { status: target.dataset.status }); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível alterar o acesso."); }
+      return;
+    }
+    if (target.dataset.membershipRole) {
+      try { await updateCompanyMembership(target.dataset.membershipRole, { role: target.dataset.role }); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível alterar a permissão."); }
+      return;
+    }
     if (target.dataset.editDriver) return openModal("driver", target.dataset.editDriver);
     if (target.dataset.editVehicle) return openModal("vehicle", target.dataset.editVehicle);
     if (target.dataset.editDocument) return openModal("document", target.dataset.editDocument);

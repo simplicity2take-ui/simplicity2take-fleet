@@ -45,7 +45,7 @@
 ## Application integration added in PR #37
 
 - Editing a vehicle now calls `s2t_replace_vehicle_assignments`; the browser no longer deletes/reinserts assignment rows directly.
-- The vehicle action is now **Arquivar**: active assignments are closed through the RPC and the vehicle status is set to `Inativo`; the vehicle row is retained.
+- The vehicle action is now **Arquivar**: `s2t_archive_vehicle` closes active assignments and sets the vehicle status to `Inativo` in one transaction; the vehicle row is retained.
 - The driver action is now **Desativar**: `s2t_deactivate_driver` closes active assignments and sets the driver status to `Inativo` in one transaction; the driver row and documents remain.
 - Assignment replacement now rejects inactive drivers, preventing them from being newly assigned.
 

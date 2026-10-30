@@ -12,6 +12,7 @@ import {
   normalizeVehicleId,
   statusToPortal,
   statusForSync,
+  isActiveGlobalAdmin,
   safeSyncError,
   isBoltWriteAllowed,
 } from "./normalization.ts";
@@ -272,4 +273,14 @@ Deno.test("Bolt sync maps provider status only when creating a new Fleet record"
   assertEquals(statusForSync("active", ""), "Ativo");
   assertEquals(statusForSync("inactive", ""), "Inativo");
   assertEquals(statusForSync("", ""), "Inativo");
+});
+
+
+Deno.test("Bolt sync authorization requires an active global admin profile", () => {
+  assertEquals(isActiveGlobalAdmin({ role: "admin", status: "Ativo" }), true);
+  assertEquals(isActiveGlobalAdmin({ role: "admin", status: "Inativo" }), false);
+  assertEquals(isActiveGlobalAdmin({ role: "company_admin", status: "Ativo" }), false);
+  assertEquals(isActiveGlobalAdmin({ role: "driver", status: "Ativo" }), false);
+  assertEquals(isActiveGlobalAdmin(null), false);
+  assertEquals(isActiveGlobalAdmin(undefined), false);
 });

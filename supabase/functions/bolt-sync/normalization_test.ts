@@ -11,6 +11,7 @@ import {
   normalizePlate,
   normalizeVehicleId,
   statusToPortal,
+  statusForSync,
   safeSyncError,
   isBoltWriteAllowed,
 } from "./normalization.ts";
@@ -252,4 +253,23 @@ Deno.test("vehicle assignment conflict is detected when another driver already o
     { driver_id: "driver-b" },
     { driver_id: "driver-a" },
   ], "driver-b"), true);
+});
+
+
+Deno.test("Bolt sync preserves an existing manually inactive Fleet vehicle", () => {
+  assertEquals(statusForSync("active", "Inativo"), "Inativo");
+});
+
+Deno.test("Bolt sync preserves an existing manually active Fleet vehicle", () => {
+  assertEquals(statusForSync("inactive", "Ativo"), "Ativo");
+});
+
+Deno.test("Bolt sync preserves any existing Fleet status verbatim", () => {
+  assertEquals(statusForSync("active", "Em manutenção"), "Em manutenção");
+});
+
+Deno.test("Bolt sync maps provider status only when creating a new Fleet record", () => {
+  assertEquals(statusForSync("active", ""), "Ativo");
+  assertEquals(statusForSync("inactive", ""), "Inativo");
+  assertEquals(statusForSync("", ""), "Inativo");
 });

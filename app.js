@@ -791,6 +791,7 @@ async function logout() {
   state.profile = null;
   state.currentCompanyId = null;
   state.currentCompanyRole = null;
+  state.companies = [];
   selectors.appShell.classList.add("hidden");
   selectors.loginScreen.classList.remove("hidden");
   selectors.loginPassword.value = "";
@@ -2660,6 +2661,7 @@ function bindPortalEvents() {
       state.profile = null;
       state.currentCompanyId = null;
       state.currentCompanyRole = null;
+      state.companies = [];
       selectors.appShell.classList.add("hidden");
       selectors.loginScreen.classList.remove("hidden");
     }

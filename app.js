@@ -214,6 +214,11 @@ async function loadBackendData() {
   if (membershipResult.error) throw membershipResult.error;
   state.currentCompanyId = membershipResult.data?.company_id || null;
   state.currentCompanyRole = membershipResult.data?.role || null;
+  if (!state.currentCompanyId && currentUser()?.role === "admin") {
+    const companyResult = await supabaseClient.from("companies").select("id").eq("slug", "simplicity2take").maybeSingle();
+    if (companyResult.error) throw companyResult.error;
+    state.currentCompanyId = companyResult.data?.id || null;
+  }
 
   const assignments = assignmentsResult.data || [];
   const viewers = viewersResult.data || [];
@@ -1000,16 +1005,17 @@ function driverRow(driver) {
 }
 
 function renderDocuments() {
-  const admin = currentUser().role === "admin" || state.currentCompanyRole === "company_admin";
-  const documents = admin ? companyDocuments() : driverDocuments();
-  selectors.pageTitle.textContent = admin ? "Documentos da Empresa" : "Meus Documentos";
+  const globalAdmin = currentUser().role === "admin";
+  const companyAdmin = globalAdmin || state.currentCompanyRole === "company_admin";
+  const documents = companyAdmin ? companyDocuments() : driverDocuments();
+  selectors.pageTitle.textContent = companyAdmin ? "Documentos da Empresa" : "Meus Documentos";
   selectors.content.innerHTML = `
     ${heading(
-      admin ? "Gestão documental da empresa" : "Os meus documentos",
-      admin ? "Aqui ficam apenas os documentos da empresa. Documentos de viaturas e de motoristas são geridos nas respetivas áreas." : "Aqui ficam os teus documentos pessoais, os documentos das viaturas atribuídas e os documentos da empresa partilhados contigo.",
-      admin ? `<button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>` : ""
+      companyAdmin ? "Gestão documental da empresa" : "Os meus documentos",
+      companyAdmin ? "Aqui ficam apenas os documentos da empresa. Documentos de viaturas e de motoristas são geridos nas respetivas áreas." : "Aqui ficam os teus documentos pessoais, os documentos das viaturas atribuídas e os documentos da empresa partilhados contigo.",
+      globalAdmin ? `<button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>` : ""
     )}
-    <section class="cards-grid">${documents.map(doc => documentCard(doc, admin)).join("") || emptyCard(admin ? "Ainda não existem documentos da empresa." : "Sem documentos para apresentar.")}</section>
+    <section class="cards-grid">${documents.map(doc => documentCard(doc, globalAdmin)).join("") || emptyCard(companyAdmin ? "Ainda não existem documentos da empresa." : "Sem documentos para apresentar.")}</section>
   `;
 }
 

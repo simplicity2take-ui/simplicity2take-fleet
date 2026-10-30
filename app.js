@@ -1014,16 +1014,17 @@ function driverRow(driver) {
 
 function renderDocuments() {
   const globalAdmin = currentUser().role === "admin";
-  const companyAdmin = globalAdmin || Boolean(state.currentCompanyRole);
-  const documents = companyAdmin ? companyDocuments() : driverDocuments();
-  selectors.pageTitle.textContent = companyAdmin ? "Documentos da Empresa" : "Meus Documentos";
+  const companyMember = globalAdmin || Boolean(state.currentCompanyRole);
+  const companyAdmin = globalAdmin || state.currentCompanyRole === "company_admin";
+  const documents = companyMember ? companyDocuments() : driverDocuments();
+  selectors.pageTitle.textContent = companyMember ? "Documentos da Empresa" : "Meus Documentos";
   selectors.content.innerHTML = `
     ${heading(
-      companyAdmin ? "Gestão documental da empresa" : "Os meus documentos",
-      companyAdmin ? "Aqui ficam apenas os documentos da empresa. Documentos de viaturas e de motoristas são geridos nas respetivas áreas." : "Aqui ficam os teus documentos pessoais, os documentos das viaturas atribuídas e os documentos da empresa partilhados contigo.",
+      companyAdmin ? "Gestão documental da empresa" : companyMember ? "Documentos da empresa" : "Os meus documentos",
+      companyAdmin ? "Aqui ficam apenas os documentos da empresa. Documentos de viaturas e de motoristas são geridos nas respetivas áreas." : companyMember ? "Consulta os documentos gerais da tua empresa. Para documentos de viaturas e motoristas, usa as áreas autorizadas." : "Aqui ficam os teus documentos pessoais, os documentos das viaturas atribuídas e os documentos da empresa partilhados contigo.",
       globalAdmin ? `<button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>` : ""
     )}
-    <section class="cards-grid">${documents.map(doc => documentCard(doc, globalAdmin)).join("") || emptyCard(companyAdmin ? "Ainda não existem documentos da empresa." : "Sem documentos para apresentar.")}</section>
+    <section class="cards-grid">${documents.map(doc => documentCard(doc, globalAdmin)).join("") || emptyCard(companyMember ? "Ainda não existem documentos da empresa." : "Sem documentos para apresentar.")}</section>
   `;
 }
 

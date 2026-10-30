@@ -333,9 +333,17 @@ Deno.serve(async (req) => {
     // silently skip rows with an empty UUID, while vehicle RPCs hit NOT NULL
     // constraints and fail the whole batch. Reject the CSV before any RPC call.
     const identityHeader = type.startsWith("vehicle_") ? "UUID do veículo" : "UUID do motorista";
+    const normalizeStatusIdentity = (value: string) => String(value || "")
+      .normalize("NFD").replace(/[\\u0300-\\u036f]/g, "")
+      .toLocaleUpperCase("pt-PT").replace(/[^A-Z0-9]+/g, " ").trim();
+    const isStatusOrganizationRow = (row: any) => {
+      const name = normalizeStatusIdentity(row["Nome do motorista"] || "");
+      const organization = normalizeStatusIdentity(row["Nome da organização"] || "");
+      return Boolean(name && organization && name === organization);
+    };
     const rowsWithoutIdentity = rows
-      .map((row, index) => ({ recordNumber: index + 2, value: String(row[identityHeader] || "").trim() }))
-      .filter(item => !item.value);
+      .map((row, index) => ({ row, recordNumber: index + 2, value: String(row[identityHeader] || "").trim() }))
+      .filter(item => !(type === "status" && isStatusOrganizationRow(item.row)) && !item.value);
     if (rowsWithoutIdentity.length) {
       const examples = rowsWithoutIdentity.slice(0, 5).map(item => String(item.recordNumber)).join(", ");
       throw new Error("CSV inválido: existem " + rowsWithoutIdentity.length +
@@ -346,6 +354,14 @@ Deno.serve(async (req) => {
       const requiredTripHeaders = ["UUID da viagem", "UUID do motorista", "Estado da viagem"];
       const missingTripHeaders = requiredTripHeaders.filter(name => !headers.has(name));
       if (missingTripHeaders.length) throw new Error("CSV de viagens incompleto. Colunas em falta: " + missingTripHeaders.join(", ") + ".");
+      const rowsWithoutTripId = rows
+        .map((row, index) => ({ recordNumber: index + 2, value: String(row["UUID da viagem"] || "").trim() }))
+        .filter(item => !item.value);
+      if (rowsWithoutTripId.length) {
+        const examples = rowsWithoutTripId.slice(0, 5).map(item => String(item.recordNumber)).join(", ");
+        throw new Error("CSV de viagens inválido: existem " + rowsWithoutTripId.length +
+          " registo(s) sem UUID da viagem (registo(s): " + examples + ").");
+      }
       const driverRows = await getRestRows("drivers?select=id,uber_driver_uuid,full_name&company_id=eq." + encodeURIComponent(companyId) + "&limit=1000");
       const vehicleRows = await getRestRows("vehicles?select=id,uber_vehicle_uuid,plate&company_id=eq." + encodeURIComponent(companyId) + "&limit=1000");
       const buildUniqueIdMap = (items: any[], keyOf: (item: any) => string) => {

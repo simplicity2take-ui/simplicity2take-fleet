@@ -159,3 +159,12 @@ A read-only Supabase Security Advisor check (30 October 2026) reported `public.g
 This is not, by itself, proof of an authorization bypass: the function has an explicit global-admin predicate. It is nevertheless a privileged public-schema RPC with a broad result shape and should be reviewed for least privilege. The target design should expose only allowlisted telemetry fields, keep raw provider payloads server-side, pin an empty search_path with fully qualified object names, and restrict EXECUTE to the narrowest required role. Do not change the existing function's grants until its callers and dependencies have been checked.
 
 The advisor also reported three other SECURITY DEFINER helper functions and a disabled leaked-password protection setting. Those are tracked as separate platform-wide security work, not silently changed in this CarTrack task.
+
+
+## TRUNCATE grant remediation draft
+
+The catalog ACL inspection confirmed that `postgres` explicitly granted `TRUNCATE` on all three telemetry tables to `anon`, `authenticated` and `service_role`. The RLS policies do not constrain this table-level operation. The proposed narrow remediation is saved separately in `supabase/drafts/cartrack_truncate_privilege_review.sql`; it revokes only TRUNCATE and does not change SELECT/INSERT/UPDATE/DELETE privileges.
+
+The existing writer is a `SECURITY DEFINER` RPC owned by `postgres`, so it does not need direct TRUNCATE permission for the current upsert flow. This proposal has not been applied. Validate it in a disposable database and check any operational maintenance jobs before promoting it to a migration.
+
+The current frontend `app.js` reads the two CarTrack tables directly; a repository-wide caller/dependency review is still required before changing or revoking `get_cartrack_fleet_data()`. For the future design, prefer an invoker-scoped/allowlisted read path and avoid returning the raw provider JSON payload to the browser.

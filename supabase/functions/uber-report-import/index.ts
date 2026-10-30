@@ -97,6 +97,14 @@ function localLisbonTimestamp(value: string) {
   const suffix = offset ? offset[1] + offset[2].padStart(2, "0") + ":" + (offset[3] || "00") : "+00:00";
   return year + "-" + month + "-" + day + "T" + hour + ":" + minute + ":" + second + suffix;
 }
+function integerValue(v: string, fieldName = "quantidade") {
+  const n = numberValue(v);
+  if (n === null) return null;
+  if (!Number.isSafeInteger(n)) {
+    throw new Error("Valor inválido em " + fieldName + ": é esperada uma quantidade inteira.");
+  }
+  return n;
+}
 function rateValue(v: string) {
   const n = numberValue(v);
   if (n === null) return null;
@@ -462,7 +470,7 @@ Deno.serve(async (req) => {
       const normalized = rows.map(r => ({
         uber_driver_uuid: r["UUID do motorista"],
         driver_name: [r["Nome próprio do motorista"], r["Apelido do motorista"]].filter(Boolean).join(" "),
-        completed_trips: numberValue(r["Viagens concluídas"]),
+        completed_trips: integerValue(r["Viagens concluídas"], "Viagens concluídas"),
         online_duration_minutes: minutes(r["Tempo online (dias: horas: minutos)"], "Tempo online"),
         trip_duration_minutes: minutes(r["Tempo em viagem (dias: horas: minutos)"], "Tempo em viagem"),
         ...baseDates(periodStart, periodEnd),
@@ -483,14 +491,14 @@ Deno.serve(async (req) => {
         online_hours: numberValue(r["Horas online"]),
         trip_hours: numberValue(r["Horas em viagem"]),
         work_hours: numberValue(r["Horas de trabalho"]),
-        total_trips: numberValue(r["Total Trips"]),
+        total_trips: integerValue(r["Total Trips"], "Total de viagens"),
         acceptance_rate: rateValue(r["Acceptance Rate"]),
         cancellation_rate: rateValue(r["Taxa de cancelamento"]),
-        accepted_trips: numberValue(r["Viagens aceites (excluindo radar de viagem ou semelhante)"]),
-        rejected_trips: numberValue(r["Viagens rejeitadas"]),
-        cancelled_trips: numberValue(r["Viagens Canceladas"]),
-        failed_trips: numberValue(r["Falha nas viagens"]),
-        total_trip_assignments: numberValue(r["Total de Atribuições de Viagens"]),
+        accepted_trips: integerValue(r["Viagens aceites (excluindo radar de viagem ou semelhante)"], "Viagens aceites"),
+        rejected_trips: integerValue(r["Viagens rejeitadas"], "Viagens rejeitadas"),
+        cancelled_trips: integerValue(r["Viagens Canceladas"], "Viagens canceladas"),
+        failed_trips: integerValue(r["Falha nas viagens"], "Falha nas viagens"),
+        total_trip_assignments: integerValue(r["Total de Atribuições de Viagens"], "Total de atribuições de viagens"),
         ...baseDates(periodStart, periodEnd),
         raw: r
       }));
@@ -540,7 +548,7 @@ Deno.serve(async (req) => {
       const normalized = rows.map(r => ({
         uber_driver_uuid: r["UUID do motorista"],
         driver_name: [r["Nome próprio do motorista"], r["Apelido do motorista"]].filter(Boolean).join(" "),
-        completed_trips: numberValue(r["Viagens concluídas"]),
+        completed_trips: integerValue(r["Viagens concluídas"], "Viagens concluídas"),
         acceptance_rate: rateValue(r["Taxa de aceitação"]),
         cancellation_rate: rateValue(r["Taxa de cancelamento"]),
         completion_rate: rateValue(r["Taxa de conclusão"]),
@@ -548,12 +556,12 @@ Deno.serve(async (req) => {
         rating_last_500_trips: numberValue(r["Classificações do motorista (500 viagens anteriores)"]),
         current_acceptance_rate: rateValue(r["Taxa de aceitação atual do motorista, tal como apresentada na aplicação para motoristas"]),
         current_cancellation_rate: rateValue(r["Taxa de cancelamento atual do motorista, tal como apresentada na aplicação para motoristas"]),
-        accepted_trips: numberValue(r["Viagens aceites (excluindo radar de viagem ou semelhante)"]),
-        rejected_trips: numberValue(r["Viagens rejeitadas"]),
-        cancelled_trips: numberValue(r["Viagens Canceladas"]),
-        driver_cancelled_trips: numberValue(r["Viagens canceladas por motoristas responsáveis"]),
-        failed_trips: numberValue(r["Falha nas viagens"]),
-        total_trip_assignments: numberValue(r["Total de Atribuições de Viagens"]),
+        accepted_trips: integerValue(r["Viagens aceites (excluindo radar de viagem ou semelhante)"], "Viagens aceites"),
+        rejected_trips: integerValue(r["Viagens rejeitadas"], "Viagens rejeitadas"),
+        cancelled_trips: integerValue(r["Viagens Canceladas"], "Viagens canceladas"),
+        driver_cancelled_trips: integerValue(r["Viagens canceladas por motoristas responsáveis"], "Viagens canceladas", "Viagens canceladas por motoristas"),
+        failed_trips: integerValue(r["Falha nas viagens"], "Falha nas viagens"),
+        total_trip_assignments: integerValue(r["Total de Atribuições de Viagens"], "Total de atribuições de viagens"),
         ...baseDates(periodStart, periodEnd),
         raw: r
       }));

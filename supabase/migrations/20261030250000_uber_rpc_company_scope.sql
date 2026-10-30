@@ -27,6 +27,8 @@ declare
   v_phone text;
   v_last_online timestamptz;
   v_realtime text;
+  v_observed_at timestamptz;
+  v_match_count integer;
 begin
   if current_setting('request.jwt.claim.role', true) <> 'service_role' then
     raise exception 'service_role required' using errcode = '42501';
@@ -58,18 +60,45 @@ begin
       v_last_online := null;
     end;
 
+    begin
+      v_observed_at := coalesce(nullif(r->>'observed_at','')::timestamptz, now());
+    exception when others then
+      v_observed_at := now();
+    end;
+
     v_driver_id := null;
+    -- Prefer an exact Uber UUID. If falling back to email/phone, require one
+    -- unambiguous S2T match rather than selecting an arbitrary driver.
     select id into v_driver_id
     from public.drivers
-    where company_id = v_company_id
-      and (
-        uber_driver_uuid = v_uuid
-        or (v_email is not null and lower(coalesce(email,'')) = v_email)
-        or (v_phone is not null and regexp_replace(coalesce(phone,''),'[^0-9]','','g') =
-          regexp_replace(v_phone,'[^0-9]','','g'))
-      )
-    order by (uber_driver_uuid = v_uuid) desc nulls last
+    where company_id = v_company_id and uber_driver_uuid = v_uuid
     limit 1;
+
+    if v_driver_id is null then
+      select count(distinct id) into v_match_count
+      from public.drivers
+      where company_id = v_company_id
+        and (
+          (v_email is not null and lower(coalesce(email,'')) = v_email)
+          or (v_phone is not null and regexp_replace(coalesce(phone,''),'[^0-9]','','g') =
+            regexp_replace(v_phone,'[^0-9]','','g'))
+        );
+      if v_match_count > 1 then
+        skipped_count := skipped_count + 1;
+        continue;
+      end if;
+      if v_match_count = 1 then
+        select id into v_driver_id
+        from public.drivers
+        where company_id = v_company_id
+          and (
+            (v_email is not null and lower(coalesce(email,'')) = v_email)
+            or (v_phone is not null and regexp_replace(coalesce(phone,''),'[^0-9]','','g') =
+              regexp_replace(v_phone,'[^0-9]','','g'))
+          )
+        limit 1;
+      end if;
+    end if;
 
     if v_driver_id is null then
       insert into public.drivers(
@@ -80,7 +109,7 @@ begin
       values (
         v_company_id, coalesce(v_name,'Motorista Uber'), v_email, v_phone, 'Ativo',
         v_uuid, v_status, v_realtime,
-        coalesce(nullif(r->>'observed_at','')::timestamptz,now()),
+        v_observed_at,
         v_last_online, coalesce(r->'raw','{}'::jsonb), now()
       )
       returning id into v_driver_id;
@@ -94,7 +123,7 @@ begin
           uber_driver_uuid = v_uuid,
           uber_status = v_status,
           uber_realtime_status = v_realtime,
-          uber_status_at = coalesce(nullif(r->>'observed_at','')::timestamptz,now()),
+          uber_status_at = v_observed_at,
           uber_last_online_at = v_last_online,
           uber_status_raw = coalesce(r->'raw','{}'::jsonb),
           uber_last_synced_at = now(),

@@ -5,6 +5,7 @@ import {
   assertNoDuplicateExternalIdentity,
   assertRequiredExternalIdentities,
   decideAssignment,
+  hasOtherDriverAssignment,
   normalizeActiveVehicle,
   normalizeDriverId,
   normalizePlate,
@@ -241,3 +242,14 @@ Deno.test("safe sync error also hides secrets from non-Error thrown values", () 
   }
 });
 
+
+
+Deno.test("vehicle assignment conflict is detected when another driver already owns the active vehicle", () => {
+  assertEquals(hasOtherDriverAssignment([{ driver_id: "driver-a" }], "driver-b"), true);
+  assertEquals(hasOtherDriverAssignment([{ driver_id: "driver-a" }], "driver-a"), false);
+  assertEquals(hasOtherDriverAssignment([], "driver-b"), false);
+  assertEquals(hasOtherDriverAssignment([
+    { driver_id: "driver-b" },
+    { driver_id: "driver-a" },
+  ], "driver-b"), true);
+});

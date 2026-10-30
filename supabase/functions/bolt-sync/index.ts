@@ -175,6 +175,9 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") {
+    return json({ ok: false, error: "Método não permitido." }, 405);
+  }
   try {
     const authHeader = req.headers.get("Authorization") || "";
     const userToken = authHeader.replace(/^Bearer\s+/i, "");
@@ -184,8 +187,15 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(supabaseUrl, serviceRoleKey);
     const { data: authData, error: authError } = await admin.auth.getUser(userToken);
     if (authError || !authData.user) return json({ ok: false, error: "Sessão inválida." }, 401);
-    const callerEmail = (authData.user.email || "").toLowerCase();
-    if (callerEmail !== "simplicity2take@gmail.com") return json({ ok: false, error: "Apenas o administrador pode sincronizar a Bolt." }, 403);
+    const { data: callerProfile, error: profileError } = await admin
+      .from("profiles")
+      .select("id, role, status")
+      .eq("id", authData.user.id)
+      .maybeSingle();
+    if (profileError) throw new Error("Não foi possível validar as permissões do utilizador.");
+    const isGlobalAdmin = callerProfile?.role === "admin" &&
+      (callerProfile?.status == null || callerProfile.status === "Ativo");
+    if (!isGlobalAdmin) return json({ ok: false, error: "Apenas um administrador global pode sincronizar a Bolt." }, 403);
 
     // This integration currently belongs exclusively to Simplicity2Take.
     // Resolve the trusted company key server-side; never accept company_id from the request.
@@ -234,6 +244,6 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     console.error("bolt-sync error", error);
-    return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);
+    return json({ ok: false, error: "Não foi possível concluir a sincronização Bolt. Verifique a configuração e tente novamente." }, 500);
   }
 });

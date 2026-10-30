@@ -221,6 +221,7 @@ Deno.serve(async (req) => {
         const arrivedAt = localLisbonTimestamp(r["Hora de chegada da viagem"] || "");
         const completed = status === "completed";
         return {
+          company_id: companyId,
           platform: "uber",
           source_trip_id: tripId,
           driver_id: matchedDriverId,
@@ -248,7 +249,7 @@ Deno.serve(async (req) => {
       const existingRows: any[] = [];
       for (let i = 0; i < validUuidTripIds.length; i += 50) {
         const batch = validUuidTripIds.slice(i, i + 50);
-        const batchRows = await getRestRows("platform_trip_records?select=source_trip_id&platform=eq.uber&source_trip_id=in.(" + batch.join(",") + ")&limit=1000");
+        const batchRows = await getRestRows("platform_trip_records?select=source_trip_id&platform=eq.uber&company_id=eq." + encodeURIComponent(companyId) + "&source_trip_id=in.(" + batch.join(",") + ")&limit=1000");
         existingRows.push(...batchRows);
       }
       const existingIds = new Set(existingRows.map(row => String(row.source_trip_id)));

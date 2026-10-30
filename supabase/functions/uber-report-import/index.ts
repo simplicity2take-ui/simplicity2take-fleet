@@ -113,6 +113,25 @@ async function rpc(name: string, body: unknown) {
   if (!r.ok) throw new Error(`${name}: ${r.status} ${text}`);
   return JSON.parse(text);
 }
+function validatePeriodDates(periodStart: string | null, periodEnd: string | null) {
+  const isCalendarDate = (value: string) => {
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+    const [year, month, day] = value.split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day;
+  };
+  if (periodStart && !isCalendarDate(periodStart)) {
+    throw new Error("Data inicial inválida. Utilize o formato AAAA-MM-DD.");
+  }
+  if (periodEnd && !isCalendarDate(periodEnd)) {
+    throw new Error("Data final inválida. Utilize o formato AAAA-MM-DD.");
+  }
+  if (periodStart && periodEnd && periodStart > periodEnd) {
+    throw new Error("O período do relatório é inválido: a data inicial é posterior à data final.");
+  }
+}
 function baseDates(periodStart: string | null, periodEnd: string | null) {
   return { period_start: periodStart || null, period_end: periodEnd || null };
 }
@@ -172,6 +191,9 @@ Deno.serve(async (req) => {
     const type = requestedType === "trip-activity" ? "trip_activity" : requestedType;
     const periodStart = url.searchParams.get("period_start");
     const periodEnd = url.searchParams.get("period_end");
+    if (type !== "status" && type !== "trip_activity") {
+      validatePeriodDates(periodStart, periodEnd);
+    }
     const rows = parseCsv(await req.text());
     if (!rows.length) throw new Error("CSV vazio ou sem linhas de dados.");
     const headers = new Set(Object.keys(rows[0] || {}));

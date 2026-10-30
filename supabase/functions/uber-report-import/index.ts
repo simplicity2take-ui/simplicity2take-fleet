@@ -120,6 +120,12 @@ function baseDates(periodStart: string | null, periodEnd: string | null) {
 Deno.serve(async (req) => {
   const response = await (async () => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204 });
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Método não permitido" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Allow": "POST, OPTIONS" }
+    });
+  }
   try {
     const auth = req.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ")) return new Response(JSON.stringify({ error: "Não autenticado" }), { status: 401, headers: { "Content-Type": "application/json" } });

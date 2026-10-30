@@ -63,7 +63,13 @@ Deno.serve(async (req: Request) => {
     const vehiclesResp = await fetch(BASE + "/vehicles?limit=1000", { headers });
     const vehiclesText = await vehiclesResp.text();
     if (!vehiclesResp.ok) {
-      return json({ success: false, stage: "vehicles", status: vehiclesResp.status, error: vehiclesText.slice(0, 1000) }, vehiclesResp.status);
+      console.warn("CarTrack vehicles request failed", { status: vehiclesResp.status });
+      return json({
+        success: false,
+        stage: "vehicles",
+        status: vehiclesResp.status,
+        error: "Não foi possível obter a lista de viaturas CarTrack.",
+      }, vehiclesResp.status);
     }
     const vehiclesJson = JSON.parse(vehiclesText);
     const vehicles = Array.isArray(vehiclesJson?.data) ? vehiclesJson.data : [];
@@ -71,7 +77,14 @@ Deno.serve(async (req: Request) => {
     const statusResp = await fetch(BASE + "/vehicles/status?odometer_in_km=true", { headers });
     const statusText = await statusResp.text();
     if (!statusResp.ok) {
-      return json({ success: false, stage: "status", status: statusResp.status, error: statusText.slice(0, 1000), vehiclesFound: vehicles.length }, statusResp.status);
+      console.warn("CarTrack vehicle status request failed", { status: statusResp.status });
+      return json({
+        success: false,
+        stage: "status",
+        status: statusResp.status,
+        vehiclesFound: vehicles.length,
+        error: "Não foi possível obter o estado das viaturas CarTrack.",
+      }, statusResp.status);
     }
     const statusJson = JSON.parse(statusText);
     const statuses = Array.isArray(statusJson?.data) ? statusJson.data : [];
@@ -111,11 +124,14 @@ Deno.serve(async (req: Request) => {
       raw: s,
     })).filter((x: any) => x.registration);
 
-    const { data: syncResult, error: syncError } = await adminClient.rpc("sync_cartrack_data", {
+    const { error: syncError } = await adminClient.rpc("sync_cartrack_data", {
       p_vehicles: rows,
       p_snapshots: snapshots,
     });
-    if (syncError) throw new Error("DB sync: " + syncError.message);
+    if (syncError) {
+      console.error("CarTrack database synchronization failed");
+      throw new Error("Não foi possível guardar os dados CarTrack.");
+    }
 
     return json({
       success: true,
@@ -125,8 +141,10 @@ Deno.serve(async (req: Request) => {
       snapshotsSaved: snapshots.length,
       message: "Cartrack ligado com sucesso. Dados de veículos e estado atual sincronizados.",
     });
-  } catch (e) {
-    console.error("cartrack-sync:", e);
-    return json({ success: false, error: (e as Error).message || "Erro interno." }, 500);
+  } catch {
+    // Provider bodies and SQL exception details may contain credentials,
+    // identifiers or internal schema information. Keep them out of client output.
+    console.error("CarTrack synchronization failed");
+    return json({ success: false, error: "Ocorreu um erro interno na sincronização CarTrack." }, 500);
   }
 });

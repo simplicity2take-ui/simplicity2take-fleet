@@ -112,6 +112,9 @@ with check (
 );
 
 -- Deletion remains global-admin-only; driver and company records are operational history.
+create policy "s2t drivers global admin delete"
+on public.drivers for delete to authenticated
+using (public.s2t_is_admin());
 
 -- Vehicles: company staff can read their company's vehicles; drivers retain access
 -- to vehicles currently assigned to them.
@@ -151,6 +154,10 @@ with check (
   public.s2t_is_admin()
   or public.s2t_is_company_admin(company_id)
 );
+
+create policy "s2t vehicles global admin delete"
+on public.vehicles for delete to authenticated
+using (public.s2t_is_admin());
 
 -- Assignment reads use a SECURITY DEFINER helper to avoid recursive RLS
 -- (vehicles policy also consults vehicle_assignments).

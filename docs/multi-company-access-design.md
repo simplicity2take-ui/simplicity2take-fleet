@@ -69,3 +69,27 @@ The company-foundation branch now scopes Bolt driver/vehicle identity lookups an
 - The sync no longer deletes all assignments for a driver.
 
 This is a safeguard, not a complete multi-company integration. The Bolt function still uses the existing global-admin email gate, service-role access, and sequential writes. The provider endpoint/pagination contract and transactional all-or-nothing apply phase remain unverified. The branch's assignment behavior has not yet been exercised against a disposable database with fixtures for matching, conflicting, multiple-active and no-active cases. Do not deploy or run a live sync based on this change alone.
+
+## Documents and document viewers — company access draft (30 October 2026)
+
+Added draft migration `20261030220000_company_documents_rls.sql` and read-only diagnostics `supabase/tests/company_documents_preflight.sql`.
+
+- Adds `documents.company_id` and derives it from the linked driver/vehicle ownership.
+- If both links exist but belong to different companies, ownership remains NULL (fail closed for company-member access).
+- Documents without a driver or vehicle are assigned to the existing `simplicity2take` company.
+- Global administrators and company administrators can read documents in their authorized scope.
+- Drivers retain existing access to their own documents, currently assigned vehicles, and explicit viewer grants.
+- Company administrators can inspect viewer grants only for documents belonging to their company.
+- Existing administrator-only write policies are retained; no company-member document write workflow is granted.
+
+The document-access Edge Function continues to authenticate the user and read the document through caller RLS before retrieving the private Drive file. Its method handling and error response have been hardened: only POST is accepted, raw provider/database errors are not returned, and the response is marked non-cacheable and nosniff.
+
+### Validation still required
+
+- Confirm actual deployed columns and constraints for `documents` and `document_viewers` in a disposable database.
+- Test company-admin A vs company-admin B, ordinary member, driver self, assigned-vehicle driver, explicit viewer, global admin, and unaffiliated user with separate authenticated sessions.
+- Test document rows with no links, one link, matching driver+vehicle, mismatched driver+vehicle, missing parent rows and pre-existing company_id values.
+- Confirm document upload/edit/delete workflows remain global-admin-only until a separately authorized company workflow is implemented.
+- Verify that Drive file IDs and web-view links are never exposed to unauthorized users.
+
+This is draft SQL/source only. The migration and diagnostics have not been executed, the Edge Function has not been deployed, and no production data or Drive files were accessed or changed.

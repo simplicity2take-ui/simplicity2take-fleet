@@ -203,8 +203,9 @@ Deno.serve(async (req: Request) => {
     // Resolve the trusted company key server-side; never accept company_id from the request.
     const { data: company, error: companyError } = await admin
       .from("companies")
-      .select("id")
+      .select("id, status")
       .eq("slug", "simplicity2take")
+      .eq("status", "Ativa")
       .maybeSingle();
     if (companyError) throw companyError;
     if (!company?.id) return json({ ok: false, error: "Empresa Simplicity2Take não encontrada. Confirme primeiro a migração de empresas." }, 409);

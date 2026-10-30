@@ -104,3 +104,15 @@ select
   (select count(*) from public.cartrack_vehicle_snapshots) as snapshot_rows,
   (select count(*) from public.vehicle_odometer_readings) as odometer_rows,
   (select count(*) from public.cartrack_vehicle_snapshots where vehicle_id is null) as snapshots_without_external_id;
+
+-- 8. API roles must not be able to TRUNCATE telemetry tables. RLS does not
+-- protect TRUNCATE; this is an explicit grant check, not a row-policy check.
+select c.relname as table_name, r.rolname as role_name,
+       has_table_privilege(r.rolname, c.oid, 'TRUNCATE') as can_truncate
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+cross join pg_roles r
+where n.nspname = 'public'
+  and c.relname in ('cartrack_vehicles', 'cartrack_vehicle_snapshots', 'vehicle_odometer_readings')
+  and r.rolname in ('anon', 'authenticated', 'service_role')
+order by c.relname, r.rolname;

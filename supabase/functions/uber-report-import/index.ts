@@ -365,7 +365,7 @@ Deno.serve(async (req) => {
         String(r["UUID do motorista"] || "").trim() &&
         ["ACTIVE", "ACCEPTED"].includes(String(r["Estado"] || "").trim().toUpperCase())
       );
-      const existingForImport = await getRestRows("drivers?select=id,email,phone,uber_driver_uuid&limit=1000");
+      const existingForImport = await getRestRows("drivers?select=id,email,phone,uber_driver_uuid&company_id=eq." + encodeURIComponent(companyId) + "&limit=1000");
       const seenImportUuids = new Set<string>();
       const seenImportEmails = new Map<string, string>();
       const seenImportPhones = new Map<string, string>();

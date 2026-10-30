@@ -63,6 +63,10 @@ set company_id = (select id from public.companies where slug = 'simplicity2take'
 where company_id is null;
 
 
+-- All existing rows have been backfilled above; future platform writes must name a tenant.
+alter table public.platform_activity_events alter column company_id set not null;
+alter table public.platform_trip_records alter column company_id set not null;
+
 create index if not exists platform_activity_events_company_observed_idx
   on public.platform_activity_events(company_id, observed_at desc);
 create index if not exists platform_trip_records_company_observed_idx

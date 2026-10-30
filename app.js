@@ -164,6 +164,7 @@ const selectors = {
   sessionRole: $("#sessionRole"),
   sessionName: $("#sessionName"),
   pageTitle: $("#pageTitle"),
+  contextLabel: $("#contextLabel"),
   companySwitcher: $("#companySwitcher"),
   companySwitcherWrap: $("#companySwitcherWrap"),
   modal: $("#entityModal"),
@@ -797,6 +798,12 @@ function navigationForUser() {
   return navByRole.driver;
 }
 
+function isS2TCompanySelected() {
+  return state.companies.find(company => company.id === state.currentCompanyId)?.slug === "simplicity2take";
+}
+function requireS2TIntegration() {
+  if (!isS2TCompanySelected()) throw new Error("Esta integração ainda está configurada apenas para a Simplicity2Take. Configure as credenciais da empresa selecionada antes de sincronizar.");
+}
 function renderCompanySwitcher() {
   const isAdmin = currentUser()?.role === "admin";
   if (!selectors.companySwitcher) return;
@@ -806,6 +813,13 @@ function renderCompanySwitcher() {
     `<option value="${escapeHtml(company.id)}" ${company.id === state.currentCompanyId ? "selected" : ""}>${escapeHtml(company.display_name || company.legal_name)}</option>`
   ).join("");
   selectors.companySwitcher.disabled = !state.companies.length;
+  const selectedCompany = state.companies.find(company => company.id === state.currentCompanyId);
+  if (selectors.contextLabel) selectors.contextLabel.textContent = selectedCompany ? `Simplicity2Take Fleet · ${selectedCompany.display_name || selectedCompany.legal_name}` : "Simplicity2Take Fleet";
+  const integrationsEnabled = selectedCompany?.slug === "simplicity2take";
+  document.querySelectorAll("[data-bolt-sync], [data-bolt-activity-sync], [data-uber-sync], [data-cartrack-sync], [data-uber-import-status], [data-uber-preview-status], [data-uber-import-activity], [data-uber-import-trip-activity], [data-uber-preview-trip-activity], [data-uber-import-vehicle-performance], [data-uber-import-vehicle-time-distance], [data-uber-import-driver-time-distance], [data-uber-import-driver-quality], [data-uber-import-driver-payments]").forEach(control => {
+    control.disabled = !integrationsEnabled;
+    control.title = integrationsEnabled ? "" : "Integração ainda não configurada para esta empresa.";
+  });
 }
 function renderApp() {
   const user = currentUser();
@@ -1397,6 +1411,8 @@ function renderActivity() {
 }
 
 async function syncCartrack() {
+  requireS2TIntegration();
+
   const button = document.querySelector("[data-cartrack-sync]");
   if (button) { button.disabled = true; button.textContent = "A sincronizar Cartrack…"; }
   try {
@@ -1415,6 +1431,8 @@ async function syncCartrack() {
 }
 
 async function syncBoltActivity() {
+  requireS2TIntegration();
+
   const button = document.querySelector("[data-bolt-activity-sync]");
   if (button) { button.disabled = true; button.textContent = "A recolher atividade Bolt…"; }
   try {
@@ -1433,6 +1451,8 @@ async function syncBoltActivity() {
 }
 
 async function syncBolt() {
+  requireS2TIntegration();
+
   const button = document.querySelector("[data-bolt-sync]");
   if (button) { button.disabled = true; button.textContent = "A sincronizar Bolt…"; }
   try {
@@ -1455,6 +1475,8 @@ async function syncBolt() {
 }
 
 async function syncUber() {
+  requireS2TIntegration();
+
   const button = document.querySelector("[data-uber-sync]");
   if (button) { button.disabled = true; button.textContent = "A sincronizar Uber…"; }
   try {
@@ -1484,6 +1506,8 @@ function inferUberReportPeriod(fileName) {
 }
 
 async function importUberReport(type, input, periodStart = "", periodEnd = "", dryRun = false) {
+  requireS2TIntegration();
+
   const file = input?.files?.[0];
   if (!file) throw new Error("Selecione um ficheiro CSV.");
   const inferred = inferUberReportPeriod(file.name);

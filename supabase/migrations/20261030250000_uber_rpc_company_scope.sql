@@ -365,3 +365,94 @@ comment on function public.sync_uber_driver_quality(jsonb) is 'S2T-only Uber rep
 comment on function public.sync_uber_driver_time_distance(jsonb) is 'S2T-only Uber report import; driver matching and conflict updates are tenant-scoped.';
 comment on function public.sync_uber_vehicle_performance(jsonb) is 'S2T-only Uber report import; vehicle UUID/plate matching and conflict updates are tenant-scoped.';
 comment on function public.sync_uber_vehicle_time_distance(jsonb) is 'S2T-only Uber report import; vehicle UUID/plate matching and conflict updates are tenant-scoped.';
+
+
+-- Individual Uber trip CSVs use a dedicated tenant-scoped RPC. The Edge
+-- Function must not upsert this globally unique key through PostgREST directly.
+create or replace function public.sync_uber_trip_activity(p_trips jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  s2t_company_id uuid;
+  saved_count integer := 0;
+begin
+  if current_setting('request.jwt.claim.role', true) <> 'service_role' then
+    raise exception 'service_role required' using errcode = '42501';
+  end if;
+
+  select id into s2t_company_id
+  from public.companies
+  where slug = 'simplicity2take' and status = 'Ativa'
+  limit 1;
+
+  if s2t_company_id is null then
+    raise exception 'Simplicity2Take company is not configured';
+  end if;
+
+  insert into public.platform_trip_records (
+    company_id, platform, source_trip_id, driver_id, vehicle_id,
+    platform_driver_uuid, platform_vehicle_uuid, vehicle_plate,
+    order_status, accepted_at, pickup_at, dropoff_at, finished_at,
+    ride_distance_km, observed_at
+  )
+  select
+    s2t_company_id,
+    'uber',
+    x.source_trip_id,
+    x.driver_id,
+    x.vehicle_id,
+    x.platform_driver_uuid,
+    x.platform_vehicle_uuid,
+    x.vehicle_plate,
+    x.order_status,
+    x.accepted_at,
+    x.pickup_at,
+    x.dropoff_at,
+    x.finished_at,
+    x.ride_distance_km,
+    coalesce(x.observed_at, now())
+  from jsonb_to_recordset(coalesce(p_trips, '[]'::jsonb)) as x(
+    source_trip_id text,
+    driver_id uuid,
+    vehicle_id uuid,
+    platform_driver_uuid text,
+    platform_vehicle_uuid text,
+    vehicle_plate text,
+    order_status text,
+    accepted_at timestamptz,
+    pickup_at timestamptz,
+    dropoff_at timestamptz,
+    finished_at timestamptz,
+    ride_distance_km numeric,
+    observed_at timestamptz
+  )
+  where nullif(x.source_trip_id, '') is not null
+  on conflict (platform, source_trip_id) do update set
+    company_id = excluded.company_id,
+    driver_id = excluded.driver_id,
+    vehicle_id = excluded.vehicle_id,
+    platform_driver_uuid = excluded.platform_driver_uuid,
+    platform_vehicle_uuid = excluded.platform_vehicle_uuid,
+    vehicle_plate = excluded.vehicle_plate,
+    order_status = excluded.order_status,
+    accepted_at = excluded.accepted_at,
+    pickup_at = excluded.pickup_at,
+    dropoff_at = excluded.dropoff_at,
+    finished_at = excluded.finished_at,
+    ride_distance_km = excluded.ride_distance_km,
+    observed_at = excluded.observed_at
+  where public.platform_trip_records.company_id = excluded.company_id;
+
+  get diagnostics saved_count = row_count;
+  return jsonb_build_object('saved', saved_count);
+end;
+$function$;
+
+revoke all on function public.sync_uber_trip_activity(jsonb) from public, anon, authenticated;
+grant execute on function public.sync_uber_trip_activity(jsonb) to service_role;
+
+comment on function public.sync_uber_trip_activity(jsonb) is
+  'S2T-only individual Uber trip import. Resolves company server-side and refuses cross-company unique-key updates.';

@@ -2126,6 +2126,10 @@ async function saveVehicle(values, driverIds, id) {
     if (!state.currentCompanyId) throw new Error("Não foi possível determinar a empresa para esta viatura.");
     payload.company_id = state.currentCompanyId;
   }
+  if (!id) {
+    if (!state.currentCompanyId) throw new Error("Não foi possível determinar a empresa para esta viatura.");
+    payload.company_id = state.currentCompanyId;
+  }
   const query = id
     ? supabaseClient.from("vehicles").update(payload).eq("id", id).select().single()
     : supabaseClient.from("vehicles").insert(payload).select().single();

@@ -22,12 +22,15 @@ create index if not exists company_memberships_profile_status_idx
 create index if not exists company_memberships_company_status_idx
   on public.company_memberships(company_id, status);
 
+-- These helpers deliberately use SECURITY DEFINER to evaluate membership without
+-- depending on caller visibility of other membership rows. Pin the search path and
+-- schema-qualify every relation/function to prevent object-shadowing attacks.
 create or replace function public.s2t_is_company_member(p_company_id uuid)
 returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = ''
 as $$
   select public.s2t_is_admin()
     or exists (
@@ -44,7 +47,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = ''
 as $$
   select public.s2t_is_admin()
     or exists (
@@ -57,6 +60,11 @@ as $$
     );
 $$;
 
+-- Expose only the boolean membership checks to authenticated sessions.
+revoke all on function public.s2t_is_company_member(uuid) from public, anon;
+revoke all on function public.s2t_is_company_admin(uuid) from public, anon;
+grant execute on function public.s2t_is_company_member(uuid) to authenticated;
+grant execute on function public.s2t_is_company_admin(uuid) to authenticated;
 
 -- Company staff need to read the company record that their active membership grants access to.
 -- Keep company mutations restricted to global administrators until a server-side workflow exists.
@@ -72,7 +80,7 @@ drop policy if exists "s2t memberships self or global admin" on public.company_m
 create policy "s2t memberships self or global admin"
 on public.company_memberships for select
 to authenticated
-using (profile_id = auth.uid() or public.s2t_is_admin());
+using (profile_id = (select auth.uid()) or public.s2t_is_admin());
 
 drop policy if exists "s2t memberships global admin writes" on public.company_memberships;
 create policy "s2t memberships global admin writes"
@@ -84,23 +92,19 @@ with check (public.s2t_is_admin());
 revoke all on public.company_memberships from anon, authenticated;
 grant select, insert, update, delete on public.company_memberships to authenticated;
 
-revoke all on function public.s2t_is_company_member(uuid) from public, anon;
-revoke all on function public.s2t_is_company_admin(uuid) from public, anon;
-grant execute on function public.s2t_is_company_member(uuid) to authenticated;
-grant execute on function public.s2t_is_company_admin(uuid) to authenticated;
-
+-- Trigger-only integrity guard. SECURITY DEFINER is needed to inspect both parent
+-- records independently of caller RLS; it is not an RPC and must not be callable
+-- directly by API roles.
 create or replace function public.s2t_guard_assignment_company()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   driver_company uuid;
   vehicle_company uuid;
 begin
-  -- Fail closed: an assignment must always identify both a driver and a vehicle.
-  -- This trigger supplements, but does not replace, NOT NULL constraints on the columns.
   if new.driver_id is null or new.vehicle_id is null then
     raise exception 'Atribuição recusada: motorista e viatura são obrigatórios'
       using errcode = '23502';
@@ -126,6 +130,8 @@ begin
 end;
 $$;
 
+revoke all on function public.s2t_guard_assignment_company() from public, anon, authenticated;
+
 drop trigger if exists s2t_assignment_company_guard on public.vehicle_assignments;
 create trigger s2t_assignment_company_guard
 before insert or update of driver_id, vehicle_id
@@ -135,4 +141,4 @@ for each row execute function public.s2t_guard_assignment_company();
 comment on table public.company_memberships is
   'Company membership and role assignments. Draft: company-admin writes must be delegated through a validated server-side workflow before external use.';
 comment on function public.s2t_guard_assignment_company() is
-  'Prevents assignments with missing driver/vehicle IDs or driver/vehicle pairs whose company_id values differ. Requires company ownership migration first.';
+  'Trigger-only guard: rejects missing IDs and assignments whose driver and vehicle have different company IDs. Requires company ownership migration first.';

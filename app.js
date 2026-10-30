@@ -392,14 +392,23 @@ async function loadBackendData() {
     const selectedCompany = state.companies.find(company => company.id === state.currentCompanyId);
     const driverIds = new Set(state.drivers.filter(driver => driver.raw?.company_id === state.currentCompanyId).map(driver => driver.id));
     const vehicleIds = new Set(state.vehicles.filter(vehicle => vehicle.raw?.company_id === state.currentCompanyId).map(vehicle => vehicle.id));
+    // Cartrack's vehicle_id is its own numeric provider ID, not Fleet's UUID.
+    // Scope telemetry by registration against the selected company's Fleet plates.
+    const companyVehiclePlates = new Set(state.vehicles
+      .filter(vehicle => vehicleIds.has(vehicle.id))
+      .map(vehicle => String(vehicle.plate || "").replace(/[^a-z0-9]/gi, "").toUpperCase())
+      .filter(Boolean));
+    const belongsToCompany = item => companyVehiclePlates.has(
+      String(item.registration || "").replace(/[^a-z0-9]/gi, "").toUpperCase()
+    );
     state.drivers = state.drivers.filter(driver => driverIds.has(driver.id));
     state.vehicles = state.vehicles.filter(vehicle => vehicleIds.has(vehicle.id));
     state.vehicles.forEach(vehicle => { vehicle.driverIds = vehicle.driverIds.filter(driverId => driverIds.has(driverId)); });
     state.documents = state.documents.filter(document => document.companyId === state.currentCompanyId);
     state.activityEvents = state.activityEvents.filter(event => event.raw?.company_id === state.currentCompanyId);
     state.tripRecords = state.tripRecords.filter(trip => trip.raw?.company_id === state.currentCompanyId);
-    state.cartrackVehicles = state.cartrackVehicles.filter(vehicle => vehicleIds.has(vehicle.vehicleId));
-    state.cartrackSnapshots = state.cartrackSnapshots.filter(snapshot => vehicleIds.has(snapshot.vehicleId));
+    state.cartrackVehicles = state.cartrackVehicles.filter(belongsToCompany);
+    state.cartrackSnapshots = state.cartrackSnapshots.filter(belongsToCompany);
     if (selectedCompany?.slug !== "simplicity2take") state.applications = [];
   }
   state.backendReady = true;

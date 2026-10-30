@@ -1705,7 +1705,7 @@ function renderSettings() {
             </div>`;
           }).join("") || '<p class="section-copy">Ainda não existem utilizadores associados a esta empresa.</p>'}
         </div>
-        <p class="section-copy">Só associa contas já existentes. O envio de convites e a criação de contas ficam para uma fase posterior.</p>
+        <p class="section-copy">Só associa contas já existentes. O envio de convites e a criação de contas ficam para uma fase posterior. As permissões de administrador de empresa ficam registadas, mas as funções de gestão dessa empresa só serão ativadas depois de concluirmos e testarmos o isolamento de dados.</p>
       ` : '<p class="section-copy">Selecione uma empresa ativa no seletor superior.</p>'}
     </article>` : "";
   const boltDrivers = state.drivers.filter(driver => driver.boltDriverUuid).length;

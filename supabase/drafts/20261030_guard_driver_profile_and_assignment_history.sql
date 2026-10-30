@@ -10,11 +10,12 @@ begin
     raise exception 'Alteração da empresa proprietária reservada ao administrador global'
       using errcode = '42501';
   end if;
-  if tg_table_name = 'drivers'
-     and new.profile_id is distinct from old.profile_id
-     and not public.s2t_is_admin() then
-    raise exception 'Alteração da conta associada ao motorista reservada ao administrador global'
-      using errcode = '42501';
+  if tg_table_name = 'drivers' then
+    if new.profile_id is distinct from old.profile_id
+       and not public.s2t_is_admin() then
+      raise exception 'Alteração da conta associada ao motorista reservada ao administrador global'
+        using errcode = '42501';
+    end if;
   end if;
   return new;
 end;

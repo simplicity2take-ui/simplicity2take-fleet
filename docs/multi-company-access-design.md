@@ -93,3 +93,11 @@ The document-access Edge Function continues to authenticate the user and read th
 - Verify that Drive file IDs and web-view links are never exposed to unauthorized users.
 
 This is draft SQL/source only. The migration and diagnostics have not been executed, the Edge Function has not been deployed, and no production data or Drive files were accessed or changed.
+
+### Company-member frontend loading boundary
+
+The portal now resolves the authenticated user's active `company_memberships` row before loading operational data. If a non-global-admin user has an active company membership, the frontend requests only `documents` and relies on the documents RLS policy for the permitted rows. It does not request drivers, vehicles, assignments, platform activity/trips, applications, or CarTrack data in that session.
+
+Company-member navigation is limited to the company-document view and account settings. This is deliberately restrictive until dedicated company-scoped RLS policies and company-admin write workflows exist for each operational table. A company membership must not be treated as authorization to query the whole fleet.
+
+The company-member view is read-only. Ordinary members see company-level documents only; company-admin document write and linked driver/vehicle document browsing remain incomplete. Do not enable external company onboarding until the relevant RLS policies, isolated-database tests, and UI workflows are completed.

@@ -257,7 +257,7 @@ async function loadBackendData() {
   if (firstError) throw firstError;
 
   if (currentUser()?.role === "admin") {
-    const companyResult = await supabaseClient.from("companies").select("id, slug, legal_name, display_name, status").eq("status", "Ativa").order("display_name");
+    const companyResult = await supabaseClient.from("companies").select("id, slug, legal_name, display_name, tax_number, status").order("display_name");
     if (companyResult.error) throw companyResult.error;
     state.companies = companyResult.data || [];
     const selected = state.companies.find(company => company.id === state.currentCompanyId && company.status === "Ativa")
@@ -814,10 +814,11 @@ function renderCompanySwitcher() {
   if (!selectors.companySwitcher) return;
   selectors.companySwitcherWrap?.classList.toggle("hidden", !isAdmin);
   if (!isAdmin) return;
-  selectors.companySwitcher.innerHTML = state.companies.map(company =>
+  const activeCompanies = state.companies.filter(company => company.status === "Ativa");
+  selectors.companySwitcher.innerHTML = activeCompanies.map(company =>
     `<option value="${escapeHtml(company.id)}" ${company.id === state.currentCompanyId ? "selected" : ""}>${escapeHtml(company.display_name || company.legal_name)}</option>`
   ).join("");
-  selectors.companySwitcher.disabled = !state.companies.length;
+  selectors.companySwitcher.disabled = !activeCompanies.length;
   const selectedCompany = state.companies.find(company => company.id === state.currentCompanyId);
   if (selectors.contextLabel) selectors.contextLabel.textContent = selectedCompany ? `Simplicity2Take Fleet · ${selectedCompany.display_name || selectedCompany.legal_name}` : "Simplicity2Take Fleet";
   const integrationsEnabled = selectedCompany?.slug === "simplicity2take";
@@ -1649,8 +1650,8 @@ function renderSettings() {
         ${state.companies.map(company => `
           <div class="settings-row company-management-row">
             <div><strong>${escapeHtml(company.display_name || company.legal_name)}</strong><small>${escapeHtml(company.legal_name)} · ${escapeHtml(company.slug)}</small></div>
-            <div class="company-management-actions"><span class="tag active">Ativa</span><button class="secondary-button" type="button" data-company-edit="${escapeHtml(company.id)}">Editar</button><button class="ghost-button" type="button" data-company-deactivate="${escapeHtml(company.id)}">Desativar</button></div>
-          </div>`).join("") || '<p class="section-copy">Ainda não existem empresas ativas.</p>'}
+            <div class="company-management-actions"><span class="tag ${company.status === "Ativa" ? "active" : "expiring"}">${escapeHtml(company.status)}</span><button class="secondary-button" type="button" data-company-edit="${escapeHtml(company.id)}">Editar</button>${company.status === "Ativa" ? `<button class="ghost-button" type="button" data-company-deactivate="${escapeHtml(company.id)}">Desativar</button>` : `<button class="secondary-button" type="button" data-company-activate="${escapeHtml(company.id)}">Reativar</button>`}</div>
+          </div>`).join("") || '<p class="section-copy">Ainda não existem empresas registadas.</p>'}
       </div>
       <p class="section-copy">As empresas desativadas deixam de aparecer no seletor. O histórico e os registos não são eliminados.</p>
     </article>` : "";
@@ -2521,6 +2522,14 @@ async function handleAdminAction(action) {
       renderApp();
       showToast("Empresa desativada. Os dados foram preservados.");
     }
+    if (action.type === "activate-company") {
+      if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir empresas.");
+      const { error } = await supabaseClient.from("companies").update({ status: "Ativa" }).eq("id", action.id);
+      if (error) throw error;
+      await loadBackendData();
+      renderApp();
+      showToast("Empresa reativada.");
+    }
     if (action.type === "delete-document") {
       if (!confirm("Eliminar este documento do portal?")) return;
       const { error } = await supabaseClient.from("documents").delete().eq("id", action.id);
@@ -2658,6 +2667,7 @@ function bindPortalEvents() {
     if (target.dataset.companyAdd !== undefined) return openModal("company");
     if (target.dataset.companyEdit) return openModal("company", target.dataset.companyEdit);
     if (target.dataset.companyDeactivate) return handleAdminAction({type:"deactivate-company",id:target.dataset.companyDeactivate});
+    if (target.dataset.companyActivate) return handleAdminAction({type:"activate-company",id:target.dataset.companyActivate});
     if (target.dataset.editDriver) return openModal("driver", target.dataset.editDriver);
     if (target.dataset.editVehicle) return openModal("vehicle", target.dataset.editVehicle);
     if (target.dataset.editDocument) return openModal("document", target.dataset.editDocument);

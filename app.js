@@ -2642,17 +2642,9 @@ async function handleAdminAction(action) {
     }
     if (action.type === "delete-vehicle") {
       if (!confirm("Arquivar esta viatura? As associações ativas serão encerradas e todo o histórico será preservado.")) return;
-      const { error: assignmentError } = await supabaseClient.rpc("s2t_replace_vehicle_assignments", {
-        p_vehicle_id: action.id,
-        p_driver_ids: []
+      const { error } = await supabaseClient.rpc("s2t_archive_vehicle", {
+        p_vehicle_id: action.id
       });
-      if (assignmentError) throw assignmentError;
-
-      const { error } = await supabaseClient
-        .from("vehicles")
-        .update({ status: "Inativo" })
-        .eq("id", action.id)
-        .eq("company_id", state.currentCompanyId);
       if (error) throw error;
 
       await loadBackendData();

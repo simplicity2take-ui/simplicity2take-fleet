@@ -100,8 +100,8 @@ function localLisbonTimestamp(value: string) {
 function integerValue(v: string, fieldName = "quantidade") {
   const n = numberValue(v);
   if (n === null) return null;
-  if (!Number.isSafeInteger(n)) {
-    throw new Error("Valor inválido em " + fieldName + ": é esperada uma quantidade inteira.");
+  if (!Number.isSafeInteger(n) || n < 0) {
+    throw new Error("Valor inválido em " + fieldName + ": é esperada uma quantidade inteira não negativa.");
   }
   return n;
 }

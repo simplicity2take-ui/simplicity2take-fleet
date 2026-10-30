@@ -153,3 +153,17 @@ No tenant migration for these areas is generated yet. The next migration must be
 ### Validation status
 
 The new diagnostic is SELECT-only and has been committed to the feature branch. It has not been run against staging or production. No additional tenant policies, schema changes, external syncs or deployments were made in this phase.
+
+
+## Uber report import endpoint — global-admin gate (30 October 2026)
+
+Updated `supabase/functions/uber-report-import/index.ts` with server-side authorization:
+
+- Accepts POST only (OPTIONS remains available for CORS preflight); other methods receive 405.
+- Validates the bearer session, then resolves the authenticated user's own profile using the service-role client.
+- Allows report import only when that profile has role `admin` and status `Ativo` (or NULL, matching the existing global-admin helper's default-active convention).
+- Authenticated company administrators, ordinary company members and inactive profiles are denied with 403 before driver/vehicle matching, RPC calls or report writes.
+
+This is intentionally a global-admin-only interim control. It does not provide tenant-aware Uber imports for external companies. A future company import workflow must resolve the company from trusted membership on the server, scope every driver/vehicle lookup and every imported report row, and quarantine unmatched/ambiguous records.
+
+Validation: source inspection only. The Edge Function was not deployed and no CSV was imported. Staging tests are still required for unauthenticated, inactive, ordinary member, company_admin, global admin, duplicate identity matches and multi-company membership cases.

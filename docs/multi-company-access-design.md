@@ -210,3 +210,43 @@ This is a confirmed source-level tenant-isolation gap, not a claim that cross-co
 ### Audit method and validation
 
 Inspected the feature branch's complete migration directory and the source of `20261007193000_add_platform_activity.sql` and `supabase/functions/uber-report-import/index.ts`; GitHub code search returned no versioned SQL definitions for the Uber RPC names. This was repository/source inspection only. No Supabase SQL was executed, no remote function definitions were fetched, no migration was applied, and no Uber/Bolt API or production data was accessed.
+
+
+
+## Live Supabase SQL audit — confirmed RPC tenant gaps and migration drift (30 October 2026)
+
+Read-only inspection was performed against the connected Supabase project **Simplicity2Take Fleet** (`lmutpimlokagjwngqanx`). No SQL writes were issued.
+
+### Confirmed deployed RPC behavior
+
+The following deployed functions exist, are owned by `postgres`, are `SECURITY DEFINER`, set `search_path=public`, and have EXECUTE granted to `service_role` (not to `authenticated` or `anon` in the inspected ACL):
+
+- `sync_uber_driver_status(jsonb)`: matches a driver by Uber UUID OR email OR normalized phone without company scope; creates a new driver when no match exists and updates the matched row otherwise.
+- `sync_uber_driver_activity(jsonb)`, `sync_uber_driver_time_distance(jsonb)`, `sync_uber_driver_quality(jsonb)`, `sync_uber_driver_payments(jsonb)`: resolve `driver_id` by Uber UUID without company scope before upserting report rows.
+- `sync_uber_vehicle_performance(jsonb)`, `sync_uber_vehicle_time_distance(jsonb)`: resolve vehicles by Uber UUID and then registration plate without company scope before upserting report rows.
+- `sync_bolt_activity(jsonb,jsonb)`: resolves Bolt driver and vehicle UUIDs (and vehicle plate fallback) without company scope. Its conflict upserts are keyed globally by `event_key` and by `(platform, source_trip_id)`, and update the linked driver/vehicle IDs and activity fields without checking that the existing row belongs to the same tenant.
+
+All these functions are callable only by `service_role` according to the inspected ACL, which limits direct client invocation but does not remove the tenant-isolation risk in Edge Functions that call them with the service-role key.
+
+### Important live-schema / branch drift
+
+The connected project currently has no `company_id` column on `drivers`, `vehicles`, `platform_activity_events`, `platform_trip_records`, or any of the seven Uber report tables. The live migration history ends at `20261017205455` (`fix_uber_driver_phone_matching`); none of the company foundation, membership, document, fleet-RLS or platform-history migrations from this feature branch have been applied.
+
+Consequently:
+- The new branch version of `uber-report-import`, which queries `drivers.company_id` and `vehicles.company_id`, is **not compatible with the currently deployed schema** and must not be deployed before the company foundation migration is safely applied and verified.
+- The company migrations are still draft source; do not apply them to production merely to make the Edge Function work.
+- A safe migration sequence must first validate and apply the company foundation in an isolated environment, then harden the RPCs and their report-table RLS, then test Edge Function imports. No external-company access should be enabled before this sequence passes.
+
+### Required RPC hardening before deployment
+
+1. Resolve the S2T company from a trusted server-side company record inside each function (or pass a company ID from a trusted server-side Edge Function and independently validate it in SQL). Do not trust CSV/browser tenant IDs.
+2. Filter every driver/vehicle UUID, email, phone and plate lookup by that company.
+3. For Uber status, insert new drivers with the resolved `company_id`; never create or update a driver outside that company.
+4. For report imports, fail closed or quarantine unmatched/ambiguous identities; do not create unowned report rows that could later be associated incorrectly.
+5. Guard every conflict-update path so an existing row linked to another company (or with unresolved ownership) cannot be overwritten. Review global unique keys and whether tenant-aware keys are needed.
+6. For Bolt events/trips, reject unresolved or cross-company driver/vehicle identities, and make conflict handling tenant-aware. Preserve existing historical records; do not delete or silently reassign them.
+7. Add RLS policies for each Uber report table based on the linked driver/vehicle's company, plus negative tests for company A vs company B.
+
+### Validation performed
+
+Read-only calls: listed the live project's tables/columns/foreign keys, fetched the eight deployed function definitions and ACLs from `pg_proc`, checked whether the relevant tables have `company_id`, and listed applied migration history. No row contents from driver, vehicle, payment or trip records were queried. No migration, SQL write, API sync, function deployment or production data modification was performed.

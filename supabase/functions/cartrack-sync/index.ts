@@ -88,7 +88,29 @@ Deno.serve(async (req: Request) => {
     }
     const statusJson = JSON.parse(statusText);
     const statuses = Array.isArray(statusJson?.data) ? statusJson.data : [];
-    const byRegistration = new Map(statuses.map((x: any) => [String(x.registration ?? "").trim().toUpperCase(), x]));
+    const normalizeRegistration = (value: unknown) => String(value ?? "").trim().toUpperCase();
+    const hasDuplicateRegistrations = (items: any[]) => {
+      const seen = new Set<string>();
+      for (const item of items) {
+        const registration = normalizeRegistration(item.registration);
+        if (!registration) continue;
+        if (seen.has(registration)) return true;
+        seen.add(registration);
+      }
+      return false;
+    };
+
+    // Ambiguous provider identities must never be resolved by arbitrary "last row wins".
+    if (hasDuplicateRegistrations(vehicles) || hasDuplicateRegistrations(statuses)) {
+      console.warn("CarTrack response contains duplicate normalized registrations");
+      return json({
+        success: false,
+        stage: "validation",
+        error: "A resposta CarTrack contém matrículas duplicadas; sincronização interrompida.",
+      }, 502);
+    }
+
+    const byRegistration = new Map(statuses.map((x: any) => [normalizeRegistration(x.registration), x]));
     const now = new Date().toISOString();
 
     const rows = vehicles.map((v: any) => {

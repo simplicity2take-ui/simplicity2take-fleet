@@ -88,7 +88,7 @@ Deno.serve(async (req: Request) => {
     }
     const statusJson = JSON.parse(statusText);
     const statuses = Array.isArray(statusJson?.data) ? statusJson.data : [];
-    const byRegistration = new Map(statuses.map((x: any) => [String(x.registration).toUpperCase(), x]));
+    const byRegistration = new Map(statuses.map((x: any) => [String(x.registration ?? "").trim().toUpperCase(), x]));
     const now = new Date().toISOString();
 
     const rows = vehicles.map((v: any) => {

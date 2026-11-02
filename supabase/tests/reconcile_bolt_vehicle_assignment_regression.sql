@@ -11,6 +11,15 @@ begin
     from pg_proc p
    where p.oid = 'public.reconcile_bolt_vehicle_assignment(uuid,uuid,date)'::regprocedure;
 
+  if has_function_privilege('anon', 'public.reconcile_bolt_vehicle_assignment(uuid,uuid,date)', 'EXECUTE') then
+    raise exception 'Anonymous role must not execute Bolt assignment RPC';
+  end if;
+  if has_function_privilege('authenticated', 'public.reconcile_bolt_vehicle_assignment(uuid,uuid,date)', 'EXECUTE') then
+    raise exception 'Authenticated role must not execute Bolt assignment RPC';
+  end if;
+  if not has_function_privilege('service_role', 'public.reconcile_bolt_vehicle_assignment(uuid,uuid,date)', 'EXECUTE') then
+    raise exception 'Service role must execute Bolt assignment RPC';
+  end if;
   if not v_is_security_definer then
     raise exception 'Bolt assignment RPC must run as SECURITY DEFINER';
   end if;

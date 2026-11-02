@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal } from "./bolt-sync-utils.ts";
 
 Deno.test("Bolt identity guard allows missing identifiers", () => {
   assertEquals(hasBoltIdentityConflict(null, "bolt-1"), false);
@@ -23,4 +23,11 @@ Deno.test("Bolt email normalization trims and lowercases", () => {
 Deno.test("Bolt phone normalization removes whitespace but preserves punctuation and prefix", () => {
   assertEquals(normalizeBoltPhone(" +351 912-345-678 "), "+351912-345-678");
   assertEquals(normalizeBoltPhone(undefined), "");
+});
+
+Deno.test("Bolt status mapping preserves fallback and maps known states", () => {
+  assertEquals(boltStatusToPortal("suspended"), "Inativo");
+  assertEquals(boltStatusToPortal("approved"), "Ativo");
+  assertEquals(boltStatusToPortal("pending", "Inativo"), "Inativo");
+  assertEquals(boltStatusToPortal("", ""), "Ativo");
 });

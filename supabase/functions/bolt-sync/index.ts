@@ -210,12 +210,13 @@ Deno.serve(async (req: Request) => {
       if (boltId) vehicleByBoltId.set(boltId, result.row);
       if (plate) vehicleByPlate.set(plate, result.row);
     }
-    let driversCreated = 0, assignmentsUpdated = 0, assignmentFailures = 0;
+    let driversCreated = 0, driversUpdated = 0, assignmentsUpdated = 0, assignmentFailures = 0;
     const assignmentErrors: Array<{ boltDriverId: string; message: string }> = [];
     for (const driver of boltDrivers) {
       try {
         const result = await upsertDriver(admin, driver, vehicleByBoltId, vehicleByPlate, now);
         if (result.created) driversCreated++;
+        else driversUpdated++;
         if (result.assignedVehicleId) assignmentsUpdated++;
       } catch (error) {
         assignmentFailures++;
@@ -229,7 +230,7 @@ Deno.serve(async (req: Request) => {
     return json({
       ok: assignmentFailures === 0, partial: assignmentFailures > 0,
       source: "bolt", syncedAt: now,
-      drivers: { received: boltDrivers.length, created: driversCreated, updated: boltDrivers.length - driversCreated },
+      drivers: { received: boltDrivers.length, created: driversCreated, updated: driversUpdated },
       vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: boltVehicles.length - vehiclesCreated },
       assignmentsUpdated, assignmentFailures, assignmentErrors
     }, 200);

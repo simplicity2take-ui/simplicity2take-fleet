@@ -22,3 +22,17 @@ export function boltStatusToPortal(value: unknown, current = "Ativo"): string {
   if (/(active|activated|enabled|approved)/.test(s)) return "Ativo";
   return current || "Ativo";
 }
+
+// Keep compensation outcomes explicit and testable without exposing provider payloads.
+export type BoltCompensationResult =
+  | { ok: true; action: "restored" | "deleted" }
+  | { ok: false; action: "restore_failed" | "delete_failed" };
+
+export function boltCompensationDiagnostic(result: BoltCompensationResult): string {
+  if (result.ok) return result.action === "restored"
+    ? "Perfil anterior restaurado após falha de atribuição."
+    : "Novo perfil removido após falha de atribuição.";
+  return result.action === "restore_failed"
+    ? "Falha crítica: não foi possível restaurar o perfil anterior."
+    : "Falha crítica: não foi possível remover o novo perfil.";
+}

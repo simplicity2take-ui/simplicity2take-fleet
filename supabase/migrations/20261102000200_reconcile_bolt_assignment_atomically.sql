@@ -67,17 +67,17 @@ begin
    limit 1;
 
   if v_assignment_id is null then
-    -- The table has a unique key on (vehicle_id, driver_id, active_from).
-    -- Fail safely if a same-day row from another source occupies that key.
+    -- The table has a unique key on (vehicle_id, driver_id, active_from),
+    -- regardless of source or active_until. Never attempt an insert that
+    -- collides with a historical/closed row; preserve history and fail clearly.
     perform 1
       from public.vehicle_assignments
      where driver_id = p_driver_id
        and vehicle_id = p_vehicle_id
-       and active_from = coalesce(p_active_from, current_date)
-       and source <> 'bolt';
+       and active_from = coalesce(p_active_from, current_date);
 
     if found then
-      raise exception 'A non-Bolt assignment already exists for this driver, vehicle, and date';
+      raise exception 'An assignment already occupies this driver, vehicle, and date; manual or historical row preserved';
     end if;
 
     insert into public.vehicle_assignments

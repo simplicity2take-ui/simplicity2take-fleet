@@ -60,3 +60,10 @@ Deno.test("Bolt status mapping prioritizes explicit negative variants", () => {
     assertEquals(boltStatusToPortal(value), "Inativo");
   }
 });
+
+Deno.test("Bolt pending and unverified statuses do not activate a driver", () => {
+  for (const value of ["pending", "pending_review", "awaiting_approval", "unverified", "unknown"]) {
+    assertEquals(boltStatusToPortal(value), "Inativo");
+  }
+  assertEquals(boltStatusToPortal("pending", "Ativo"), "Inativo");
+});

@@ -1342,13 +1342,27 @@ async function syncBolt() {
   try {
     const { data, error } = await supabaseClient.functions.invoke("bolt-sync", { body: {} });
     if (error) throw error;
-    if (!data?.ok) throw new Error(data?.error || "A sincronização Bolt falhou.");
+
+    const drivers = data?.drivers || {};
+    const vehicles = data?.vehicles || {};
+    const assignments = Number(data?.assignmentsUpdated || 0);
+    const receivedVehicles = Number(vehicles.received || 0);
+    const failedVehicles = Number(vehicles.failed || 0);
+
+    if (!data?.ok) {
+      if (data?.partial) {
+        await loadBackendData();
+        renderApp();
+        showToast(`Bolt parcialmente sincronizada: ${vehicles.created || 0} criadas, ${vehicles.updated || 0} atualizadas e ${failedVehicles} falharam. Motoristas não foram sincronizados.`);
+      } else {
+        throw new Error(data?.error || "A sincronização Bolt falhou.");
+      }
+      return;
+    }
+
     await loadBackendData();
     renderApp();
-    const drivers = data.drivers || {};
-    const vehicles = data.vehicles || {};
-    const assignments = Number(data.assignmentsUpdated || 0);
-    showToast(`Bolt sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas ativos, ${vehicles.active ?? vehicles.received ?? 0} viaturas ativas e ${assignments} associações.`);
+    showToast(`Bolt sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas ativos, ${vehicles.active ?? vehicles.received ?? receivedVehicles} viaturas ativas e ${assignments} associações.`);
   } catch (error) {
     console.error("Bolt sync error", error);
     showToast(error?.message || "Não foi possível sincronizar a Bolt.");

@@ -80,15 +80,21 @@ async function getBoltToken() {
   }
   if (!clientId || !clientSecret) throw new Error("Faltam BOLT_CLIENT_ID e BOLT_CLIENT_SECRET nos Secrets do Supabase.");
   const body = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: "client_credentials", scope: "fleet-integration:api" });
-  const response = await fetch(BOLT_TOKEN_URL, {
+  let response: Response;
+  try {
+    response = await fetch(BOLT_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
       body,
       signal: AbortSignal.timeout(20000)
     });
-  const text = await response.text();
+  } catch {
+    throw new Error("Falha de rede ou timeout na autenticação Bolt.");
+  }
   let data: any = {};
-  try { data = JSON.parse(text); } catch {}
+  try { data = await response.json(); } catch {
+    throw new Error("A Bolt devolveu JSON inválido na autenticação.");
+  }
   if (!response.ok || !data.access_token) throw new Error("A Bolt recusou a autenticação API. Verifique as credenciais e o acesso Fleet Integration.");
   if (typeof data.access_token !== "string" || data.access_token.length < 16 || data.access_token.length > 8192) {
     throw new Error("A Bolt devolveu um token de autenticação inválido.");

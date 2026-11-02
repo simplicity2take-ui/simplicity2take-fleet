@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid } from "./bolt-sync-utils.ts";
 
 Deno.test("Bolt identity guard allows missing identifiers", () => {
   assertEquals(hasBoltIdentityConflict(null, "bolt-1"), false);
@@ -123,4 +123,16 @@ Deno.test("Bolt pagination guard accepts exact safety boundary and rejects fract
   assertEquals(boltPageCountIsValid(1.5, 10), false);
   assertEquals(boltPageCountIsValid(0, 10.5), false);
   assertEquals(boltPageCountIsValid(5001, 5000), false);
+});
+
+Deno.test("Bolt selected vehicle normalization supports v1 and v2 without guessing", () => {
+  const v1 = { uuid: "vehicle-v1", registration_number: "AA-00-AA" };
+  const v2 = { uuid: "vehicle-v2", registration_number: "BB-00-BB" };
+  assertEquals(normalizeBoltActiveVehicle({ active_vehicle: v1 }), v1);
+  assertEquals(normalizeBoltActiveVehicle({ vehicles: { selected: v2, other_assigned: [v1] } }), v2);
+  assertEquals(normalizeBoltActiveVehicle({ vehicles: { selected: null, other_assigned: [v1] } }), null);
+  assertEquals(normalizeBoltActiveVehicle({ vehicles: { other_assigned: [v1] } }), null);
+  assertEquals(normalizeBoltActiveVehicle({ vehicles: null }), null);
+  assertEquals(normalizeBoltActiveVehicle(null), null);
+  assertEquals(normalizeBoltActiveVehicle({ active_vehicle: "invalid" }), null);
 });

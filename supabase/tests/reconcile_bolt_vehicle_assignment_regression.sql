@@ -29,6 +29,9 @@ begin
   if position('FOR UPDATE' in upper(v_definition)) = 0 then
     raise exception 'Bolt assignment RPC must lock the driver row';
   end if;
+  if (length(upper(v_definition)) - length(replace(upper(v_definition), 'FOR UPDATE', ''))) / length('FOR UPDATE') < 2 then
+    raise exception 'Bolt assignment RPC must lock both driver and vehicle rows';
+  end if;
   if position('bolt_vehicle_uuid' in v_definition) = 0 then
     raise exception 'Bolt assignment RPC must validate Bolt vehicle identity';
   end if;

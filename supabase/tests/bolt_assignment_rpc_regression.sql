@@ -39,4 +39,16 @@ begin
   if v_definition ~* 'delete\s+from\s+public\.vehicle_assignments\s+where\s+driver_id\s*=\s*p_driver_id\s*;' then
     raise exception 'Regression: RPC contains an unscoped assignment delete';
   end if;
+
+  if v_definition !~* 'active_until\s+is\s+null' then
+    raise exception 'Regression: RPC does not restrict reconciliation to open assignments';
+  end if;
+
+  if v_definition !~* 'source\s*<>\s*''bolt''' then
+    raise exception 'Regression: RPC does not guard same-day non-Bolt assignment conflicts';
+  end if;
+
+  if v_definition !~* 'revoke\s+all\s+on\s+function' then
+    raise exception 'Regression: RPC privileges are not explicitly restricted';
+  end if;
 end $$;

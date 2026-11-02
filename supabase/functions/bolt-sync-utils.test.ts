@@ -51,7 +51,7 @@ Deno.test("Bolt status mapping handles case-insensitive inactive and active vari
 });
 
 Deno.test("Bolt status mapping does not infer unknown states as active", () => {
-  assertEquals(boltStatusToPortal("pending_review"), "Ativo");
+  assertEquals(boltStatusToPortal("pending_review"), "Inativo");
   assertEquals(boltStatusToPortal("unknown", "Inativo"), "Inativo");
 });
 

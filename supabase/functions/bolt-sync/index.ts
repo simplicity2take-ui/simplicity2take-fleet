@@ -230,9 +230,9 @@ Deno.serve(async (req: Request) => {
       ok: assignmentFailures === 0, partial: assignmentFailures > 0,
       source: "bolt", syncedAt: now,
       drivers: { received: boltDrivers.length, created: driversCreated, updated: boltDrivers.length - driversCreated },
-      vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: boltVehicles.length - driversCreated },
+      vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: boltVehicles.length - vehiclesCreated },
       assignmentsUpdated, assignmentFailures, assignmentErrors
-    }, assignmentFailures > 0 ? 207 : 200);
+    }, 200);
   } catch (error) {
     console.error("bolt-sync error", error);
     return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);

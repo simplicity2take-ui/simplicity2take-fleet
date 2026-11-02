@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { hasBoltIdentityConflict } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone } from "./bolt-sync-utils.ts";
 
 Deno.test("Bolt identity guard allows missing identifiers", () => {
   assertEquals(hasBoltIdentityConflict(null, "bolt-1"), false);
@@ -13,4 +13,14 @@ Deno.test("Bolt identity guard accepts matching identifiers", () => {
 
 Deno.test("Bolt identity guard rejects conflicting identifiers", () => {
   assertEquals(hasBoltIdentityConflict("bolt-1", "bolt-2"), true);
+});
+
+Deno.test("Bolt email normalization trims and lowercases", () => {
+  assertEquals(normalizeBoltEmail("  DRIVER@Example.COM "), "driver@example.com");
+  assertEquals(normalizeBoltEmail(null), "");
+});
+
+Deno.test("Bolt phone normalization removes whitespace but preserves punctuation and prefix", () => {
+  assertEquals(normalizeBoltPhone(" +351 912-345-678 "), "+351912-345-678");
+  assertEquals(normalizeBoltPhone(undefined), "");
 });

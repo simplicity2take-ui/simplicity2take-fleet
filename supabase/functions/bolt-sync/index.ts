@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid } from "./bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -61,10 +61,7 @@ function normalizeVehicleId(vehicle: any) { return clean(first(vehicle, ["uuid",
 function normalizePlate(vehicle: any) { return clean(first(vehicle, ["reg_number", "registration_number", "plate", "license_plate"])).trim().toUpperCase(); }
 function normalizeDriverId(driver: any) { return clean(first(driver, ["driver_uuid", "uuid", "id"])).trim(); }
 function normalizeActiveVehicle(driver: any) {
-  // Bolt v1 exposes active_vehicle; v2 exposes vehicles.selected.
-  // Never infer the selected vehicle from vehicles.other_assigned.
-  const v = driver?.active_vehicle ?? driver?.vehicles?.selected;
-  return v && typeof v === "object" ? v : null;
+  return normalizeBoltActiveVehicle(driver);
 }
 function normalizeEmail(value: unknown) {
   return clean(value).trim().toLowerCase();

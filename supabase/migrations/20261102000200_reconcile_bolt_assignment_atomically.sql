@@ -41,7 +41,8 @@ begin
     from public.vehicles
    where id = p_vehicle_id
      and bolt_vehicle_uuid is not null
-     and status = 'Ativo';
+     and status = 'Ativo'
+   for update;
 
   if not found then
     raise exception 'Vehicle % is missing, inactive, or not linked to Bolt', p_vehicle_id;

@@ -448,13 +448,16 @@ Deno.serve(async (req: Request) => {
       } catch (error) {
         assignmentFailures++;
         const safeMessage = safeErrorMessage(error);
+        const isCompensationFailure = /compensation failed/i.test(safeMessage);
         assignmentErrors.push({
           boltDriverId: normalizeDriverId(driver) || "unknown",
-          message: safeMessage
+          message: safeMessage,
+          ...(isCompensationFailure ? { severity: "critical" as const, requiresManualReview: true } : {})
         });
         console.error("bolt-sync driver processing failed", {
           boltDriverId: normalizeDriverId(driver) || "unknown",
-          error: safeMessage
+          error: safeMessage,
+          ...(isCompensationFailure ? { severity: "critical", requiresManualReview: true } : {})
         });
         // Continue syncing other drivers, but report partial failure explicitly.
       }

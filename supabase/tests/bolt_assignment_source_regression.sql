@@ -1,27 +1,31 @@
--- Regression tests for Bolt assignment source isolation.
--- Run in a disposable Supabase database, not production.
-begin;
-
+-- Regression guard for Bolt assignment source isolation.
+-- Read-only against the function catalog; safe to run in a test or staging database.
+-- This intentionally fails against the currently deployed implementation until fixed.
 do $$
 declare
-  v_manual_count integer;
-  v_uber_count integer;
-  v_bolt_count integer;
+  v_definition text;
 begin
-  -- Seed fixtures should be created by the test harness with known driver/vehicle IDs.
-  -- Assertions below are intended to run after invoking sync_bolt_fleet with fixture payloads.
-  select count(*) into v_manual_count
-  from public.vehicle_assignments where source = 'manual';
+  select pg_get_functiondef(
+    'public.sync_bolt_fleet(jsonb,jsonb,jsonb,timestamp with time zone)'::regprocedure
+  )
+  into v_definition;
 
-  select count(*) into v_uber_count
-  from public.vehicle_assignments where source = 'uber';
+  if v_definition is null then
+    raise exception 'sync_bolt_fleet function was not found';
+  end if;
 
-  select count(*) into v_bolt_count
-  from public.vehicle_assignments where source = 'bolt';
+  -- Bolt sync must never delete every assignment belonging to a driver.
+  if v_definition ~* 'delete\s+from\s+public\.vehicle_assignments\s+where\s+driver_id\s*=\s*d_id\s*;' then
+    raise exception 'Regression: Bolt sync still deletes assignments across all sources';
+  end if;
 
-  if v_manual_count < 0 or v_uber_count < 0 or v_bolt_count < 0 then
-    raise exception 'Counts cannot be negative';
+  -- Any replacement/deletion must be explicitly scoped to Bolt-owned rows.
+  if v_definition !~* 'source\s*=\s*''bolt''' then
+    raise exception 'Regression: Bolt assignment mutation is not scoped to source=bolt';
+  end if;
+
+  -- New Bolt rows must be explicitly tagged, not rely on the table default ('manual').
+  if v_definition !~* 'insert\s+into\s+public\.vehicle_assignments\s*\([^)]*source' then
+    raise exception 'Regression: Bolt assignment insert does not explicitly set source';
   end if;
 end $$;
-
-rollback;

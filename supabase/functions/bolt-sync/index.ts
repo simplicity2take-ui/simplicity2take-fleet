@@ -247,6 +247,13 @@ Deno.serve(async (req: Request) => {
         error: "A sincronização de viaturas teve falhas; a sincronização de motoristas foi interrompida para evitar atribuições incompletas."
       }, 200);
     }
+    if (vehiclesCreated + vehiclesUpdated !== boltVehicles.length) {
+      return json({
+        ok: false, partial: true, source: "bolt", syncedAt: now,
+        vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: vehiclesUpdated, failed: boltVehicles.length - vehiclesCreated - vehiclesUpdated },
+        error: "A contagem de viaturas processadas não corresponde à resposta Bolt; sincronização interrompida."
+      }, 200);
+    }
     let driversCreated = 0, driversUpdated = 0, assignmentsUpdated = 0, assignmentFailures = 0;
     const assignmentErrors: Array<{ boltDriverId: string; message: string }> = [];
     for (const driver of boltDrivers) {

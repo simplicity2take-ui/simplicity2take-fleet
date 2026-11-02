@@ -104,3 +104,23 @@ Deno.test("Bolt page metadata accepts consistent totals and rejects malformed or
   assertEquals(boltPageCountIsValid(0, 5001), false);
   assertEquals(boltPageCountIsValid(0, "10"), false);
 });
+
+
+Deno.test("Bolt company resolution deduplicates repeated company IDs safely", () => {
+  assertEquals(resolveSingleBoltCompanyId([
+    { company_id: " c-1 " }, { company_id: "c-1" }, { company_id: "" }
+  ]), "c-1");
+});
+
+Deno.test("Bolt company extraction rejects malformed company collections", () => {
+  assertEquals(extractBoltCompanies({ data: { companies: "c-1" } }), []);
+  assertEquals(extractBoltCompanies({ data: { companies: [null, {}, { company_id: 7 }, { company_id: " " }] } }), []);
+  assertEquals(extractBoltCompanies([]), []);
+});
+
+Deno.test("Bolt pagination guard accepts exact safety boundary and rejects fractional values", () => {
+  assertEquals(boltPageCountIsValid(1000, 5000), true);
+  assertEquals(boltPageCountIsValid(1.5, 10), false);
+  assertEquals(boltPageCountIsValid(0, 10.5), false);
+  assertEquals(boltPageCountIsValid(5001, 5000), false);
+});

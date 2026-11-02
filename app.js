@@ -1348,12 +1348,23 @@ async function syncBolt() {
     const assignments = Number(data?.assignmentsUpdated || 0);
     const receivedVehicles = Number(vehicles.received || 0);
     const failedVehicles = Number(vehicles.failed || 0);
+    const assignmentFailures = Number(data?.assignmentFailures || 0);
+    const criticalReviews = Array.isArray(data?.assignmentErrors)
+      ? data.assignmentErrors.filter((item) => item?.requiresManualReview === true).length
+      : 0;
 
     if (!data?.ok) {
       if (data?.partial) {
         await loadBackendData();
         renderApp();
-        showToast(`Bolt parcialmente sincronizada: ${vehicles.created || 0} criadas, ${vehicles.updated || 0} atualizadas e ${failedVehicles} falharam. Motoristas não foram sincronizados.`);
+        if (receivedVehicles > 0 && failedVehicles > 0 && assignmentFailures === 0) {
+          showToast(`Bolt parcialmente sincronizada: ${vehicles.created || 0} criadas, ${vehicles.updated || 0} atualizadas e ${failedVehicles} falharam. Motoristas não foram sincronizados.`);
+        } else {
+          const reviewNotice = criticalReviews > 0
+            ? ` ${criticalReviews} falha(s) crítica(s) exigem revisão manual.`
+            : "";
+          showToast(`Bolt parcialmente sincronizada: ${drivers.created || 0} motoristas criados, ${drivers.updated || 0} atualizados; ${assignments} associações concluídas e ${assignmentFailures} falhas.${reviewNotice}`);
+        }
       } else {
         throw new Error(data?.error || "A sincronização Bolt falhou.");
       }

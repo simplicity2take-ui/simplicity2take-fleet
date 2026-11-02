@@ -134,8 +134,16 @@ async function upsertVehicle(admin: any, vehicle: any, now: string) {
   const vin = clean(first(vehicle, ["vin", "VIN"]));
   const state = first(vehicle, ["state", "status"]);
   let existing: any = null;
-  if (boltId) existing = (await admin.from("vehicles").select("*").eq("bolt_vehicle_uuid", boltId).maybeSingle()).data;
-  if (!existing && plate) existing = (await admin.from("vehicles").select("*").eq("plate", plate).maybeSingle()).data;
+  if (boltId) {
+    const lookup = await admin.from("vehicles").select("*").eq("bolt_vehicle_uuid", boltId).maybeSingle();
+    if (lookup.error) throw new Error("Falha ao consultar viatura existente por UUID Bolt.");
+    existing = lookup.data;
+  }
+  if (!existing && plate) {
+    const lookup = await admin.from("vehicles").select("*").eq("plate", plate).maybeSingle();
+    if (lookup.error) throw new Error("Falha ao consultar viatura existente por matrícula.");
+    existing = lookup.data;
+  }
   const payload: any = {
     plate: plate || existing?.plate || "",
     model: model || existing?.model || "",
@@ -168,9 +176,21 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   const activePlate = normalizePlate(activeVehicle);
 
   let existing: any = null;
-  if (boltId) existing = (await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).maybeSingle()).data;
-  if (!existing && email) existing = (await admin.from("drivers").select("*").ilike("email", email).maybeSingle()).data;
-  if (!existing && phone) existing = (await admin.from("drivers").select("*").eq("phone", phone).maybeSingle()).data;
+  if (boltId) {
+    const lookup = await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).maybeSingle();
+    if (lookup.error) throw new Error("Falha ao consultar motorista existente por UUID Bolt.");
+    existing = lookup.data;
+  }
+  if (!existing && email) {
+    const lookup = await admin.from("drivers").select("*").ilike("email", email).maybeSingle();
+    if (lookup.error) throw new Error("Falha ao consultar motorista existente por email.");
+    existing = lookup.data;
+  }
+  if (!existing && phone) {
+    const lookup = await admin.from("drivers").select("*").eq("phone", phone).maybeSingle();
+    if (lookup.error) throw new Error("Falha ao consultar motorista existente por telefone.");
+    existing = lookup.data;
+  }
 
   let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
   if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;

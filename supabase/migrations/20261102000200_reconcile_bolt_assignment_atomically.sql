@@ -59,6 +59,19 @@ begin
    for update;
 
   if v_assignment_id is null then
+    -- The table has a unique key on (vehicle_id, driver_id, active_from).
+    -- Fail safely if a same-day row from another source occupies that key.
+    perform 1
+      from public.vehicle_assignments
+     where driver_id = p_driver_id
+       and vehicle_id = p_vehicle_id
+       and active_from = coalesce(p_active_from, current_date)
+       and source <> 'bolt';
+
+    if found then
+      raise exception 'A non-Bolt assignment already exists for this driver, vehicle, and date';
+    end if;
+
     insert into public.vehicle_assignments
       (driver_id, vehicle_id, active_from, active_until, source)
     values

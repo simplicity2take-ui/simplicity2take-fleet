@@ -166,19 +166,40 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   const activeVehicle = normalizeActiveVehicle(driver);
   const activeVehicleId = normalizeVehicleId(activeVehicle);
   const activePlate = normalizePlate(activeVehicle);
+
   let existing: any = null;
   if (boltId) existing = (await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).maybeSingle()).data;
   if (!existing && email) existing = (await admin.from("drivers").select("*").ilike("email", email).maybeSingle()).data;
   if (!existing && phone) existing = (await admin.from("drivers").select("*").eq("phone", phone).maybeSingle()).data;
+
+  let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
+  if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
+  const hasExplicitActiveVehicle = Boolean(activeVehicleId || activePlate);
+  const nextStatus = statusToPortal(state, existing?.status || "Ativo");
+
+  // Validate all assignment preconditions before changing the driver profile.
+  if (nextStatus === "Ativo" && hasExplicitActiveVehicle && !assignedVehicle) {
+    throw new Error("Não foi possível resolver a viatura ativa Bolt; perfil e atribuição não foram alterados.");
+  }
+  if (nextStatus === "Ativo" && assignedVehicle?.bolt_vehicle_uuid && activeVehicleId &&
+      assignedVehicle.bolt_vehicle_uuid !== activeVehicleId) {
+    throw new Error("A viatura resolvida não corresponde ao UUID ativo Bolt; perfil e atribuição não foram alterados.");
+  }
+  if (nextStatus === "Ativo" && assignedVehicle?.plate && activePlate &&
+      assignedVehicle.plate.toUpperCase() !== activePlate.toUpperCase() && !activeVehicleId) {
+    throw new Error("A matrícula resolvida não corresponde à viatura ativa Bolt; perfil e atribuição não foram alterados.");
+  }
+
   const payload: any = {
     full_name: fullName || existing?.full_name || "Motorista Bolt",
     email: email || existing?.email || null,
     phone: phone || existing?.phone || null,
-    status: statusToPortal(state, existing?.status || "Ativo"),
+    status: nextStatus,
     bolt_driver_uuid: boltId || existing?.bolt_driver_uuid || null,
     bolt_partner_uuid: partnerUuid || existing?.bolt_partner_uuid || null,
     bolt_last_synced_at: now
   };
+
   let row: any, created = false;
   if (existing) {
     const result = await admin.from("drivers").update(payload).eq("id", existing.id).select("*").single();
@@ -187,25 +208,8 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   } else {
     const result = await admin.from("drivers").insert(payload).select("*").single();
     if (result.error) throw result.error;
-    row = result.data; created = true;
-  }
-
-  let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
-  if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
-
-  // If Bolt explicitly reports an active vehicle but it cannot be mapped,
-  // fail the sync instead of silently leaving a potentially stale assignment.
-  const hasExplicitActiveVehicle = Boolean(activeVehicleId || activePlate);
-  if (row.status === "Ativo" && hasExplicitActiveVehicle && !assignedVehicle) {
-    throw new Error(`Não foi possível resolver a viatura Bolt do motorista ${row.id}; atribuição preservada.`);
-  }
-  if (row.status === "Ativo" && assignedVehicle?.bolt_vehicle_uuid && activeVehicleId &&
-      assignedVehicle.bolt_vehicle_uuid !== activeVehicleId) {
-    throw new Error(`A viatura resolvida não corresponde ao UUID ativo da Bolt para o motorista ${row.id}.`);
-  }
-  if (row.status === "Ativo" && assignedVehicle?.plate && activePlate &&
-      assignedVehicle.plate.toUpperCase() !== activePlate.toUpperCase() && !activeVehicleId) {
-    throw new Error(`A matrícula resolvida não corresponde à viatura ativa Bolt para o motorista ${row.id}.`);
+    row = result.data;
+    created = true;
   }
 
   // Reconcile Bolt assignments atomically and serialize concurrent syncs per driver.
@@ -223,7 +227,6 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   }
   return { row, created, assignedVehicleId: row.status === "Ativo" ? assignedVehicle?.id || null : null };
 }
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {

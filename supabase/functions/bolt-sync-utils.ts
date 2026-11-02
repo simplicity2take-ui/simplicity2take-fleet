@@ -28,6 +28,10 @@ export type BoltCompensationResult =
   | { ok: true; action: "restored" | "deleted" }
   | { ok: false; action: "restore_failed" | "delete_failed" };
 
+export function isBoltCompensationCritical(result: BoltCompensationResult): boolean {
+  return !result.ok;
+}
+
 export function boltCompensationDiagnostic(result: BoltCompensationResult): string {
   if (result.ok) return result.action === "restored"
     ? "Perfil anterior restaurado após falha de atribuição."

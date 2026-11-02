@@ -27,12 +27,24 @@ begin
     raise exception 'Driver % does not exist', p_driver_id;
   end if;
 
+  -- Require an active driver and a vehicle linked to Bolt.
   perform 1
-    from public.vehicles
-   where id = p_vehicle_id;
+    from public.drivers
+   where id = p_driver_id
+     and status = 'Ativo';
 
   if not found then
-    raise exception 'Vehicle % does not exist', p_vehicle_id;
+    raise exception 'Driver % is missing or inactive', p_driver_id;
+  end if;
+
+  perform 1
+    from public.vehicles
+   where id = p_vehicle_id
+     and bolt_vehicle_uuid is not null
+     and status = 'Ativo';
+
+  if not found then
+    raise exception 'Vehicle % is missing, inactive, or not linked to Bolt', p_vehicle_id;
   end if;
 
   -- Keep one matching open Bolt assignment if it already exists.

@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal } from "./bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -55,13 +55,6 @@ function hasExpectedCollection(payload: any, keys: string[], depth = 0): boolean
         hasExpectedCollection(payload[key], keys, depth + 1)) return true;
   }
   return false;
-}
-function statusToPortal(value: unknown, current = "Ativo") {
-  const s = clean(value).toLowerCase();
-  if (!s) return current || "Ativo";
-  if (/(suspend|blocked|deactiv|inactive|terminated|banned|disabled)/.test(s)) return "Inativo";
-  if (/(active|activated|enabled|approved)/.test(s)) return "Ativo";
-  return current || "Ativo";
 }
 function normalizeVehicleId(vehicle: any) { return clean(first(vehicle, ["uuid", "vehicle_uuid", "id"])).trim(); }
 function normalizePlate(vehicle: any) { return clean(first(vehicle, ["reg_number", "registration_number", "plate", "license_plate"])).trim().toUpperCase(); }
@@ -153,7 +146,7 @@ async function upsertVehicle(admin: any, vehicle: any, now: string) {
     model: model || existing?.model || "",
     vehicle_year: year || existing?.vehicle_year || null,
     vin: vin || existing?.vin || null,
-    status: statusToPortal(state, existing?.status || "Ativo"),
+    status: boltStatusToPortal(state, existing?.status || "Ativo"),
     bolt_vehicle_uuid: boltId || existing?.bolt_vehicle_uuid || null,
     bolt_last_synced_at: now
   };
@@ -202,7 +195,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
   if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
   const hasExplicitActiveVehicle = Boolean(activeVehicleId || activePlate);
-  const nextStatus = statusToPortal(state, existing?.status || "Ativo");
+  const nextStatus = boltStatusToPortal(state, existing?.status || "Ativo");
 
   // Validate all assignment preconditions before changing the driver profile.
   if (nextStatus === "Ativo" && hasExplicitActiveVehicle && !assignedVehicle) {

@@ -29,7 +29,7 @@ Deno.test("Bolt status mapping preserves fallback and maps known states", () => 
   assertEquals(boltStatusToPortal("suspended"), "Inativo");
   assertEquals(boltStatusToPortal("approved"), "Ativo");
   assertEquals(boltStatusToPortal("pending", "Inativo"), "Inativo");
-  assertEquals(boltStatusToPortal("", ""), "Ativo");
+  assertEquals(boltStatusToPortal("", ""), "Inativo");\n  assertEquals(boltStatusToPortal("   "), "Inativo");\n  assertEquals(boltStatusToPortal(null, "Ativo"), "Inativo");\n  assertEquals(boltStatusToPortal(undefined, "Ativo"), "Inativo");
 });
 
 Deno.test("Bolt compensation diagnostics distinguish restored, deleted and critical failures", () => {

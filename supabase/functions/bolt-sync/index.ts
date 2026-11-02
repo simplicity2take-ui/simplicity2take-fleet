@@ -42,6 +42,17 @@ function arrayFrom(payload: any, keys: string[]) {
   }
   return [];
 }
+function hasExpectedCollection(payload: any, keys: string[]): boolean {
+  if (Array.isArray(payload)) return true;
+  for (const key of keys) {
+    if (Array.isArray(payload?.[key])) return true;
+  }
+  for (const key of ["data", "result", "response"]) {
+    if (payload?.[key] && typeof payload[key] === "object" &&
+        hasExpectedCollection(payload[key], keys)) return true;
+  }
+  return false;
+}
 function statusToPortal(value: unknown, current = "Ativo") {
   const s = clean(value).toLowerCase();
   if (!s) return current || "Ativo";
@@ -227,6 +238,16 @@ Deno.serve(async (req: Request) => {
       boltPost("/fleetIntegration/v1/getDrivers", token),
       boltPost("/fleetIntegration/v1/getVehicles", token)
     ]);
+    const driverCollectionPresent = hasExpectedCollection(driversPayload, ["drivers", "fleet_drivers", "items"]);
+    const vehicleCollectionPresent = hasExpectedCollection(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
+    if (!driverCollectionPresent) return json({
+      ok: false, error: "A resposta Bolt não contém uma coleção reconhecida de motoristas; sincronização interrompida.",
+      source: "bolt", syncedAt: null
+    }, 502);
+    if (!vehicleCollectionPresent) return json({
+      ok: false, error: "A resposta Bolt não contém uma coleção reconhecida de viaturas; sincronização interrompida.",
+      source: "bolt", syncedAt: null
+    }, 502);
     const boltDrivers = arrayFrom(driversPayload, ["drivers", "fleet_drivers", "items"]);
     const boltVehicles = arrayFrom(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
     // Refuse unexpectedly large responses rather than processing an unbounded

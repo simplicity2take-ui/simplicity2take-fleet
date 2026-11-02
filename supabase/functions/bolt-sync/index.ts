@@ -144,49 +144,18 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
   if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
 
-  // Preserve an existing Bolt assignment until its replacement is safely inserted.
-  // Also retry cleanup of duplicate open Bolt rows on subsequent syncs.
+  // Reconcile Bolt assignments atomically and serialize concurrent syncs per driver.
   if (row.status === "Ativo" && assignedVehicle?.id) {
-    const currentResult = await admin.from("vehicle_assignments")
-      .select("id, vehicle_id")
-      .eq("driver_id", row.id)
-      .eq("source", "bolt")
-      .is("active_until", null);
-    if (currentResult.error) throw currentResult.error;
-
-    const currentRows = currentResult.data || [];
-    const matching = currentRows.find((item: any) => item.vehicle_id === assignedVehicle.id);
-    let keepId = matching?.id;
-
-    if (!matching) {
-      const assignmentResult = await admin.from("vehicle_assignments")
-        .insert({
-          vehicle_id: assignedVehicle.id,
-          driver_id: row.id,
-          active_from: now.slice(0, 10),
-          active_until: null,
-          source: "bolt"
-        })
-        .select("id")
-        .single();
-      if (assignmentResult.error) throw assignmentResult.error;
-      keepId = assignmentResult.data.id;
-    }
-
-    const oldIds = currentRows
-      .map((item: any) => item.id)
-      .filter((id: string) => id !== keepId);
-    if (oldIds.length) {
-      const cleanupResult = await admin.from("vehicle_assignments")
-        .delete()
-        .in("id", oldIds)
-        .eq("driver_id", row.id)
-        .eq("source", "bolt");
-      if (cleanupResult.error) {
-        // The correct assignment remains present; next sync retries cleanup.
-        throw cleanupResult.error;
+    const { data: assignmentId, error: assignmentError } = await admin.rpc(
+      "reconcile_bolt_vehicle_assignment",
+      {
+        p_driver_id: row.id,
+        p_vehicle_id: assignedVehicle.id,
+        p_active_from: now.slice(0, 10)
       }
-    }
+    );
+    if (assignmentError) throw assignmentError;
+    if (!assignmentId) throw new Error("A reconciliação Bolt não devolveu uma atribuição.");
   }
   return { row, created, assignedVehicleId: row.status === "Ativo" ? assignedVehicle?.id || null : null };
 }

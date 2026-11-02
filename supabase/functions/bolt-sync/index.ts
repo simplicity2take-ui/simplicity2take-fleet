@@ -223,9 +223,16 @@ Deno.serve(async (req: Request) => {
     const vehicleErrors: Array<{ boltVehicleId: string; message: string }> = [];
     const seenBoltVehicleIds = new Set<string>();
     const seenBoltPlates = new Set<string>();
+    let invalidVehicleRecords = 0;
     for (const vehicle of boltVehicles) {
       const incomingBoltId = normalizeVehicleId(vehicle);
       const incomingPlate = normalizePlate(vehicle).toUpperCase();
+      if (!incomingBoltId && !incomingPlate) {
+        vehicleFailures++;
+        invalidVehicleRecords++;
+        vehicleErrors.push({ boltVehicleId: "unknown", message: "Registo Bolt sem UUID e sem matrícula; registo ignorado." });
+        continue;
+      }
       if (incomingBoltId && seenBoltVehicleIds.has(incomingBoltId)) {
         vehicleFailures++;
         vehicleErrors.push({ boltVehicleId: incomingBoltId, message: "Resposta Bolt contém UUID de viatura duplicado; registo ignorado." });

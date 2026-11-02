@@ -93,6 +93,8 @@ async function getBoltToken() {
 async function boltPost(path: string, token: string) {
   const attempts = [{ pager: { offset: 0, limit: 1000 } }, { page: { offset: 0, limit: 1000 } }, {}];
   let lastError = "Pedido Bolt recusado.";
+  const allowedPaths = new Set(["/fleetIntegration/v1/getDrivers", "/fleetIntegration/v1/getVehicles"]);
+  if (!allowedPaths.has(path)) throw new Error("Endpoint Bolt não permitido.");
   for (let index = 0; index < attempts.length; index++) {
     let response: Response;
     try {

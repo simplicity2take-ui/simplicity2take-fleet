@@ -374,7 +374,17 @@ Deno.serve(async (req: Request) => {
     if (callerEmail !== "simplicity2take@gmail.com") return json({ ok: false, error: "Apenas o administrador pode sincronizar a Bolt." }, 403);
 
     const token = await getBoltToken();
-    const apiVersion = Deno.env.get("BOLT_API_VERSION") === "2" ? "2" : "1";
+    // Require an explicit opt-in value; never infer v2 from partial configuration.
+    const configuredApiVersion = (Deno.env.get("BOLT_API_VERSION") || "1").trim();
+    if (configuredApiVersion !== "1" && configuredApiVersion !== "2") {
+      return json({
+        ok: false,
+        error: "BOLT_API_VERSION inválida. Configure explicitamente 1 ou 2.",
+        source: "bolt",
+        syncedAt: null
+      }, 500);
+    }
+    const apiVersion = configuredApiVersion;
     let boltDrivers: any[], boltVehicles: any[];
     if (apiVersion === "2") {
       const companyId = await getBoltV2CompanyId(token);

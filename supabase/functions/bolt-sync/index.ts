@@ -140,16 +140,28 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     if (result.error) throw result.error;
     row = result.data; created = true;
   }
+
   let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
   if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
-  if (assignedVehicle?.id) {
-    await admin.from("vehicle_assignments").delete().eq("driver_id", row.id);
+
+  // Do not modify assignments for inactive drivers or when Bolt's vehicle cannot be resolved.
+  if (row.status === "Ativo" && assignedVehicle?.id) {
+    const deleteResult = await admin.from("vehicle_assignments")
+      .delete()
+      .eq("driver_id", row.id)
+      .eq("source", "bolt");
+    if (deleteResult.error) throw deleteResult.error;
+
     const assignment = await admin.from("vehicle_assignments").insert({
-      vehicle_id: assignedVehicle.id, driver_id: row.id, active_from: new Date().toISOString().slice(0, 10), active_until: null
+      vehicle_id: assignedVehicle.id,
+      driver_id: row.id,
+      active_from: now.slice(0, 10),
+      active_until: null,
+      source: "bolt"
     });
     if (assignment.error) throw assignment.error;
   }
-  return { row, created, assignedVehicleId: assignedVehicle?.id || null };
+  return { row, created, assignedVehicleId: row.status === "Ativo" ? assignedVehicle?.id || null : null };
 }
 
 Deno.serve(async (req: Request) => {

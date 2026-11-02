@@ -144,6 +144,13 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
   if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
 
+  // If Bolt explicitly reports an active vehicle but it cannot be mapped,
+  // fail the sync instead of silently leaving a potentially stale assignment.
+  const hasExplicitActiveVehicle = Boolean(activeVehicleId || activePlate);
+  if (row.status === "Ativo" && hasExplicitActiveVehicle && !assignedVehicle) {
+    throw new Error(`Não foi possível resolver a viatura Bolt do motorista ${row.id}; atribuição preservada.`);
+  }
+
   // Reconcile Bolt assignments atomically and serialize concurrent syncs per driver.
   if (row.status === "Ativo" && assignedVehicle?.id) {
     const { data: assignmentId, error: assignmentError } = await admin.rpc(

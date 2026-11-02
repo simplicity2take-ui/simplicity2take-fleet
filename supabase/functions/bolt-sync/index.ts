@@ -212,7 +212,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     created = true;
   }
 
-  // Reconcile Bolt assignments atomically and serialize concurrent syncs per driver.
+  // Reconcile first. If the RPC fails, do not leave the driver profile changed.
   if (row.status === "Ativo" && assignedVehicle?.id) {
     const { data: assignmentId, error: assignmentError } = await admin.rpc(
       "reconcile_bolt_vehicle_assignment",
@@ -222,8 +222,37 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
         p_active_from: now.slice(0, 10)
       }
     );
-    if (assignmentError) throw assignmentError;
-    if (!assignmentId) throw new Error("A reconciliação Bolt não devolveu uma atribuição.");
+    if (assignmentError || !assignmentId) {
+      // Best-effort compensation for the profile write. The assignment RPC is
+      // transactional, but PostgREST cannot wrap this profile update in it.
+      if (existing) {
+        const rollback = await admin.from("drivers").update({
+          full_name: existing.full_name,
+          email: existing.email,
+          phone: existing.phone,
+          status: existing.status,
+          bolt_driver_uuid: existing.bolt_driver_uuid,
+          bolt_partner_uuid: existing.bolt_partner_uuid,
+          bolt_last_synced_at: existing.bolt_last_synced_at
+        }).eq("id", existing.id);
+        if (rollback.error) {
+          console.error("bolt-sync driver profile compensation failed", {
+            driverId: existing.id,
+            code: rollback.error.code
+          });
+        }
+      } else {
+        const rollback = await admin.from("drivers").delete().eq("id", row.id);
+        if (rollback.error) {
+          console.error("bolt-sync new driver compensation failed", {
+            driverId: row.id,
+            code: rollback.error.code
+          });
+        }
+      }
+      if (assignmentError) throw assignmentError;
+      throw new Error("A reconciliação Bolt não devolveu uma atribuição.");
+    }
   }
   return { row, created, assignedVehicleId: row.status === "Ativo" ? assignedVehicle?.id || null : null };
 }

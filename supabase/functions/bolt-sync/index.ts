@@ -63,23 +63,25 @@ async function boltPost(path: string, token: string) {
   const attempts = [{ pager: { offset: 0, limit: 1000 } }, { page: { offset: 0, limit: 1000 } }, {}];
   let lastError = "Pedido Bolt recusado.";
   for (let index = 0; index < attempts.length; index++) {
-    const response = await fetch(BOLT_API_BASE + path, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(attempts[index])
-    });
+    let response: Response;
+    try {
+      response = await fetch(BOLT_API_BASE + path, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(attempts[index]),
+        signal: AbortSignal.timeout(20000)
+      });
+    } catch {
+      // Network/timeout errors are not evidence that another payload shape
+      // will work. Fail fast rather than duplicating a potentially processed call.
+      throw new Error("Falha de rede ou timeout ao contactar a API Bolt.");
+    }
     const text = await response.text();
     let data: any = {};
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    if (response.ok) {
-      // Retry only when the API clearly rejects the request shape.
-      // Do not repeat a successful response, even if its collection is empty.
-      return data;
-    }
+    if (response.ok) return data;
     lastError = clean(data?.message || data?.error || text || lastError);
-    if (response.status < 400 || response.status >= 500 || ![400, 422].includes(response.status)) {
-      throw new Error(lastError);
-    }
+    if (![400, 422].includes(response.status)) throw new Error(lastError);
   }
   throw new Error(lastError);
 }

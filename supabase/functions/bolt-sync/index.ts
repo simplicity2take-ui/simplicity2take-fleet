@@ -61,7 +61,9 @@ function normalizeVehicleId(vehicle: any) { return clean(first(vehicle, ["uuid",
 function normalizePlate(vehicle: any) { return clean(first(vehicle, ["reg_number", "registration_number", "plate", "license_plate"])).trim().toUpperCase(); }
 function normalizeDriverId(driver: any) { return clean(first(driver, ["driver_uuid", "uuid", "id"])).trim(); }
 function normalizeActiveVehicle(driver: any) {
-  const v = driver?.active_vehicle;
+  // Bolt v1 exposes active_vehicle; v2 exposes vehicles.selected.
+  // Never infer the selected vehicle from vehicles.other_assigned.
+  const v = driver?.active_vehicle ?? driver?.vehicles?.selected;
   return v && typeof v === "object" ? v : null;
 }
 function normalizeEmail(value: unknown) {

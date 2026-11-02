@@ -66,6 +66,9 @@ async function getBoltToken() {
   let data: any = {};
   try { data = JSON.parse(text); } catch {}
   if (!response.ok || !data.access_token) throw new Error("A Bolt recusou a autenticação API. Verifique as credenciais e o acesso Fleet Integration.");
+  if (typeof data.access_token !== "string" || data.access_token.length < 16 || data.access_token.length > 8192) {
+    throw new Error("A Bolt devolveu um token de autenticação inválido.");
+  }
   return data.access_token as string;
 }
 async function boltPost(path: string, token: string) {

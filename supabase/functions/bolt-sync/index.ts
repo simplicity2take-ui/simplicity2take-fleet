@@ -218,6 +218,18 @@ Deno.serve(async (req: Request) => {
     ]);
     const boltDrivers = arrayFrom(driversPayload, ["drivers", "fleet_drivers", "items"]);
     const boltVehicles = arrayFrom(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
+    // Refuse unexpectedly large responses rather than processing an unbounded
+    // payload from the external provider in a single Edge Function invocation.
+    const MAX_BOLT_DRIVERS = 5000;
+    const MAX_BOLT_VEHICLES = 5000;
+    if (boltDrivers.length > MAX_BOLT_DRIVERS) return json({
+      ok: false, error: `A Bolt devolveu ${boltDrivers.length} motoristas; limite de segurança (${MAX_BOLT_DRIVERS}) excedido.`,
+      source: "bolt", syncedAt: null
+    }, 502);
+    if (boltVehicles.length > MAX_BOLT_VEHICLES) return json({
+      ok: false, error: `A Bolt devolveu ${boltVehicles.length} viaturas; limite de segurança (${MAX_BOLT_VEHICLES}) excedido.`,
+      source: "bolt", syncedAt: null
+    }, 502);
     // Treat an empty individual collection as suspicious: never interpret an
     // incomplete/empty API response as authoritative data for a fleet sync.
     if (!boltDrivers.length) return json({

@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { hasBoltIdentityConflict } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone } from "./bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -172,8 +172,8 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   const firstName = clean(first(driver, ["first_name", "firstName"]));
   const lastName = clean(first(driver, ["last_name", "lastName"]));
   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
-  const email = normalizeEmail(first(driver, ["email"]));
-  const phone = normalizePhone(first(driver, ["phone", "phone_number"]));
+  const email = normalizeBoltEmail(first(driver, ["email"]));
+  const phone = normalizeBoltPhone(first(driver, ["phone", "phone_number"]));
   const state = first(driver, ["state", "status"]);
   const activeVehicle = normalizeActiveVehicle(driver);
   const activeVehicleId = normalizeVehicleId(activeVehicle);

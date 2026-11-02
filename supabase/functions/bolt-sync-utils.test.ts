@@ -40,3 +40,17 @@ Deno.test("Bolt compensation diagnostics distinguish restored, deleted and criti
   assertEquals(boltCompensationDiagnostic({ ok: false, action: "restore_failed" }), "Falha crítica: não foi possível restaurar o perfil anterior.");
   assertEquals(boltCompensationDiagnostic({ ok: false, action: "delete_failed" }), "Falha crítica: não foi possível remover o novo perfil.");
 });
+
+Deno.test("Bolt status mapping handles case-insensitive inactive and active variants", () => {
+  for (const value of ["SUSPENDED", "Blocked", "deactivated", "INACTIVE", "terminated", "banned", "disabled"]) {
+    assertEquals(boltStatusToPortal(value), "Inativo");
+  }
+  for (const value of ["ACTIVE", "Activated", "enabled", "APPROVED"]) {
+    assertEquals(boltStatusToPortal(value), "Ativo");
+  }
+});
+
+Deno.test("Bolt status mapping does not infer unknown states as active", () => {
+  assertEquals(boltStatusToPortal("pending_review"), "Ativo");
+  assertEquals(boltStatusToPortal("unknown", "Inativo"), "Inativo");
+});

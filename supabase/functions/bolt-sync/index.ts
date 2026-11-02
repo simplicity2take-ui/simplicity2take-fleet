@@ -15,6 +15,15 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
 }
 function clean(value: unknown) { return value === undefined || value === null ? "" : String(value); }
+function safeErrorMessage(error: unknown, fallback = "Erro inesperado na sincronização Bolt.") {
+  const raw = error instanceof Error ? error.message : clean(error);
+  // Avoid leaking tokens, credentials, personal data or unbounded third-party payloads.
+  return raw
+    .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/gi, "Bearer [redacted]")
+    .replace(/(client_secret|access_token|refresh_token|password|authorization)(\\s*[:=]\\s*)[^,;\\s]+/gi, "$1$2[redacted]")
+    .replace(/[\\r\\n\\t]+/g, " ")
+    .slice(0, 500) || fallback;
+}
 function first(obj: any, keys: string[]) {
   for (const key of keys) {
     const value = obj?.[key];
@@ -329,7 +338,7 @@ Deno.serve(async (req: Request) => {
         if (result.assignedVehicleId) assignmentsUpdated++;
       } catch (error) {
         assignmentFailures++;
-        const safeMessage = error instanceof Error ? error.message : String(error);
+        const safeMessage = safeErrorMessage(error);
         assignmentErrors.push({
           boltDriverId: normalizeDriverId(driver) || "unknown",
           message: safeMessage
@@ -349,7 +358,8 @@ Deno.serve(async (req: Request) => {
       assignmentsUpdated, assignmentFailures, invalidDriverRecords, assignmentErrors
     }, 200);
   } catch (error) {
-    console.error("bolt-sync error", error);
-    return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);
+    const safeMessage = safeErrorMessage(error);
+    console.error("bolt-sync error", safeMessage);
+    return json({ ok: false, error: safeMessage }, 500);
   }
 });

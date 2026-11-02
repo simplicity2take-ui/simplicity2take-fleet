@@ -18,7 +18,8 @@ export function normalizeBoltPhone(value: unknown): string {
 export function boltStatusToPortal(value: unknown, current = "Ativo"): string {
   const s = value === undefined || value === null ? "" : String(value).toLowerCase();
   if (!s) return current || "Ativo";
-  if (/(suspend|blocked|deactiv|inactive|terminated|banned|disabled)/.test(s)) return "Inativo";
+  // Explicit negative forms must win before matching "active"/"approved".
+  if (/(not[_ -]?(active|activated|enabled|approved)|non[_ -]?(active|enabled|approved)|inactive|suspend|blocked|deactiv|terminated|banned|disabled|revoked|rejected)/.test(s)) return "Inativo";
   if (/(active|activated|enabled|approved)/.test(s)) return "Ativo";
   return current || "Ativo";
 }

@@ -279,7 +279,20 @@ Deno.serve(async (req: Request) => {
     }
     let driversCreated = 0, driversUpdated = 0, assignmentsUpdated = 0, assignmentFailures = 0;
     const assignmentErrors: Array<{ boltDriverId: string; message: string }> = [];
+    const seenBoltDriverIds = new Set<string>();
     for (const driver of boltDrivers) {
+      const incomingDriverId = normalizeDriverId(driver);
+      if (!incomingDriverId) {
+        assignmentFailures++;
+        assignmentErrors.push({ boltDriverId: "unknown", message: "Registo Bolt sem identificador estável de motorista; registo ignorado." });
+        continue;
+      }
+      if (seenBoltDriverIds.has(incomingDriverId)) {
+        assignmentFailures++;
+        assignmentErrors.push({ boltDriverId: incomingDriverId, message: "Resposta Bolt contém UUID de motorista duplicado; registo ignorado." });
+        continue;
+      }
+      seenBoltDriverIds.add(incomingDriverId);
       try {
         const result = await upsertDriver(admin, driver, vehicleByBoltId, vehicleByPlate, now);
         if (result.created) driversCreated++;

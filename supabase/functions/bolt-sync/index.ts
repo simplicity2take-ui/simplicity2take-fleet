@@ -144,22 +144,45 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
   if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
 
-  // Do not modify assignments for inactive drivers or when Bolt's vehicle cannot be resolved.
+  // Preserve existing Bolt assignment until the replacement is successfully inserted.
+  // Manual/Uber rows are never selected or changed here.
   if (row.status === "Ativo" && assignedVehicle?.id) {
-    const deleteResult = await admin.from("vehicle_assignments")
-      .delete()
+    const currentResult = await admin.from("vehicle_assignments")
+      .select("id, vehicle_id")
       .eq("driver_id", row.id)
-      .eq("source", "bolt");
-    if (deleteResult.error) throw deleteResult.error;
+      .eq("source", "bolt")
+      .is("active_until", null);
+    if (currentResult.error) throw currentResult.error;
 
-    const assignment = await admin.from("vehicle_assignments").insert({
-      vehicle_id: assignedVehicle.id,
-      driver_id: row.id,
-      active_from: now.slice(0, 10),
-      active_until: null,
-      source: "bolt"
-    });
-    if (assignment.error) throw assignment.error;
+    const currentRows = currentResult.data || [];
+    if (!currentRows.some((item: any) => item.vehicle_id === assignedVehicle.id)) {
+      const assignmentResult = await admin.from("vehicle_assignments")
+        .insert({
+          vehicle_id: assignedVehicle.id,
+          driver_id: row.id,
+          active_from: now.slice(0, 10),
+          active_until: null,
+          source: "bolt"
+        })
+        .select("id")
+        .single();
+      if (assignmentResult.error) throw assignmentResult.error;
+
+      const oldIds = currentRows
+        .map((item: any) => item.id)
+        .filter((id: string) => id !== assignmentResult.data.id);
+      if (oldIds.length) {
+        const cleanupResult = await admin.from("vehicle_assignments")
+          .delete()
+          .in("id", oldIds)
+          .eq("driver_id", row.id)
+          .eq("source", "bolt");
+        if (cleanupResult.error) {
+          // New assignment is already safely present; surface cleanup failure for retry/monitoring.
+          throw cleanupResult.error;
+        }
+      }
+    }
   }
   return { row, created, assignedVehicleId: row.status === "Ativo" ? assignedVehicle?.id || null : null };
 }

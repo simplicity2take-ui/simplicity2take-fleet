@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal, boltCompensationDiagnostic } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical } from "./bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -243,8 +243,9 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
       }
     );
     if (assignmentError || !assignmentId) {
-      // Best-effort compensation for the profile write. The assignment RPC is
-      // transactional, but PostgREST cannot wrap this profile update in it.
+      // Best-effort compensation; include its outcome in the thrown error so
+      // the caller can flag critical inconsistency for manual review.
+      let compensationFailed = false;
       if (existing) {
         const rollback = await admin.from("drivers").update({
           full_name: existing.full_name,
@@ -258,7 +259,8 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
         const compensation = rollback.error
           ? { ok: false as const, action: "restore_failed" as const }
           : { ok: true as const, action: "restored" as const };
-        if (!compensation.ok) {
+        compensationFailed = isBoltCompensationCritical(compensation);
+        if (compensationFailed) {
           console.error("bolt-sync driver profile compensation failed", {
             driverId: existing.id,
             code: rollback.error?.code,
@@ -270,7 +272,8 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
         const compensation = rollback.error
           ? { ok: false as const, action: "delete_failed" as const }
           : { ok: true as const, action: "deleted" as const };
-        if (!compensation.ok) {
+        compensationFailed = isBoltCompensationCritical(compensation);
+        if (compensationFailed) {
           console.error("bolt-sync new driver compensation failed", {
             driverId: row.id,
             code: rollback.error?.code,
@@ -278,8 +281,15 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
           });
         }
       }
-      if (assignmentError) throw assignmentError;
-      throw new Error("A reconciliação Bolt não devolveu uma atribuição.");
+      if (assignmentError) {
+        const message = safeErrorMessage(assignmentError);
+        throw new Error(compensationFailed
+          ? `Falha crítica de compensação: ${message}`
+          : message);
+      }
+      throw new Error(compensationFailed
+        ? "Falha crítica de compensação: a reconciliação Bolt não devolveu uma atribuição."
+        : "A reconciliação Bolt não devolveu uma atribuição.");
     }
   }
   return { row, created, assignedVehicleId: row.status === "Ativo" ? assignedVehicle?.id || null : null };

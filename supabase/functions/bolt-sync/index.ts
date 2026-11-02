@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { hasBoltIdentityConflict } from "./bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -144,7 +145,7 @@ async function upsertVehicle(admin: any, vehicle: any, now: string) {
     if (lookup.error) throw new Error("Falha ao consultar viatura existente por matrícula.");
     existing = lookup.data;
   }
-  if (existing?.bolt_vehicle_uuid && boltId && existing.bolt_vehicle_uuid !== boltId) {
+  if (hasBoltIdentityConflict(existing?.bolt_vehicle_uuid, boltId)) {
     throw new Error("A matrícula corresponde a uma viatura com outro UUID Bolt; atualização bloqueada.");
   }
   const payload: any = {
@@ -194,7 +195,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     if (lookup.error) throw new Error("Falha ao consultar motorista existente por telefone.");
     existing = lookup.data;
   }
-  if (existing?.bolt_driver_uuid && boltId && existing.bolt_driver_uuid !== boltId) {
+  if (hasBoltIdentityConflict(existing?.bolt_driver_uuid, boltId)) {
     throw new Error("O email/telefone corresponde a um motorista com outro UUID Bolt; atualização bloqueada.");
   }
 

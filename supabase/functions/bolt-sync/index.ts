@@ -78,6 +78,9 @@ function normalizePhone(value: unknown) {
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
   const clientSecret = Deno.env.get("BOLT_CLIENT_SECRET") || "";
+  if (clientId.length > 512 || clientSecret.length > 4096) {
+    throw new Error("As credenciais Bolt excedem o tamanho permitido.");
+  }
   if (!clientId || !clientSecret) throw new Error("Faltam BOLT_CLIENT_ID e BOLT_CLIENT_SECRET nos Secrets do Supabase.");
   const body = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: "client_credentials", scope: "fleet-integration:api" });
   const response = await fetch(BOLT_TOKEN_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });

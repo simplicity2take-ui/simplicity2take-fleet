@@ -280,14 +280,17 @@ Deno.serve(async (req: Request) => {
     let driversCreated = 0, driversUpdated = 0, assignmentsUpdated = 0, assignmentFailures = 0;
     const assignmentErrors: Array<{ boltDriverId: string; message: string }> = [];
     const seenBoltDriverIds = new Set<string>();
+    let invalidDriverRecords = 0;
     for (const driver of boltDrivers) {
       const incomingDriverId = normalizeDriverId(driver);
       if (!incomingDriverId) {
+        invalidDriverRecords++;
         assignmentFailures++;
         assignmentErrors.push({ boltDriverId: "unknown", message: "Registo Bolt sem identificador estável de motorista; registo ignorado." });
         continue;
       }
       if (seenBoltDriverIds.has(incomingDriverId)) {
+        invalidDriverRecords++;
         assignmentFailures++;
         assignmentErrors.push({ boltDriverId: incomingDriverId, message: "Resposta Bolt contém UUID de motorista duplicado; registo ignorado." });
         continue;
@@ -311,8 +314,8 @@ Deno.serve(async (req: Request) => {
       ok: assignmentFailures === 0, partial: assignmentFailures > 0,
       source: "bolt", syncedAt: now,
       drivers: { received: boltDrivers.length, created: driversCreated, updated: driversUpdated },
-      vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: boltVehicles.length - vehiclesCreated },
-      assignmentsUpdated, assignmentFailures, assignmentErrors
+      vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: vehiclesUpdated },
+      assignmentsUpdated, assignmentFailures, invalidDriverRecords, assignmentErrors
     }, 200);
   } catch (error) {
     console.error("bolt-sync error", error);

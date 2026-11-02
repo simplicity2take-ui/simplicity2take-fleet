@@ -150,6 +150,14 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   if (row.status === "Ativo" && hasExplicitActiveVehicle && !assignedVehicle) {
     throw new Error(`Não foi possível resolver a viatura Bolt do motorista ${row.id}; atribuição preservada.`);
   }
+  if (row.status === "Ativo" && assignedVehicle?.bolt_vehicle_uuid && activeVehicleId &&
+      assignedVehicle.bolt_vehicle_uuid !== activeVehicleId) {
+    throw new Error(`A viatura resolvida não corresponde ao UUID ativo da Bolt para o motorista ${row.id}.`);
+  }
+  if (row.status === "Ativo" && assignedVehicle?.plate && activePlate &&
+      assignedVehicle.plate.toUpperCase() !== activePlate.toUpperCase() && !activeVehicleId) {
+    throw new Error(`A matrícula resolvida não corresponde à viatura ativa Bolt para o motorista ${row.id}.`);
+  }
 
   // Reconcile Bolt assignments atomically and serialize concurrent syncs per driver.
   if (row.status === "Ativo" && assignedVehicle?.id) {

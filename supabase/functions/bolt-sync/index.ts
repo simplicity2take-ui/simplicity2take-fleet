@@ -31,25 +31,27 @@ function first(obj: any, keys: string[]) {
   }
   return "";
 }
-function arrayFrom(payload: any, keys: string[]) {
+function arrayFrom(payload: any, keys: string[], depth = 0): any[] {
+  if (depth > 5) return [];
   if (Array.isArray(payload)) return payload;
   for (const key of keys) if (Array.isArray(payload?.[key])) return payload[key];
   for (const key of ["data", "result", "response"]) {
     if (payload?.[key] && typeof payload[key] === "object") {
-      const nested = arrayFrom(payload[key], keys);
+      const nested = arrayFrom(payload[key], keys, depth + 1);
       if (nested.length) return nested;
     }
   }
   return [];
 }
-function hasExpectedCollection(payload: any, keys: string[]): boolean {
+function hasExpectedCollection(payload: any, keys: string[], depth = 0): boolean {
+  if (depth > 5) return false;
   if (Array.isArray(payload)) return true;
   for (const key of keys) {
     if (Array.isArray(payload?.[key])) return true;
   }
   for (const key of ["data", "result", "response"]) {
     if (payload?.[key] && typeof payload[key] === "object" &&
-        hasExpectedCollection(payload[key], keys)) return true;
+        hasExpectedCollection(payload[key], keys, depth + 1)) return true;
   }
   return false;
 }

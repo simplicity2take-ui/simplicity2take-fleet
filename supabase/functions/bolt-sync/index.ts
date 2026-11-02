@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid } from "./bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -11,6 +11,7 @@ const corsHeaders = {
 
 const BOLT_TOKEN_URL = "https://oidc.bolt.eu/token";
 const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
+const BOLT_API_BASE_V2 = "https://node.bolt.eu/fleet-integration-gateway-v2";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
@@ -118,6 +119,70 @@ async function boltPost(path: string, token: string) {
     if (![400, 422].includes(response.status)) throw new Error(lastError);
   }
   throw new Error(lastError);
+}
+async function boltPostV2(path: string, token: string, body: Record<string, unknown>) {
+  const allowedPaths = new Set([
+    "/fleetIntegration/v2/getCompanies",
+    "/fleetIntegration/v2/getDrivers",
+    "/fleetIntegration/v2/getVehicles"
+  ]);
+  if (!allowedPaths.has(path)) throw new Error("Endpoint Bolt v2 não permitido.");
+  let response: Response;
+  try {
+    response = await fetch(BOLT_API_BASE_V2 + path, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20000)
+    });
+  } catch {
+    throw new Error("Falha de rede ou timeout ao contactar a API Bolt v2.");
+  }
+  let payload: any;
+  try { payload = await response.json(); } catch {
+    throw new Error("A Bolt v2 devolveu JSON inválido.");
+  }
+  if (!response.ok) throw new Error(`Pedido Bolt v2 recusado (HTTP ${response.status}).`);
+  const envelopeError = boltApiEnvelopeError(payload);
+  if (envelopeError) throw new Error(envelopeError);
+  return payload;
+}
+async function getBoltV2CompanyId(token: string) {
+  const payload = await boltPostV2("/fleetIntegration/v2/getCompanies", token, {});
+  const companyId = resolveSingleBoltCompanyId(extractBoltCompanies(payload));
+  if (!companyId) {
+    throw new Error("A Bolt v2 não devolveu uma empresa única; configure credenciais para uma única empresa antes de sincronizar.");
+  }
+  return companyId;
+}
+async function getBoltV2Collection(path: string, token: string, companyId: string, collectionKeys: string[]) {
+  const limit = 1000;
+  const maximum = 5000;
+  const records: any[] = [];
+  let totalRows: number | null = null;
+  for (let offset = 0; offset < maximum; offset += limit) {
+    const payload = await boltPostV2(path, token, { company_id: companyId, limit, offset });
+    const data = payload?.data;
+    const page = arrayFrom(data, collectionKeys);
+    const reportedTotal = data && typeof data === "object" ? data.total_rows : undefined;
+    if (!boltPageCountIsValid(page.length, reportedTotal)) {
+      throw new Error("A Bolt v2 devolveu metadados de paginação inválidos.");
+    }
+    if (totalRows === null) totalRows = reportedTotal;
+    else if (reportedTotal !== totalRows) {
+      throw new Error("O total de registos Bolt v2 mudou durante a paginação; sincronização interrompida.");
+    }
+    if (records.length + page.length > maximum || reportedTotal > maximum) {
+      throw new Error("A Bolt v2 excedeu o limite de segurança de 5.000 registos.");
+    }
+    records.push(...page);
+    if (records.length >= totalRows) break;
+    if (page.length === 0) throw new Error("A Bolt v2 devolveu uma página vazia antes do fim; sincronização interrompida.");
+  }
+  if (totalRows === null || records.length !== totalRows) {
+    throw new Error("A paginação Bolt v2 ficou incompleta; sincronização interrompida.");
+  }
+  return records;
 }
 async function upsertVehicle(admin: any, vehicle: any, now: string) {
   const boltId = normalizeVehicleId(vehicle);
@@ -309,22 +374,32 @@ Deno.serve(async (req: Request) => {
     if (callerEmail !== "simplicity2take@gmail.com") return json({ ok: false, error: "Apenas o administrador pode sincronizar a Bolt." }, 403);
 
     const token = await getBoltToken();
-    const [driversPayload, vehiclesPayload] = await Promise.all([
-      boltPost("/fleetIntegration/v1/getDrivers", token),
-      boltPost("/fleetIntegration/v1/getVehicles", token)
-    ]);
-    const driverCollectionPresent = hasExpectedCollection(driversPayload, ["drivers", "fleet_drivers", "items"]);
-    const vehicleCollectionPresent = hasExpectedCollection(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
-    if (!driverCollectionPresent) return json({
-      ok: false, error: "A resposta Bolt não contém uma coleção reconhecida de motoristas; sincronização interrompida.",
-      source: "bolt", syncedAt: null
-    }, 502);
-    if (!vehicleCollectionPresent) return json({
-      ok: false, error: "A resposta Bolt não contém uma coleção reconhecida de viaturas; sincronização interrompida.",
-      source: "bolt", syncedAt: null
-    }, 502);
-    const boltDrivers = arrayFrom(driversPayload, ["drivers", "fleet_drivers", "items"]);
-    const boltVehicles = arrayFrom(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
+    const apiVersion = Deno.env.get("BOLT_API_VERSION") === "2" ? "2" : "1";
+    let boltDrivers: any[], boltVehicles: any[];
+    if (apiVersion === "2") {
+      const companyId = await getBoltV2CompanyId(token);
+      [boltDrivers, boltVehicles] = await Promise.all([
+        getBoltV2Collection("/fleetIntegration/v2/getDrivers", token, companyId, ["drivers", "items"]),
+        getBoltV2Collection("/fleetIntegration/v2/getVehicles", token, companyId, ["vehicles", "items"])
+      ]);
+    } else {
+      const [driversPayload, vehiclesPayload] = await Promise.all([
+        boltPost("/fleetIntegration/v1/getDrivers", token),
+        boltPost("/fleetIntegration/v1/getVehicles", token)
+      ]);
+      const driverCollectionPresent = hasExpectedCollection(driversPayload, ["drivers", "fleet_drivers", "items"]);
+      const vehicleCollectionPresent = hasExpectedCollection(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
+      if (!driverCollectionPresent) return json({
+        ok: false, error: "A resposta Bolt não contém uma coleção reconhecida de motoristas; sincronização interrompida.",
+        source: "bolt", syncedAt: null
+      }, 502);
+      if (!vehicleCollectionPresent) return json({
+        ok: false, error: "A resposta Bolt não contém uma coleção reconhecida de viaturas; sincronização interrompida.",
+        source: "bolt", syncedAt: null
+      }, 502);
+      boltDrivers = arrayFrom(driversPayload, ["drivers", "fleet_drivers", "items"]);
+      boltVehicles = arrayFrom(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
+    }
     // Refuse unexpectedly large responses rather than processing an unbounded
     // payload from the external provider in a single Edge Function invocation.
     const MAX_BOLT_DRIVERS = 5000;

@@ -221,7 +221,23 @@ Deno.serve(async (req: Request) => {
     const vehicleByPlate = new Map<string, any>();
     let vehiclesCreated = 0, vehiclesUpdated = 0, vehicleFailures = 0;
     const vehicleErrors: Array<{ boltVehicleId: string; message: string }> = [];
+    const seenBoltVehicleIds = new Set<string>();
+    const seenBoltPlates = new Set<string>();
     for (const vehicle of boltVehicles) {
+      const incomingBoltId = normalizeVehicleId(vehicle);
+      const incomingPlate = normalizePlate(vehicle).toUpperCase();
+      if (incomingBoltId && seenBoltVehicleIds.has(incomingBoltId)) {
+        vehicleFailures++;
+        vehicleErrors.push({ boltVehicleId: incomingBoltId, message: "Resposta Bolt contém UUID de viatura duplicado; registo ignorado." });
+        continue;
+      }
+      if (incomingPlate && seenBoltPlates.has(incomingPlate)) {
+        vehicleFailures++;
+        vehicleErrors.push({ boltVehicleId: incomingBoltId || "unknown", message: "Resposta Bolt contém matrícula duplicada; registo ignorado." });
+        continue;
+      }
+      if (incomingBoltId) seenBoltVehicleIds.add(incomingBoltId);
+      if (incomingPlate) seenBoltPlates.add(incomingPlate);
       try {
         const result = await upsertVehicle(admin, vehicle, now);
         if (result.created) vehiclesCreated++;

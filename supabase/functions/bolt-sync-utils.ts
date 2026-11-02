@@ -14,3 +14,11 @@ export function normalizeBoltPhone(value: unknown): string {
   // Preserve punctuation and country prefixes; only presentation whitespace is removed.
   return (value === undefined || value === null ? "" : String(value)).replace(/\\s+/g, "").trim();
 }
+
+export function boltStatusToPortal(value: unknown, current = "Ativo"): string {
+  const s = value === undefined || value === null ? "" : String(value).toLowerCase();
+  if (!s) return current || "Ativo";
+  if (/(suspend|blocked|deactiv|inactive|terminated|banned|disabled)/.test(s)) return "Inativo";
+  if (/(active|activated|enabled|approved)/.test(s)) return "Ativo";
+  return current || "Ativo";
+}

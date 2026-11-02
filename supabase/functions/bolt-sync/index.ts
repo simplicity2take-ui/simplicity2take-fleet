@@ -49,9 +49,9 @@ function statusToPortal(value: unknown, current = "Ativo") {
   if (/(active|activated|enabled|approved)/.test(s)) return "Ativo";
   return current || "Ativo";
 }
-function normalizeVehicleId(vehicle: any) { return clean(first(vehicle, ["uuid", "vehicle_uuid", "id"])); }
-function normalizePlate(vehicle: any) { return clean(first(vehicle, ["reg_number", "registration_number", "plate", "license_plate"])); }
-function normalizeDriverId(driver: any) { return clean(first(driver, ["driver_uuid", "uuid", "id"])); }
+function normalizeVehicleId(vehicle: any) { return clean(first(vehicle, ["uuid", "vehicle_uuid", "id"])).trim(); }
+function normalizePlate(vehicle: any) { return clean(first(vehicle, ["reg_number", "registration_number", "plate", "license_plate"])).trim().toUpperCase(); }
+function normalizeDriverId(driver: any) { return clean(first(driver, ["driver_uuid", "uuid", "id"])).trim(); }
 function normalizeActiveVehicle(driver: any) {
   const v = driver?.active_vehicle;
   return v && typeof v === "object" ? v : null;

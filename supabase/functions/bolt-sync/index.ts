@@ -262,6 +262,10 @@ Deno.serve(async (req: Request) => {
       }
     }
     if (vehicleFailures > 0) {
+      console.error("bolt-sync vehicle validation failures", {
+        count: vehicleFailures,
+        vehicleIds: vehicleErrors.map((item) => item.boltVehicleId)
+      });
       return json({
         ok: false, partial: vehiclesCreated + vehiclesUpdated > 0,
         source: "bolt", syncedAt: now,

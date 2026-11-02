@@ -12,12 +12,28 @@ export function normalizeBoltEmail(value: unknown): string {
 
 export function normalizeBoltPhone(value: unknown): string {
   // Preserve punctuation and country prefixes; only presentation whitespace is removed.
-  return (value === undefined || value === null ? "" : String(value)).replace(/\s+/g, "").trim();
+  return (value === undefined || value === null ? "" : String(value)).replace(/\\s+/g, "").trim();
+}
+
+// v1 supplies active_vehicle; v2 supplies vehicles.selected.
+// Do not infer a selected vehicle from vehicles.other_assigned.
+export function normalizeBoltActiveVehicle(driver: unknown): Record<string, unknown> | null {
+  if (!driver || typeof driver !== "object" || Array.isArray(driver)) return null;
+  const value = driver as Record<string, unknown>;
+  const selected = value.active_vehicle ?? (
+    value.vehicles && typeof value.vehicles === "object" && !Array.isArray(value.vehicles)
+      ? (value.vehicles as Record<string, unknown>).selected
+      : null
+  );
+  return selected && typeof selected === "object" && !Array.isArray(selected)
+    ? selected as Record<string, unknown>
+    : null;
 }
 
 export function boltStatusToPortal(value: unknown, current = "Ativo"): string {
   const s = value === undefined || value === null ? "" : String(value).toLowerCase();
-  // Missing or blank provider status is not proof of activation; fail closed.\n  if (!s.trim()) return "Inativo";
+  // Missing or blank provider status is not proof of activation; fail closed.
+  if (!s.trim()) return "Inativo";
   // Explicit negative forms must win before matching "active"/"approved".
   // Only positively recognized states may activate; unknown provider vocabulary fails closed.
   if (/(not[_ -]?(active|activated|enabled|approved)|non[_ -]?(active|enabled|approved)|inactive|suspend|blocked|deactiv|terminated|banned|disabled|revoked|rejected|pending|awaiting|unverified|unknown)/.test(s)) return "Inativo";

@@ -325,9 +325,14 @@ Deno.serve(async (req: Request) => {
         if (result.assignedVehicleId) assignmentsUpdated++;
       } catch (error) {
         assignmentFailures++;
+        const safeMessage = error instanceof Error ? error.message : String(error);
         assignmentErrors.push({
           boltDriverId: normalizeDriverId(driver) || "unknown",
-          message: error instanceof Error ? error.message : String(error)
+          message: safeMessage
+        });
+        console.error("bolt-sync driver processing failed", {
+          boltDriverId: normalizeDriverId(driver) || "unknown",
+          error: safeMessage
         });
         // Continue syncing other drivers, but report partial failure explicitly.
       }

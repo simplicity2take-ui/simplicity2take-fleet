@@ -210,18 +210,29 @@ Deno.serve(async (req: Request) => {
       if (boltId) vehicleByBoltId.set(boltId, result.row);
       if (plate) vehicleByPlate.set(plate, result.row);
     }
-    let driversCreated = 0, assignmentsUpdated = 0;
+    let driversCreated = 0, assignmentsUpdated = 0, assignmentFailures = 0;
+    const assignmentErrors: Array<{ boltDriverId: string; message: string }> = [];
     for (const driver of boltDrivers) {
-      const result = await upsertDriver(admin, driver, vehicleByBoltId, vehicleByPlate, now);
-      if (result.created) driversCreated++;
-      if (result.assignedVehicleId) assignmentsUpdated++;
+      try {
+        const result = await upsertDriver(admin, driver, vehicleByBoltId, vehicleByPlate, now);
+        if (result.created) driversCreated++;
+        if (result.assignedVehicleId) assignmentsUpdated++;
+      } catch (error) {
+        assignmentFailures++;
+        assignmentErrors.push({
+          boltDriverId: normalizeDriverId(driver) || "unknown",
+          message: error instanceof Error ? error.message : String(error)
+        });
+        // Continue syncing other drivers, but report partial failure explicitly.
+      }
     }
     return json({
-      ok: true, source: "bolt", syncedAt: now,
+      ok: assignmentFailures === 0, partial: assignmentFailures > 0,
+      source: "bolt", syncedAt: now,
       drivers: { received: boltDrivers.length, created: driversCreated, updated: boltDrivers.length - driversCreated },
-      vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: boltVehicles.length - vehiclesCreated },
-      assignmentsUpdated
-    });
+      vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: boltVehicles.length - driversCreated },
+      assignmentsUpdated, assignmentFailures, assignmentErrors
+    }, assignmentFailures > 0 ? 207 : 200);
   } catch (error) {
     console.error("bolt-sync error", error);
     return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);

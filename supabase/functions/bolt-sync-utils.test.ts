@@ -67,3 +67,11 @@ Deno.test("Bolt pending and unverified statuses do not activate a driver", () =>
   }
   assertEquals(boltStatusToPortal("pending", "Ativo"), "Inativo");
 });
+
+Deno.test("Bolt status mapping fails closed for unrecognized vocabulary", () => {
+  for (const value of ["review", "paused_by_admin", "custom_provider_state", "1", true, { status: "active" }]) {
+    assertEquals(boltStatusToPortal(value), "Inativo");
+  }
+  assertEquals(boltStatusToPortal("active"), "Ativo");
+  assertEquals(boltStatusToPortal("approved"), "Ativo");
+});

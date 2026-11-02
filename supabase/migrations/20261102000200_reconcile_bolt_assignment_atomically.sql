@@ -47,6 +47,15 @@ begin
     raise exception 'Vehicle % is missing, inactive, or not linked to Bolt', p_vehicle_id;
   end if;
 
+  -- Lock all open Bolt rows for this driver before selecting the keeper.
+  -- The driver row lock serializes calls to this RPC; row locks protect cleanup.
+  perform 1
+    from public.vehicle_assignments
+   where driver_id = p_driver_id
+     and source = 'bolt'
+     and active_until is null
+   for update;
+
   -- Keep one matching open Bolt assignment if it already exists.
   select id into v_assignment_id
     from public.vehicle_assignments
@@ -55,8 +64,7 @@ begin
      and source = 'bolt'
      and active_until is null
    order by created_at, id
-   limit 1
-   for update;
+   limit 1;
 
   if v_assignment_id is null then
     -- The table has a unique key on (vehicle_id, driver_id, active_from).

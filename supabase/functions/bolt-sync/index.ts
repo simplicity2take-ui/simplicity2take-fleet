@@ -219,14 +219,33 @@ Deno.serve(async (req: Request) => {
     const now = new Date().toISOString();
     const vehicleByBoltId = new Map<string, any>();
     const vehicleByPlate = new Map<string, any>();
-    let vehiclesCreated = 0;
+    let vehiclesCreated = 0, vehiclesUpdated = 0, vehicleFailures = 0;
+    const vehicleErrors: Array<{ boltVehicleId: string; message: string }> = [];
     for (const vehicle of boltVehicles) {
-      const result = await upsertVehicle(admin, vehicle, now);
-      if (result.created) vehiclesCreated++;
-      const boltId = normalizeVehicleId(vehicle);
-      const plate = normalizePlate(vehicle);
-      if (boltId) vehicleByBoltId.set(boltId, result.row);
-      if (plate) vehicleByPlate.set(plate, result.row);
+      try {
+        const result = await upsertVehicle(admin, vehicle, now);
+        if (result.created) vehiclesCreated++;
+        else vehiclesUpdated++;
+        const boltId = normalizeVehicleId(vehicle);
+        const plate = normalizePlate(vehicle);
+        if (boltId) vehicleByBoltId.set(boltId, result.row);
+        if (plate) vehicleByPlate.set(plate, result.row);
+      } catch (error) {
+        vehicleFailures++;
+        vehicleErrors.push({
+          boltVehicleId: normalizeVehicleId(vehicle) || "unknown",
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+    if (vehicleFailures > 0) {
+      return json({
+        ok: false, partial: vehiclesCreated + vehiclesUpdated > 0,
+        source: "bolt", syncedAt: now,
+        vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: vehiclesUpdated, failed: vehicleFailures },
+        vehicleErrors,
+        error: "A sincronização de viaturas teve falhas; a sincronização de motoristas foi interrompida para evitar atribuições incompletas."
+      }, 200);
     }
     let driversCreated = 0, driversUpdated = 0, assignmentsUpdated = 0, assignmentFailures = 0;
     const assignmentErrors: Array<{ boltDriverId: string; message: string }> = [];

@@ -44,8 +44,13 @@ begin
     raise exception 'Regression: RPC does not restrict reconciliation to open assignments';
   end if;
 
-  if v_definition !~* 'source\s*<>\s*''bolt''' then
-    raise exception 'Regression: RPC does not guard same-day non-Bolt assignment conflicts';
+  -- Unique key includes source-independent (driver, vehicle, active_from).
+  -- RPC must detect the collision and preserve the existing manual/history row.
+  if v_definition !~* 'active_from\s*=\s*coalesce\(p_active_from,\s*current_date\)' then
+    raise exception 'Regression: RPC does not guard same-day assignment conflicts';
+  end if;
+  if v_definition !~* 'manual or historical row preserved' then
+    raise exception 'Regression: RPC does not explicitly preserve conflicting manual/history rows';
   end if;
 
   if v_definition !~* 'revoke\s+all\s+on\s+function' then

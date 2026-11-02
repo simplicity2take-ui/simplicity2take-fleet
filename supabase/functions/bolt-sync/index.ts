@@ -196,7 +196,16 @@ Deno.serve(async (req: Request) => {
     ]);
     const boltDrivers = arrayFrom(driversPayload, ["drivers", "fleet_drivers", "items"]);
     const boltVehicles = arrayFrom(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
-    if (!boltDrivers.length && !boltVehicles.length) return json({ ok: false, error: "A Bolt respondeu sem motoristas nem viaturas. Confirme no Swagger os parâmetros de paginação da tua conta." }, 502);
+    // Treat an empty individual collection as suspicious: never interpret an
+    // incomplete/empty API response as authoritative data for a fleet sync.
+    if (!boltDrivers.length) return json({
+      ok: false, error: "A Bolt devolveu zero motoristas; sincronização interrompida para evitar um resultado incompleto.",
+      source: "bolt", syncedAt: null
+    }, 502);
+    if (!boltVehicles.length) return json({
+      ok: false, error: "A Bolt devolveu zero viaturas; sincronização interrompida para evitar atribuições incompletas.",
+      source: "bolt", syncedAt: null
+    }, 502);
 
     const now = new Date().toISOString();
     const vehicleByBoltId = new Map<string, any>();

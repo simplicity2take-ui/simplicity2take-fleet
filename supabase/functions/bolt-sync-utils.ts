@@ -12,7 +12,7 @@ export function normalizeBoltEmail(value: unknown): string {
 
 export function normalizeBoltPhone(value: unknown): string {
   // Preserve punctuation and country prefixes; only presentation whitespace is removed.
-  return (value === undefined || value === null ? "" : String(value)).replace(/\\s+/g, "").trim();
+  return (value === undefined || value === null ? "" : String(value)).replace(/\s+/g, "").trim();
 }
 
 export function boltStatusToPortal(value: unknown, current = "Ativo"): string {

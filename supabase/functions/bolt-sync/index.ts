@@ -280,6 +280,8 @@ Deno.serve(async (req: Request) => {
     let driversCreated = 0, driversUpdated = 0, assignmentsUpdated = 0, assignmentFailures = 0;
     const assignmentErrors: Array<{ boltDriverId: string; message: string }> = [];
     const seenBoltDriverIds = new Set<string>();
+    const seenBoltDriverEmails = new Set<string>();
+    const seenBoltDriverPhones = new Set<string>();
     let invalidDriverRecords = 0;
     for (const driver of boltDrivers) {
       const incomingDriverId = normalizeDriverId(driver);
@@ -295,7 +297,23 @@ Deno.serve(async (req: Request) => {
         assignmentErrors.push({ boltDriverId: incomingDriverId, message: "Resposta Bolt contém UUID de motorista duplicado; registo ignorado." });
         continue;
       }
+      const incomingEmail = clean(first(driver, ["email"])).toLowerCase();
+      const incomingPhone = clean(first(driver, ["phone", "phone_number"])).replace(/\\s+/g, "");
+      if (incomingEmail && seenBoltDriverEmails.has(incomingEmail)) {
+        invalidDriverRecords++;
+        assignmentFailures++;
+        assignmentErrors.push({ boltDriverId: incomingDriverId, message: "Resposta Bolt contém email duplicado; registo ignorado." });
+        continue;
+      }
+      if (incomingPhone && seenBoltDriverPhones.has(incomingPhone)) {
+        invalidDriverRecords++;
+        assignmentFailures++;
+        assignmentErrors.push({ boltDriverId: incomingDriverId, message: "Resposta Bolt contém telefone duplicado; registo ignorado." });
+        continue;
+      }
       seenBoltDriverIds.add(incomingDriverId);
+      if (incomingEmail) seenBoltDriverEmails.add(incomingEmail);
+      if (incomingPhone) seenBoltDriverPhones.add(incomingPhone);
       try {
         const result = await upsertDriver(admin, driver, vehicleByBoltId, vehicleByPlate, now);
         if (result.created) driversCreated++;

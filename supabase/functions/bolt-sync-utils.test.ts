@@ -78,3 +78,29 @@ Deno.test("Bolt status mapping fails closed for unrecognized vocabulary", () => 
   assertEquals(boltStatusToPortal("active"), "Ativo");
   assertEquals(boltStatusToPortal("approved"), "Ativo");
 });
+
+
+Deno.test("Bolt API envelope rejects nonzero provider codes even on HTTP success", () => {
+  assertEquals(boltApiEnvelopeError({ code: 0, data: {} }), null);
+  assertEquals(boltApiEnvelopeError({ code: "0", data: {} }), null);
+  assertEquals(boltApiEnvelopeError({ code: 17, message: "failed" }), "A API Bolt devolveu um código de erro.");
+  assertEquals(boltApiEnvelopeError(null), "A Bolt devolveu uma resposta inválida.");
+});
+
+Deno.test("Bolt company extraction and resolution fail closed on ambiguity", () => {
+  assertEquals(extractBoltCompanies({ data: { companies: [{ company_id: " c-1 " }, { company_id: "c-2" }] } }), [
+    { company_id: "c-1" }, { company_id: "c-2" }
+  ]);
+  assertEquals(resolveSingleBoltCompanyId([{ company_id: "c-1" }]), "c-1");
+  assertEquals(resolveSingleBoltCompanyId([{ company_id: "c-1" }, { company_id: "c-2" }]), null);
+  assertEquals(resolveSingleBoltCompanyId([]), null);
+});
+
+Deno.test("Bolt page metadata accepts consistent totals and rejects malformed or oversized totals", () => {
+  assertEquals(boltPageCountIsValid(100, 100), true);
+  assertEquals(boltPageCountIsValid(100, 250), true);
+  assertEquals(boltPageCountIsValid(101, 100), false);
+  assertEquals(boltPageCountIsValid(0, -1), false);
+  assertEquals(boltPageCountIsValid(0, 5001), false);
+  assertEquals(boltPageCountIsValid(0, "10"), false);
+});

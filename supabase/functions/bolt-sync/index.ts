@@ -56,6 +56,14 @@ function normalizeActiveVehicle(driver: any) {
   const v = driver?.active_vehicle;
   return v && typeof v === "object" ? v : null;
 }
+function normalizeEmail(value: unknown) {
+  return clean(value).trim().toLowerCase();
+}
+function normalizePhone(value: unknown) {
+  // Normalize presentation whitespace only; retain punctuation and country
+  // prefixes because phone formats are not safely equivalent without a region.
+  return clean(value).replace(/\\s+/g, "").trim();
+}
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
   const clientSecret = Deno.env.get("BOLT_CLIENT_SECRET") || "";
@@ -136,8 +144,8 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   const firstName = clean(first(driver, ["first_name", "firstName"]));
   const lastName = clean(first(driver, ["last_name", "lastName"]));
   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
-  const email = clean(first(driver, ["email"]));
-  const phone = clean(first(driver, ["phone", "phone_number"]));
+  const email = normalizeEmail(first(driver, ["email"]));
+  const phone = normalizePhone(first(driver, ["phone", "phone_number"]));
   const state = first(driver, ["state", "status"]);
   const activeVehicle = normalizeActiveVehicle(driver);
   const activeVehicleId = normalizeVehicleId(activeVehicle);
@@ -329,8 +337,8 @@ Deno.serve(async (req: Request) => {
         assignmentErrors.push({ boltDriverId: incomingDriverId, message: "Resposta Bolt contém UUID de motorista duplicado; registo ignorado." });
         continue;
       }
-      const incomingEmail = clean(first(driver, ["email"])).toLowerCase();
-      const incomingPhone = clean(first(driver, ["phone", "phone_number"])).replace(/\\s+/g, "");
+      const incomingEmail = normalizeEmail(first(driver, ["email"]));
+      const incomingPhone = normalizePhone(first(driver, ["phone", "phone_number"]));
       if (incomingEmail && seenBoltDriverEmails.has(incomingEmail)) {
         invalidDriverRecords++;
         assignmentFailures++;

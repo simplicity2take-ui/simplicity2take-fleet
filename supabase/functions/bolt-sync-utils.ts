@@ -17,7 +17,7 @@ export function normalizeBoltPhone(value: unknown): string {
 
 export function boltStatusToPortal(value: unknown, current = "Ativo"): string {
   const s = value === undefined || value === null ? "" : String(value).toLowerCase();
-  if (!s) return current || "Ativo";
+  // Missing or blank provider status is not proof of activation; fail closed.\n  if (!s.trim()) return "Inativo";
   // Explicit negative forms must win before matching "active"/"approved".
   // Only positively recognized states may activate; unknown provider vocabulary fails closed.
   if (/(not[_ -]?(active|activated|enabled|approved)|non[_ -]?(active|enabled|approved)|inactive|suspend|blocked|deactiv|terminated|banned|disabled|revoked|rejected|pending|awaiting|unverified|unknown)/.test(s)) return "Inativo";

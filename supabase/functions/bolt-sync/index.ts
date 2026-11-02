@@ -118,11 +118,9 @@ async function boltPost(path: string, token: string) {
     let data: any = {};
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
     if (response.ok) return data;
-    // Bound third-party error text before it reaches logs or the client response.
-    const errorText = clean(data?.message || data?.error || text || lastError)
-      .replace(/[\r\n\t]+/g, " ")
-      .slice(0, 500);
-    lastError = errorText || "Pedido Bolt recusado.";
+    // Do not forward provider error bodies: they may contain personal data,
+    // request details, or credentials. Keep only the HTTP status for diagnostics.
+    lastError = `Pedido Bolt recusado (HTTP ${response.status}).`;
     if (![400, 422].includes(response.status)) throw new Error(lastError);
   }
   throw new Error(lastError);

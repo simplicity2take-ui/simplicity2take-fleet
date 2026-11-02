@@ -19,9 +19,9 @@ function safeErrorMessage(error: unknown, fallback = "Erro inesperado na sincron
   const raw = error instanceof Error ? error.message : clean(error);
   // Avoid leaking tokens, credentials, personal data or unbounded third-party payloads.
   return raw
-    .replace(/Bearer\\s+[A-Za-z0-9._~+\\/-]+=*/gi, "Bearer [redacted]")
-    .replace(/(client_secret|access_token|refresh_token|password|authorization)(\\s*[:=]\\s*)[^,;\\s]+/gi, "$1$2[redacted]")
-    .replace(/[\\r\\n\\t]+/g, " ")
+    .replace(/Bearer\s+[A-Za-z0-9._~+\/-]+=*/gi, "Bearer [redacted]")
+    .replace(/(client_secret|access_token|refresh_token|password|authorization)(\s*[:=]\s*)[^,;\s]+/gi, "$1$2[redacted]")
+    .replace(/[\r\n\t]+/g, " ")
     .slice(0, 500) || fallback;
 }
 function first(obj: any, keys: string[]) {
@@ -73,7 +73,7 @@ function normalizeEmail(value: unknown) {
 function normalizePhone(value: unknown) {
   // Normalize presentation whitespace only; retain punctuation and country
   // prefixes because phone formats are not safely equivalent without a region.
-  return clean(value).replace(/\\s+/g, "").trim();
+  return clean(value).replace(/\s+/g, "").trim();
 }
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
@@ -113,7 +113,7 @@ async function boltPost(path: string, token: string) {
     if (response.ok) return data;
     // Bound third-party error text before it reaches logs or the client response.
     const errorText = clean(data?.message || data?.error || text || lastError)
-      .replace(/[\\r\\n\\t]+/g, " ")
+      .replace(/[\r\n\t]+/g, " ")
       .slice(0, 500);
     lastError = errorText || "Pedido Bolt recusado.";
     if (![400, 422].includes(response.status)) throw new Error(lastError);

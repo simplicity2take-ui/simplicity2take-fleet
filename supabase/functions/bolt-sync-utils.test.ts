@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal, boltCompensationDiagnostic } from "./bolt-sync-utils.ts";
 
 Deno.test("Bolt identity guard allows missing identifiers", () => {
   assertEquals(hasBoltIdentityConflict(null, "bolt-1"), false);
@@ -30,4 +30,11 @@ Deno.test("Bolt status mapping preserves fallback and maps known states", () => 
   assertEquals(boltStatusToPortal("approved"), "Ativo");
   assertEquals(boltStatusToPortal("pending", "Inativo"), "Inativo");
   assertEquals(boltStatusToPortal("", ""), "Ativo");
+});
+
+Deno.test("Bolt compensation diagnostics distinguish restored, deleted and critical failures", () => {
+  assertEquals(boltCompensationDiagnostic({ ok: true, action: "restored" }), "Perfil anterior restaurado após falha de atribuição.");
+  assertEquals(boltCompensationDiagnostic({ ok: true, action: "deleted" }), "Novo perfil removido após falha de atribuição.");
+  assertEquals(boltCompensationDiagnostic({ ok: false, action: "restore_failed" }), "Falha crítica: não foi possível restaurar o perfil anterior.");
+  assertEquals(boltCompensationDiagnostic({ ok: false, action: "delete_failed" }), "Falha crítica: não foi possível remover o novo perfil.");
 });

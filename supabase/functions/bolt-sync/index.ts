@@ -458,7 +458,7 @@ Deno.serve(async (req: Request) => {
       } catch (error) {
         assignmentFailures++;
         const safeMessage = safeErrorMessage(error);
-        const isCompensationFailure = /compensation failed/i.test(safeMessage);
+        const isCompensationFailure = /falha crítica de compensação/i.test(safeMessage);
         assignmentErrors.push({
           boltDriverId: normalizeDriverId(driver) || "unknown",
           message: safeMessage,

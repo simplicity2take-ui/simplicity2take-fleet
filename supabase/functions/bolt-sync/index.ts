@@ -174,6 +174,9 @@ async function getBoltV2Collection(path: string, token: string, companyId: strin
   for (let offset = 0; offset < maximum; offset += limit) {
     const payload = await boltPostV2(path, token, { company_id: companyId, limit, offset });
     const data = payload?.data;
+    if (!hasExpectedCollection(data, collectionKeys)) {
+      throw new Error("A Bolt v2 devolveu uma resposta sem a coleção esperada; sincronização interrompida.");
+    }
     const page = arrayFrom(data, collectionKeys);
     const reportedTotal = data && typeof data === "object" ? data.total_rows : undefined;
     if (!boltPageCountIsValid(page.length, reportedTotal)) {

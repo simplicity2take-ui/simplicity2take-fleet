@@ -42,3 +42,41 @@ export function boltCompensationDiagnostic(result: BoltCompensationResult): stri
     ? "Falha crítica: não foi possível restaurar o perfil anterior."
     : "Falha crítica: não foi possível remover o novo perfil.";
 }
+
+// Validate the provider envelope without leaking its raw body into admin diagnostics.
+export function boltApiEnvelopeError(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return "A Bolt devolveu uma resposta inválida.";
+  }
+  const value = payload as Record<string, unknown>;
+  if (value.code !== undefined && value.code !== 0 && value.code !== "0") {
+    return "A API Bolt devolveu um código de erro.";
+  }
+  return null;
+}
+
+export function extractBoltCompanies(payload: unknown): Array<{ company_id: string }> {
+  if (!payload || typeof payload !== "object") return [];
+  const root = payload as Record<string, unknown>;
+  const data = root.data && typeof root.data === "object"
+    ? root.data as Record<string, unknown>
+    : root;
+  if (!Array.isArray(data.companies)) return [];
+  return data.companies.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const id = (item as Record<string, unknown>).company_id;
+    return typeof id === "string" && id.trim() ? [{ company_id: id.trim() }] : [];
+  });
+}
+
+// Fail closed: never pick an arbitrary company when credentials expose several.
+export function resolveSingleBoltCompanyId(companies: Array<{ company_id: string }>): string | null {
+  const ids = [...new Set(companies.map((company) => company.company_id.trim()).filter(Boolean))];
+  return ids.length === 1 ? ids[0] : null;
+}
+
+export function boltPageCountIsValid(received: number, totalRows: unknown): totalRows is number {
+  return Number.isInteger(received) && received >= 0 &&
+    typeof totalRows === "number" && Number.isInteger(totalRows) &&
+    totalRows >= received && totalRows <= 5000;
+}

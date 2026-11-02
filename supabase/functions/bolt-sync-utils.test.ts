@@ -54,3 +54,9 @@ Deno.test("Bolt status mapping does not infer unknown states as active", () => {
   assertEquals(boltStatusToPortal("pending_review"), "Ativo");
   assertEquals(boltStatusToPortal("unknown", "Inativo"), "Inativo");
 });
+
+Deno.test("Bolt status mapping prioritizes explicit negative variants", () => {
+  for (const value of ["not_active", "not-active", "not active", "non-active", "not_approved", "revoked", "rejected"]) {
+    assertEquals(boltStatusToPortal(value), "Inativo");
+  }
+});

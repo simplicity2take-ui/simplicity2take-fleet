@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, boltStatusToPortal, boltCompensationDiagnostic } from "./bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -255,18 +255,26 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
           bolt_partner_uuid: existing.bolt_partner_uuid,
           bolt_last_synced_at: existing.bolt_last_synced_at
         }).eq("id", existing.id);
-        if (rollback.error) {
+        const compensation = rollback.error
+          ? { ok: false as const, action: "restore_failed" as const }
+          : { ok: true as const, action: "restored" as const };
+        if (!compensation.ok) {
           console.error("bolt-sync driver profile compensation failed", {
             driverId: existing.id,
-            code: rollback.error.code
+            code: rollback.error?.code,
+            diagnostic: boltCompensationDiagnostic(compensation)
           });
         }
       } else {
         const rollback = await admin.from("drivers").delete().eq("id", row.id);
-        if (rollback.error) {
+        const compensation = rollback.error
+          ? { ok: false as const, action: "delete_failed" as const }
+          : { ok: true as const, action: "deleted" as const };
+        if (!compensation.ok) {
           console.error("bolt-sync new driver compensation failed", {
             driverId: row.id,
-            code: rollback.error.code
+            code: rollback.error?.code,
+            diagnostic: boltCompensationDiagnostic(compensation)
           });
         }
       }

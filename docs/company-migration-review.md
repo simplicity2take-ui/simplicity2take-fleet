@@ -54,6 +54,10 @@ Required before applying in an isolated environment:
 - Run the migration twice to verify idempotency and compare row counts.
 - Exercise rollback only in a disposable database; do not automatically drop ownership data after it has been used.
 
+## Latest disposable CI evidence
+
+On 2026-11-03, the branch CI applied the company, fleet and integration migrations twice to PostgreSQL 17 and passed the idempotency check. The same run passed Company A/B document RLS checks for company admins, an unlinked company member, a driver, and explicit viewer grants. Bolt and Uber offline/type checks also passed. These results cover only the synthetic disposable database; hosted schema/data, full tenant coverage, live Bolt/Uber access, and production deployment remain unverified.
+
 ## Test matrix required in a disposable local database
 
 1. Fresh schema: apply both migrations in order.

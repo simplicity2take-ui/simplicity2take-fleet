@@ -1,0 +1,79 @@
+name: Safe Bolt and Uber regressions
+
+on:
+  push:
+    branches:
+      - fix/bolt-assignment-source
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/fleet-integration-regressions.yml"
+      - "supabase/functions/bolt-sync-utils.ts"
+      - "supabase/functions/bolt-sync-utils.test.ts"
+      - "supabase/functions/bolt-sync/**"
+      - "supabase/functions/uber-report-import/**"
+      - "supabase/migrations/*bolt*"
+      - "supabase/tests/*bolt*"
+      - "supabase/tests/reconcile_bolt_vehicle_assignment_runtime_regression.sql"
+      - "supabase/tests/bolt_assignment_ci_fixture.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deno:
+    name: Deno provider tests and type checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Run provider-independent Bolt and Uber tests
+        run: deno test --fail-fast supabase/functions/bolt-sync-utils.test.ts supabase/functions/uber-report-import/uber-report-utils.test.ts
+      - name: Type-check provider functions without credentials
+        run: deno check supabase/functions/bolt-sync/index.ts supabase/functions/uber-report-import/index.ts
+
+  postgres:
+    name: PostgreSQL Bolt assignment regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fleet_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Create isolated test database
+        run: psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE fleet_test"
+      - name: Apply the Bolt RPC migration to the disposable schema
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/bolt_assignment_ci_fixture.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261102000200_reconcile_bolt_assignment_atomically.sql
+      - name: Run catalog and privilege regressions
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/bolt_assignment_rpc_regression.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/reconcile_bolt_vehicle_assignment_regression.sql
+      - name: Run runtime and concurrency regressions
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/reconcile_bolt_vehicle_assignment_runtime_regression.sql
+          bash supabase/tests/bolt_assignment_concurrency.sh

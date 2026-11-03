@@ -53,7 +53,13 @@ begin
     raise exception 'Regression: RPC does not explicitly preserve conflicting manual/history rows';
   end if;
 
-  if v_definition !~* 'revoke\s+all\s+on\s+function' then
-    raise exception 'Regression: RPC privileges are not explicitly restricted';
+  -- pg_get_functiondef returns the function DDL/body, not the GRANT/REVOKE
+  -- statements that follow it in the migration. Check effective privileges.
+  if has_function_privilege('anon', 'public.reconcile_bolt_vehicle_assignment(uuid,uuid,date)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.reconcile_bolt_vehicle_assignment(uuid,uuid,date)', 'EXECUTE') then
+    raise exception 'Regression: RPC is executable by an unprivileged API role';
+  end if;
+  if not has_function_privilege('service_role', 'public.reconcile_bolt_vehicle_assignment(uuid,uuid,date)', 'EXECUTE') then
+    raise exception 'Regression: service_role cannot execute the assignment RPC';
   end if;
 end $$;

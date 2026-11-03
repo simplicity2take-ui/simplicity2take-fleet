@@ -1500,8 +1500,17 @@ async function syncBolt() {
     renderApp();
     const drivers = data.drivers || {};
     const vehicles = data.vehicles || {};
-    const assignments = Number(data.assignmentsUpdated || 0);
-    showToast(`Bolt sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas ativos, ${vehicles.active ?? vehicles.received ?? 0} viaturas ativas e ${assignments} associações.`);
+    const assignments = data.assignments || {};
+    const statusConflicts = data.statusConflictsRequiringReview || {};
+    const assignmentsCreated = Number(assignments.created ?? data.assignmentsUpdated ?? 0);
+    const assignmentConflicts = Number(assignments.conflictsRequiringReview || 0);
+    const statusConflictCount = Number(statusConflicts.drivers || 0) + Number(statusConflicts.vehicles || 0);
+    let summary = `Bolt: motoristas ${drivers.created ?? 0} novos/${drivers.updated ?? 0} atualizados (${drivers.received ?? 0} recebidos); viaturas ${vehicles.created ?? 0} novas/${vehicles.updated ?? 0} atualizadas (${vehicles.received ?? 0} recebidas); ${assignmentsCreated} associações criadas.`;
+    const conflicts = [];
+    if (assignmentConflicts) conflicts.push(`${assignmentConflicts} conflitos de associação`);
+    if (statusConflictCount) conflicts.push(`${statusConflictCount} conflitos de estado`);
+    if (conflicts.length) summary += ` Revisão necessária: ${conflicts.join(" e ")}.`;
+    showToast(summary);
   } catch (error) {
     console.error("Bolt sync error", error);
     showToast(error?.message || "Não foi possível sincronizar a Bolt.");
@@ -1764,7 +1773,7 @@ function renderSettings() {
           </div>
           <div class="integration-note">
             <strong>Credenciais seguras no Supabase</strong>
-            <p>O Portal usa a API Fleet Integration da Bolt com OAuth Client Credentials. O Client Secret nunca fica no navegador.</p>
+            <p>O Portal usa a Fleet API v2 com OAuth Client Credentials. Configure Client ID, Client Secret e, quando as credenciais tiverem acesso a várias empresas ativas, o BOLT_COMPANY_ID nos Secrets do Supabase. Nenhum segredo fica no navegador.</p>
           </div>
           <button class="primary-button" type="button" data-bolt-sync>Sincronizar Bolt agora</button>
         </div>

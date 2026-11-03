@@ -212,6 +212,13 @@ export function validatePeriodDates(periodStart: string | null, periodEnd: strin
   }
 }
 
+export function validateRequiredPeriodDates(periodStart: string | null, periodEnd: string | null) {
+  validatePeriodDates(periodStart, periodEnd);
+  if (!periodStart || !periodEnd) {
+    throw new Error("O relatório agregado exige as datas inicial e final. Inclua-as no nome do ficheiro (AAAAMMDD-AAAAMMDD).");
+  }
+}
+
 export function baseDates(periodStart: string | null, periodEnd: string | null) {
   return { period_start: periodStart || null, period_end: periodEnd || null };
 }

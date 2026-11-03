@@ -1516,16 +1516,16 @@ async function syncBolt() {
     showToast(summary);
   } catch (error) {
     console.error("Bolt sync error", error);
-    showToast(error?.message || "Não foi possível sincronizar a Bolt.async function syncUber() {
-  requireS2TIntegration();
-  showToast("A sincronização direta da Uber ainda não está configurada. Importe os relatórios CSV Fleet Hub disponíveis.");
+    showToast(error?.message || "Não foi possível sincronizar a Bolt.");
+  } finally {
+    const currentButton = document.querySelector("[data-bolt-sync]");
+    if (currentButton) { currentButton.disabled = false; currentButton.textContent = "Sincronizar Bolt agora"; }
+  }
 }
 
-");
-  } finally {
-    const currentButton = document.querySelector("[data-uber-sync]");
-    if (currentButton) { currentButton.disabled = false; currentButton.textContent = "Sincronizar Uber agora"; }
-  }
+async function syncUber() {
+  requireS2TIntegration();
+  showToast("A sincronização direta da Uber ainda não está configurada. Importe os relatórios CSV Fleet Hub disponíveis.");
 }
 
 function inferUberReportPeriod(fileName) {

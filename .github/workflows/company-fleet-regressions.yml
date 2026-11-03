@@ -36,6 +36,7 @@ on:
       - "supabase/tests/atomic_vehicle_assignments_preflight.sql"
       - "supabase/tests/company_fleet_flow_ci_fixture.sql"
       - "supabase/tests/company_fleet_flow_behavior.sql"
+      - "supabase/tests/company_document_scope_behavior.sql"
       - "supabase/tests/company_integration_scope_behavior.sql"
       - "supabase/tests/uber_rpc_company_scope_preflight.sql"
       - "supabase/tests/company_fleet_flow_concurrency.sh"
@@ -132,6 +133,7 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/assignment_history_guard_preflight.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/atomic_vehicle_assignments_preflight.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/company_fleet_flow_behavior.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/company_document_scope_behavior.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/uber_rpc_company_scope_preflight.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/company_integration_scope_behavior.sql
           bash supabase/tests/company_fleet_flow_concurrency.sh

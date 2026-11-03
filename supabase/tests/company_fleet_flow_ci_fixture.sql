@@ -74,6 +74,39 @@ ALTER TABLE public.vehicles
 CREATE UNIQUE INDEX vehicles_bolt_vehicle_uuid_uidx
   ON public.vehicles(bolt_vehicle_uuid) WHERE bolt_vehicle_uuid IS NOT NULL;
 
+CREATE TABLE public.documents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  document_type text,
+  document_number text,
+  policy_number text,
+  issue_date date,
+  expiry_date date,
+  observations text,
+  original_file_name text,
+  mime_type text,
+  drive_file_id text,
+  drive_web_view_link text,
+  vehicle_id uuid REFERENCES public.vehicles(id) ON DELETE SET NULL,
+  driver_id uuid REFERENCES public.drivers(id) ON DELETE SET NULL,
+  uploaded_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE public.document_viewers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id uuid NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
+  driver_id uuid NOT NULL REFERENCES public.drivers(id) ON DELETE CASCADE,
+  can_view boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (document_id, driver_id)
+);
+
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.document_viewers ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.documents, public.document_viewers TO authenticated, service_role;
+
+
 
 -- Provider history tables mirror the pre-tenant schema. Their legacy UNIQUE
 -- constraints intentionally exercise the constraint-to-tenant-index migration.

@@ -1,0 +1,92 @@
+\set ON_ERROR_STOP on
+
+BEGIN;
+
+INSERT INTO public.documents (id, company_id, name, driver_id) VALUES
+  ('50000000-0000-0000-0000-000000000001',
+   (SELECT id FROM public.companies WHERE slug='simplicity2take'),
+   'Documento da Empresa A', NULL),
+  ('50000000-0000-0000-0000-000000000002',
+   (SELECT id FROM public.companies WHERE slug='simplicity2take'),
+   'Documento Motorista A', '20000000-0000-0000-0000-000000000001'),
+  ('50000000-0000-0000-0000-000000000003',
+   (SELECT id FROM public.companies WHERE slug='simplicity2take'),
+   'Documento Partilhado A', NULL),
+  ('50000000-0000-0000-0000-000000000004',
+   'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+   'Documento da Empresa B', NULL),
+  ('50000000-0000-0000-0000-000000000005',
+   'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+   'Documento Motorista B', '20000000-0000-0000-0000-000000000105');
+
+INSERT INTO public.document_viewers (document_id, driver_id, can_view) VALUES
+  ('50000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001',true),
+  ('50000000-0000-0000-0000-000000000005','20000000-0000-0000-0000-000000000105',true);
+
+SET ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', false);
+DO $company_a_admin$
+BEGIN
+  IF (SELECT count(*) FROM public.documents) <> 3 THEN
+    RAISE EXCEPTION 'Company A admin cannot read all documents owned by Company A';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.documents WHERE id IN (
+    '50000000-0000-0000-0000-000000000004','50000000-0000-0000-0000-000000000005'
+  )) THEN
+    RAISE EXCEPTION 'Company A admin can read Company B documents';
+  END IF;
+  IF (SELECT count(*) FROM public.document_viewers) <> 1 THEN
+    RAISE EXCEPTION 'Company A admin cannot read only its own document viewer grants';
+  END IF;
+END;
+$company_a_admin$;
+
+SELECT set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', false);
+DO $company_a_member$
+BEGIN
+  IF (SELECT count(*) FROM public.documents) <> 2
+     OR EXISTS (SELECT 1 FROM public.documents WHERE id='50000000-0000-0000-0000-000000000002') THEN
+    RAISE EXCEPTION 'Company A member can see driver-private documents or cannot see company documents';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.document_viewers) THEN
+    RAISE EXCEPTION 'Company member can inspect document viewer grants';
+  END IF;
+END;
+$company_a_member$;
+
+SELECT set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000004', false);
+DO $driver_a$
+BEGIN
+  IF (SELECT count(*) FROM public.documents) <> 2
+     OR EXISTS (SELECT 1 FROM public.documents WHERE id IN (
+       '50000000-0000-0000-0000-000000000001',
+       '50000000-0000-0000-0000-000000000004',
+       '50000000-0000-0000-0000-000000000005'
+     )) THEN
+    RAISE EXCEPTION 'Driver access does not match own document and explicit viewer grant';
+  END IF;
+  IF (SELECT count(*) FROM public.document_viewers) <> 1 THEN
+    RAISE EXCEPTION 'Driver cannot see only its own document viewer grant';
+  END IF;
+END;
+$driver_a$;
+
+SELECT set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000002', false);
+DO $company_b_admin$
+BEGIN
+  IF (SELECT count(*) FROM public.documents) <> 2
+     OR EXISTS (SELECT 1 FROM public.documents WHERE id IN (
+       '50000000-0000-0000-0000-000000000001',
+       '50000000-0000-0000-0000-000000000002',
+       '50000000-0000-0000-0000-000000000003'
+     )) THEN
+    RAISE EXCEPTION 'Company B document access crossed into Company A';
+  END IF;
+  IF (SELECT count(*) FROM public.document_viewers) <> 1 THEN
+    RAISE EXCEPTION 'Company B admin cannot read its own viewer grants';
+  END IF;
+END;
+$company_b_admin$;
+
+RESET ROLE;
+ROLLBACK;

@@ -32,6 +32,49 @@ VALUES
   '20000000-0000-0000-0000-000000000105','30000000-0000-0000-0000-000000000105',
   'company-b-original','2026-11-03T09:02:00Z');
 
+INSERT INTO public.uber_driver_activity (
+  company_id, driver_id, uber_driver_uuid, driver_name, completed_trips, period_start, period_end
+) VALUES (
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  '20000000-0000-0000-0000-000000000105','uber-driver-b','Empresa B original',99,
+  '2026-11-02','2026-11-03'
+);
+INSERT INTO public.uber_driver_payments (
+  company_id, driver_id, uber_driver_uuid, driver_name, paid_to_you, period_start, period_end
+) VALUES (
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  '20000000-0000-0000-0000-000000000105','uber-driver-b','Empresa B original',999,
+  '2026-11-02','2026-11-03'
+);
+INSERT INTO public.uber_driver_quality (
+  company_id, driver_id, uber_driver_uuid, driver_name, completed_trips, period_start, period_end
+) VALUES (
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  '20000000-0000-0000-0000-000000000105','uber-driver-b','Empresa B original',99,
+  '2026-11-02','2026-11-03'
+);
+INSERT INTO public.uber_driver_time_distance (
+  company_id, driver_id, uber_driver_uuid, driver_name, opening_minutes, period_start, period_end
+) VALUES (
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  '20000000-0000-0000-0000-000000000105','uber-driver-b','Empresa B original',999,
+  '2026-11-02','2026-11-03'
+);
+INSERT INTO public.uber_vehicle_performance (
+  company_id, vehicle_id, uber_vehicle_uuid, plate, total_earnings, total_trips, period_start, period_end
+) VALUES (
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  '30000000-0000-0000-0000-000000000105','uber-vehicle-b','BB-01-BB',999,99,
+  '2026-11-02','2026-11-03'
+);
+INSERT INTO public.uber_vehicle_time_distance (
+  company_id, vehicle_id, uber_vehicle_uuid, plate, opening_minutes, period_start, period_end
+) VALUES (
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  '30000000-0000-0000-0000-000000000105','uber-vehicle-b','BB-01-BB',999,
+  '2026-11-02','2026-11-03'
+);
+
 SELECT set_config('request.jwt.claim.role','service_role',true);
 SET ROLE service_role;
 
@@ -61,11 +104,39 @@ BEGIN
     RAISE EXCEPTION 'Uber driver report did not save: %', result;
   END IF;
 
+  result := public.sync_uber_driver_payments(
+    '[{"uber_driver_uuid":"uber-driver-b","driver_name":"Motorista B1","paid_to_you":"85.5","earnings":"90","cash_received":"4.5","fare":"82","taxes":"1","service_fee":"2","tolls":"0","tips":"3","adjustments":"0","period_start":"2026-11-02","period_end":"2026-11-03"}]'::jsonb
+  );
+  IF result->>'saved' <> '1' THEN
+    RAISE EXCEPTION 'Uber driver payments report did not save: %', result;
+  END IF;
+
+  result := public.sync_uber_driver_quality(
+    '[{"uber_driver_uuid":"uber-driver-b","driver_name":"Motorista B1","completed_trips":"12","acceptance_rate":"98.5","cancellation_rate":"1.5","completion_rate":"98.5","rating_last_4_weeks":"4.9","rating_last_500_trips":"4.8","current_acceptance_rate":"98","current_cancellation_rate":"2","accepted_trips":"12","rejected_trips":"1","cancelled_trips":"0","driver_cancelled_trips":"0","failed_trips":"0","total_trip_assignments":"13","period_start":"2026-11-02","period_end":"2026-11-03"}]'::jsonb
+  );
+  IF result->>'saved' <> '1' THEN
+    RAISE EXCEPTION 'Uber driver quality report did not save: %', result;
+  END IF;
+
+  result := public.sync_uber_driver_time_distance(
+    '[{"uber_driver_uuid":"uber-driver-b","driver_name":"Motorista B1","opening_minutes":"180","route_minutes":"100","trip_minutes":"80","unavailable_minutes":"0","free_distance_km":"3.5","route_distance_km":"42","trip_distance_km":"36","unavailable_distance_km":"0","period_start":"2026-11-02","period_end":"2026-11-03"}]'::jsonb
+  );
+  IF result->>'saved' <> '1' THEN
+    RAISE EXCEPTION 'Uber driver time/distance report did not save: %', result;
+  END IF;
+
   result := public.sync_uber_vehicle_performance(
     '[{"uber_vehicle_uuid":"uber-vehicle-b","plate":"BB-01-BB","total_earnings":"85.5","total_trips":"4","period_start":"2026-11-02","period_end":"2026-11-03"}]'::jsonb
   );
   IF result->>'saved' <> '1' THEN
     RAISE EXCEPTION 'Uber vehicle report did not save: %', result;
+  END IF;
+
+  result := public.sync_uber_vehicle_time_distance(
+    '[{"uber_vehicle_uuid":"uber-vehicle-b","plate":"BB-01-BB","opening_minutes":"240","route_minutes":"140","trip_minutes":"100","unavailable_minutes":"0","free_distance_km":"4","route_distance_km":"50","trip_distance_km":"43","unavailable_distance_km":"0","period_start":"2026-11-02","period_end":"2026-11-03"}]'::jsonb
+  );
+  IF result->>'saved' <> '1' THEN
+    RAISE EXCEPTION 'Uber vehicle time/distance report did not save: %', result;
   END IF;
 
   result := public.sync_uber_trip_activity(
@@ -119,6 +190,56 @@ BEGIN
     SELECT 1 FROM public.uber_vehicle_performance
     WHERE company_id=company_a AND uber_vehicle_uuid='uber-vehicle-b' AND vehicle_id IS NULL
   ) THEN RAISE EXCEPTION 'Uber vehicle report linked a vehicle from another company'; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.uber_driver_payments
+    WHERE company_id=company_a AND uber_driver_uuid='uber-driver-b'
+      AND driver_id IS NULL AND paid_to_you=85.5
+  ) THEN RAISE EXCEPTION 'Uber driver payments linked a driver from another company'; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.uber_driver_quality
+    WHERE company_id=company_a AND uber_driver_uuid='uber-driver-b'
+      AND driver_id IS NULL AND completed_trips=12
+  ) THEN RAISE EXCEPTION 'Uber driver quality linked a driver from another company'; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.uber_driver_time_distance
+    WHERE company_id=company_a AND uber_driver_uuid='uber-driver-b'
+      AND driver_id IS NULL AND opening_minutes=180
+  ) THEN RAISE EXCEPTION 'Uber driver time/distance linked a driver from another company'; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.uber_vehicle_time_distance
+    WHERE company_id=company_a AND uber_vehicle_uuid='uber-vehicle-b'
+      AND vehicle_id IS NULL AND opening_minutes=240
+  ) THEN RAISE EXCEPTION 'Uber vehicle time/distance linked a vehicle from another company'; END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.uber_driver_activity
+    WHERE company_id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+      AND uber_driver_uuid='uber-driver-b' AND driver_name='Empresa B original' AND completed_trips=99
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.uber_driver_payments
+    WHERE company_id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+      AND uber_driver_uuid='uber-driver-b' AND driver_name='Empresa B original' AND paid_to_you=999
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.uber_driver_quality
+    WHERE company_id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+      AND uber_driver_uuid='uber-driver-b' AND driver_name='Empresa B original' AND completed_trips=99
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.uber_driver_time_distance
+    WHERE company_id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+      AND uber_driver_uuid='uber-driver-b' AND driver_name='Empresa B original' AND opening_minutes=999
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.uber_vehicle_performance
+    WHERE company_id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+      AND uber_vehicle_uuid='uber-vehicle-b' AND total_earnings=999 AND total_trips=99
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.uber_vehicle_time_distance
+    WHERE company_id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+      AND uber_vehicle_uuid='uber-vehicle-b' AND opening_minutes=999
+  ) THEN RAISE EXCEPTION 'An S2T Uber report changed Company B data'; END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM public.drivers

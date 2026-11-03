@@ -132,3 +132,27 @@ async function assertRejects(action: () => Promise<unknown>, fragment: string): 
   }
   throw new Error("Expected a rejected operation containing: " + fragment);
 }
+
+Deno.test("Uber CSV rejects duplicate named headers after trimming", () => {
+  assertThrows(() => parseCsv("UUID; UUID ;Estado\n1;2;ACTIVE\n"), "cabeçalhos duplicados");
+});
+
+Deno.test("Uber CSV rejects rows with missing or extra columns", () => {
+  assertThrows(() => parseCsv("id;nome;nota\n1;Ana\n"), "número incorreto de colunas");
+  assertThrows(() => parseCsv("id;nome\n1;Ana;extra\n"), "número incorreto de colunas");
+  assertThrows(() => parseCsv("id;nome\n1;Ana;\n"), "número incorreto de colunas");
+});
+
+Deno.test("Uber CSV preserves empty final cells, BOM and multiline values", () => {
+  assertEquals(parseCsv("\uFEFFid;nota;vazio\r\n1;\"linha 1\r\nlinha 2\";\r\n2;;\r\n\r\n"), [
+    { id: "1", nota: "linha 1\r\nlinha 2", vazio: "" },
+    { id: "2", nota: "", vazio: "" },
+  ]);
+});
+
+Deno.test("Uber CSV permits empty unnamed columns without discarding data", () => {
+  assertEquals(parseCsv("id;\n1;valor\n"), [{ id: "1", "": "valor" }]);
+  assertEquals(parseCsv("id;;\n1;;\n"), [{ id: "1", "": "" }]);
+  assertThrows(() => parseCsv("id;;\n1;valor;\n"), "colunas sem nome");
+  assertThrows(() => parseCsv("id;;\n1;;valor\n"), "colunas sem nome");
+});

@@ -40,8 +40,23 @@ export function parseCsv(text: string) {
   if (!records.length) return [];
   const headers = records[0].map(value => value.trim());
   if (!headers.some(Boolean)) return [];
-  return records.slice(1).map(values =>
-    Object.fromEntries(headers.map((header, i) => [header, (values[i] ?? "").trim()]))
+  const namedHeaders = headers.filter(Boolean);
+  if (new Set(namedHeaders).size !== namedHeaders.length) {
+    throw new Error("CSV inválido: existem cabeçalhos duplicados.");
+  }
+  const unnamedColumns = headers.flatMap((header, index) => header ? [] : [index]);
+  const dataRows = records.slice(1);
+  for (let index = 0; index < dataRows.length; index++) {
+    const values = dataRows[index];
+    if (values.length !== headers.length) {
+      throw new Error("CSV inválido: o registo " + (index + 2) + " tem um número incorreto de colunas.");
+    }
+    if (unnamedColumns.length > 1 && unnamedColumns.some(column => values[column].trim())) {
+      throw new Error("CSV inválido: várias colunas sem nome contêm dados ambíguos.");
+    }
+  }
+  return dataRows.map(values =>
+    Object.fromEntries(headers.map((header, i) => [header, values[i].trim()]))
   );
 }
 

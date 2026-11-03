@@ -928,11 +928,15 @@ function renderCompanySwitcher() {
 }
 function renderApp() {
   const user = currentUser();
+  const navigation = navigationForUser();
+  if (!navigation.some(([view]) => view === state.activeView)) {
+    state.activeView = navigation[0][0];
+  }
   selectors.sessionRole.textContent = user.role === "admin" ? "Administrador global" : state.currentCompanyRole === "company_admin" ? "Administrador da empresa" : state.currentCompanyRole ? "Utilizador da empresa" : "Motorista";
   selectors.sessionName.textContent = user.name;
-  renderCompanySwitcher();
   renderNav();
   renderContent();
+  renderCompanySwitcher();
 }
 
 function renderNav() {
@@ -2781,19 +2785,24 @@ function bindPortalEvents() {
   selectors.companySwitcher?.addEventListener("change", async event => {
     const nextCompanyId = event.target.value;
     if (!nextCompanyId || nextCompanyId === state.currentCompanyId) return;
-    const previousCompanyId = state.currentCompanyId;
+    const previousState = { ...state };
+    const previousInert = selectors.appShell.inert;
     state.currentCompanyId = nextCompanyId;
     selectors.companySwitcher.disabled = true;
+    selectors.appShell.inert = true;
     try {
       await loadBackendData();
-      renderApp();
+      if (state.sessionUserId === previousState.sessionUserId) renderApp();
     } catch (error) {
-      state.currentCompanyId = previousCompanyId;
       console.error(error);
-      showToast(error?.message || "Não foi possível mudar de empresa.");
-      renderCompanySwitcher();
+      if (state.sessionUserId === previousState.sessionUserId) {
+        Object.assign(state, previousState);
+        showToast(error?.message || "Não foi possível mudar de empresa.");
+        renderApp();
+      }
     } finally {
       selectors.companySwitcher.disabled = false;
+      selectors.appShell.inert = previousInert;
     }
   });
   selectors.loginForm?.addEventListener("submit", event => {

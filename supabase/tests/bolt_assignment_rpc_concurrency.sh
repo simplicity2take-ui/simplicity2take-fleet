@@ -121,7 +121,7 @@ atomic_sync_a="SELECT public.s2t_apply_bolt_fleet_sync(
     'assigned_vehicle_id','30000000-0000-0000-0000-000000000030'
   )),
   now()
-);'
+);"
 atomic_sync_b="SELECT public.s2t_apply_bolt_fleet_sync(
   '$atomic_company_id'::uuid,
   jsonb_build_array(jsonb_build_object(
@@ -136,7 +136,7 @@ atomic_sync_b="SELECT public.s2t_apply_bolt_fleet_sync(
     'assigned_vehicle_id','30000000-0000-0000-0000-000000000031'
   )),
   now()
-);'
+);"
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atq >"$atomic_a_log" 2>&1 <<SQL &
 BEGIN;
 SET LOCAL ROLE service_role;

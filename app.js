@@ -222,23 +222,29 @@ async function loadBackendData() {
     state.currentCompanyRole = null;
   }
 
-  if (currentUser()?.role !== "admin" && selectedMembership) {
-    const companyAdmin = selectedMembership.role === "company_admin";
+  if (currentUser()?.role !== "admin") {
+    const companyAdmin = selectedMembership?.role === "company_admin";
+    const shouldLoadFleet = companyAdmin || !selectedMembership;
     const documentsQuery = supabaseClient
       .from("documents")
       .select("id, company_id, name, document_type, document_number, policy_number, issue_date, expiry_date, observations, original_file_name, mime_type, drive_file_id, drive_web_view_link, vehicle_id, driver_id, uploaded_by");
+    const driversQuery = supabaseClient.from("drivers").select("*");
+    const vehiclesQuery = supabaseClient.from("vehicles").select("*");
+    const companyDocumentsQuery = companyAdmin
+      ? documentsQuery.eq("company_id", state.currentCompanyId)
+      : documentsQuery;
     const [documentsResult, driversResult, vehiclesResult, assignmentsResult, viewersResult] = await Promise.all([
-      documentsQuery,
-      companyAdmin
-        ? supabaseClient.from("drivers").select("*").eq("company_id", state.currentCompanyId)
+      companyDocumentsQuery,
+      shouldLoadFleet
+        ? (companyAdmin ? driversQuery.eq("company_id", state.currentCompanyId) : driversQuery)
         : Promise.resolve({ data: [], error: null }),
-      companyAdmin
-        ? supabaseClient.from("vehicles").select("*").eq("company_id", state.currentCompanyId)
+      shouldLoadFleet
+        ? (companyAdmin ? vehiclesQuery.eq("company_id", state.currentCompanyId) : vehiclesQuery)
         : Promise.resolve({ data: [], error: null }),
-      companyAdmin
+      shouldLoadFleet
         ? supabaseClient.from("vehicle_assignments").select("*")
         : Promise.resolve({ data: [], error: null }),
-      companyAdmin
+      shouldLoadFleet
         ? supabaseClient.from("document_viewers").select("*")
         : Promise.resolve({ data: [], error: null })
     ]);

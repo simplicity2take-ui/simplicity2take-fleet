@@ -23,6 +23,7 @@ on:
       - "supabase/migrations/20261026190000_company_fleet_foundation.sql"
       - "supabase/migrations/20261026200000_company_memberships_and_integrity.sql"
       - "supabase/migrations/20261030210000_platform_history_company_rls.sql"
+      - "supabase/migrations/20261030220000_company_documents_rls.sql"
       - "supabase/migrations/20261030230000_company_fleet_rls.sql"
       - "supabase/migrations/20261030240000_platform_import_company_scope.sql"
       - "supabase/migrations/20261030250000_uber_rpc_company_scope.sql"
@@ -105,6 +106,21 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030230000_company_fleet_rls.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030240000_platform_import_company_scope.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030210000_platform_history_company_rls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030220000_company_documents_rls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030250000_uber_rpc_company_scope.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000100_fleet_assignment_history_security.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000200_bolt_assignment_decision_rpc.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000300_bolt_atomic_fleet_sync.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000400_fleet_vehicle_save_rpc.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000500_assignment_reference_not_null.sql
+      - name: Reapply migrations to check idempotency
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261026190000_company_fleet_foundation.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261026200000_company_memberships_and_integrity.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030230000_company_fleet_rls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030240000_platform_import_company_scope.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030210000_platform_history_company_rls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030220000_company_documents_rls.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030250000_uber_rpc_company_scope.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000100_fleet_assignment_history_security.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000200_bolt_assignment_decision_rpc.sql

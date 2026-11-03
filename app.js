@@ -852,8 +852,11 @@ function renderCompanySwitcher() {
   if (selectors.contextLabel) selectors.contextLabel.textContent = selectedCompany ? `Simplicity2Take Fleet · ${selectedCompany.display_name || selectedCompany.legal_name}` : "Simplicity2Take Fleet";
   const integrationsEnabled = selectedCompany?.slug === "simplicity2take";
   document.querySelectorAll("[data-bolt-sync], [data-bolt-activity-sync], [data-uber-sync], [data-cartrack-sync], [data-uber-import-status], [data-uber-preview-status], [data-uber-import-activity], [data-uber-import-trip-activity], [data-uber-preview-trip-activity], [data-uber-import-vehicle-performance], [data-uber-import-vehicle-time-distance], [data-uber-import-driver-time-distance], [data-uber-import-driver-quality], [data-uber-import-driver-payments]").forEach(control => {
-    control.disabled = !integrationsEnabled;
-    control.title = integrationsEnabled ? "" : "Integração ainda não configurada para esta empresa.";
+    const uberDirectSyncPending = control.matches("[data-uber-sync]");
+    control.disabled = !integrationsEnabled || uberDirectSyncPending;
+    control.title = uberDirectSyncPending
+      ? "Sincronização direta pendente; os relatórios CSV continuam disponíveis."
+      : integrationsEnabled ? "" : "Integração ainda não configurada para esta empresa.";
   });
 }
 function renderApp() {
@@ -1513,31 +1516,12 @@ async function syncBolt() {
     showToast(summary);
   } catch (error) {
     console.error("Bolt sync error", error);
-    showToast(error?.message || "Não foi possível sincronizar a Bolt.");
-  } finally {
-    const currentButton = document.querySelector("[data-bolt-sync]");
-    if (currentButton) { currentButton.disabled = false; currentButton.textContent = "Sincronizar Bolt agora"; }
-  }
+    showToast(error?.message || "Não foi possível sincronizar a Bolt.async function syncUber() {
+  requireS2TIntegration();
+  showToast("A sincronização direta da Uber ainda não está configurada. Importe os relatórios CSV Fleet Hub disponíveis.");
 }
 
-async function syncUber() {
-  requireS2TIntegration();
-
-  const button = document.querySelector("[data-uber-sync]");
-  if (button) { button.disabled = true; button.textContent = "A sincronizar Uber…"; }
-  try {
-    const { data, error } = await supabaseClient.functions.invoke("uber-sync", { body: {} });
-    if (error) throw error;
-    if (!data?.ok) throw new Error(data?.error || "A sincronização Uber falhou.");
-    await loadBackendData();
-    renderApp();
-    const drivers = data.drivers || {};
-    const vehicles = data.vehicles || {};
-    const assignments = Number(data.assignmentsUpdated || 0);
-    showToast(`Uber sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas ativos, ${vehicles.active ?? vehicles.received ?? 0} viaturas ativas e ${assignments} associações.`);
-  } catch (error) {
-    console.error("Uber sync error", error);
-    showToast(error?.message || "Não foi possível sincronizar a Uber.");
+");
   } finally {
     const currentButton = document.querySelector("[data-uber-sync]");
     if (currentButton) { currentButton.disabled = false; currentButton.textContent = "Sincronizar Uber agora"; }
@@ -1802,7 +1786,7 @@ function renderSettings() {
             <div class="panel-heading">
               <div>
                 <strong>Uber Fleet</strong>
-                <p class="section-copy">Importação de motoristas, viaturas e associação motorista ↔ viatura.</p>
+                <p class="section-copy">A sincronização direta está pendente; a importação de relatórios Fleet Hub continua disponível.</p>
               </div>
               <span class="tag expiring">Acesso pendente</span>
             </div>
@@ -1812,7 +1796,7 @@ function renderSettings() {
               <div class="settings-row"><strong>Viagens Uber importadas</strong><span>${uberTripRecords.length}</span></div>
               <div class="settings-row"><strong>Último registo de viagem</strong><span>${lastUberTrip ? new Date(lastUberTrip).toLocaleString("pt-PT") : "Ainda sem viagens importadas"}</span></div>
               <div class="settings-row"><strong>Última sincronização</strong><span>${lastUberSync ? new Date(lastUberSync).toLocaleString("pt-PT") : "Ainda não executada"}</span></div>
-              <div class="settings-row"><strong>Backend de sincronização</strong><span class="tag active">Preparado</span></div>
+              <div class="settings-row"><strong>Sincronização direta da API</strong><span class="tag expiring">Pendente</span></div>
             </div>
             <div class="integration-note">
               <strong>Fleet Hub / Relatórios</strong>
@@ -1865,7 +1849,7 @@ function renderSettings() {
 
               <p class="section-copy">O período é lido automaticamente do nome do ficheiro quando estiver no formato AAAAMMDD-AAAAMMDD.</p>
             </div>
-            <button class="secondary-button" type="button" data-uber-sync title="Sincronizar a frota Uber agora">Sincronizar Uber agora</button>
+            <button class="secondary-button" type="button" data-uber-sync title="Sincronização direta pendente; os relatórios CSV continuam disponíveis." disabled>Acesso Uber pendente</button>
           </div>
           <div class="settings-row"><strong>Gestão de Revisões</strong><span class="tag">Preparado</span></div>
           <div class="settings-row"><strong>Gestão de Inspeções</strong><span class="tag">Preparado</span></div>

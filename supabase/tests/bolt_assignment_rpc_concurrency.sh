@@ -149,7 +149,6 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atq >"$atomic_b_log" 2>&1 <<SQL &
 BEGIN;
 SET LOCAL ROLE service_role;
 SELECT set_config('request.jwt.claim.role','service_role',true);
-SELECT set_config('company_id','$atomic_company_id',true);
 $atomic_sync_b
 COMMIT;
 SQL

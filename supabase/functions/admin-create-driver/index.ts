@@ -44,6 +44,7 @@ Deno.serve(async (request) => {
     const status = String(body.status || "Ativo").trim();
 
     if (!fullName || !email || !password) return json({ ok: false, error: "Nome, email e palavra-passe são obrigatórios." }, 400);
+    if (status !== "Ativo") return json({ ok: false, error: "Um motorista novo tem de ser criado ativo." }, 400);
     if (password.length < 8) return json({ ok: false, error: "A palavra-passe deve ter pelo menos 8 caracteres." }, 400);
 
     const requestedCompanyId = String(body.companyId || "").trim();
@@ -93,6 +94,6 @@ Deno.serve(async (request) => {
     return json({ ok: true, userId, driverId: driver.id });
   } catch (error) {
     console.error(error);
-    return json({ ok: false, error: error?.message || "Erro interno." }, 500);
+    return json({ ok: false, error: "Erro interno ao criar o motorista." }, 500);
   }
 });

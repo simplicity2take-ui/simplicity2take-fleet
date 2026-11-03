@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isActiveGlobalAdmin } from "../admin-auth-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -34,9 +35,17 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "Sessão inválida." }, 401);
     }
 
+    const { data: callerProfile, error: profileError } = await admin
+      .from("profiles").select("role,status").eq("id", caller.id).maybeSingle();
+    if (profileError) {
+      return json({ ok: false, error: "Não foi possível validar as permissões do utilizador." }, 500);
+    }
+
+    // Keep the existing primary-admin allowlist and also require an active admin profile.
     const adminEmails = new Set(["simplicity2take@gmail.com"]);
-    if (!caller.email || !adminEmails.has(caller.email.toLowerCase())) {
-      return json({ ok: false, error: "Apenas o administrador pode alterar palavras-passe." }, 403);
+    if (!isActiveGlobalAdmin(callerProfile) || !caller.email ||
+        !adminEmails.has(caller.email.toLowerCase())) {
+      return json({ ok: false, error: "Apenas o administrador global ativo pode alterar palavras-passe." }, 403);
     }
 
     const body = await req.json();

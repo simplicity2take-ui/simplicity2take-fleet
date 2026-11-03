@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isActiveGlobalAdmin } from "../admin-auth-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -72,8 +73,21 @@ Deno.serve(async request => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Sessão inválida.");
 
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-    if (profile?.role !== "admin") return new Response(JSON.stringify({ ok: false, error: "Apenas o administrador pode importar documentos." }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles").select("role,status").eq("id", user.id).maybeSingle();
+    if (profileError) throw profileError;
+    if (!isActiveGlobalAdmin(profile)) {
+      return new Response(JSON.stringify({ ok: false, error: "Apenas o administrador global ativo pode importar documentos." }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // The shared Drive inbox belongs to the current S2T company. Resolve its
+    // ownership on the server instead of trusting a client-supplied company ID.
+    const { data: company, error: companyError } = await supabase
+      .from("companies").select("id").eq("slug", "simplicity2take").eq("status", "Ativa").maybeSingle();
+    if (companyError) throw companyError;
+    if (!company?.id) {
+      return new Response(JSON.stringify({ ok: false, error: "A empresa Simplicity2Take não está configurada para importar documentos." }), { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     const body = await request.json();
     const fileId = String(body.fileId || "").trim();
@@ -88,9 +102,9 @@ Deno.serve(async request => {
     if (metadata.trashed) throw new Error("O ficheiro está no lixo do Google Drive.");
 
     const classification = classify(metadata.name);
-    const { data: vehicles, error: vehicleError } = await supabase.from("vehicles").select("id,plate");
+    const { data: vehicles, error: vehicleError } = await supabase.from("vehicles").select("id,company_id,plate").eq("company_id", company.id);
     if (vehicleError) throw vehicleError;
-    const { data: drivers, error: driverError } = await supabase.from("drivers").select("id,full_name,name");
+    const { data: drivers, error: driverError } = await supabase.from("drivers").select("id,company_id,full_name,name").eq("company_id", company.id);
     if (driverError) throw driverError;
 
     const normalizedName = plate(metadata.name);
@@ -115,6 +129,7 @@ Deno.serve(async request => {
       expiry_date: classification.expiryDate,
       original_file_name: metadata.name,
       mime_type: metadata.mimeType,
+      company_id: company.id,
       drive_file_id: metadata.id,
       drive_web_view_link: metadata.webViewLink || null,
       vehicle_id: vehicleId,

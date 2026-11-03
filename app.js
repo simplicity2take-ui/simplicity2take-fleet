@@ -1611,6 +1611,9 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
   const inferred = inferUberReportPeriod(file.name);
   const text = await file.text();
   const inferredPeriod = { start: periodStart || inferred.start, end: periodEnd || inferred.end };
+  if (!["status", "trip_activity"].includes(type) && (!inferredPeriod.start || !inferredPeriod.end)) {
+    throw new Error("Este relatório exige as datas inicial e final. Inclua-as no nome do ficheiro (AAAAMMDD-AAAAMMDD).");
+  }
   if (type === "trip_activity" && !dryRun) {
     const previewQuery = new URLSearchParams({ type, dry_run: "true" });
     if (inferredPeriod.start) previewQuery.set("period_start", inferredPeriod.start);

@@ -107,8 +107,8 @@ SQL
 atomic_blocker_pid=$!
 sleep 0.2
 
-atomic_sync_a='SELECT public.s2t_apply_bolt_fleet_sync(
-  :'"'"'company_id'"'"'::uuid,
+atomic_sync_a="SELECT public.s2t_apply_bolt_fleet_sync(
+  '$atomic_company_id'::uuid,
   jsonb_build_array(jsonb_build_object(
     'id','30000000-0000-0000-0000-000000000030','is_new',true,
     'plate','AT-30-AT','brand','Toyota','model','Yaris','vehicle_year',2024,
@@ -122,8 +122,8 @@ atomic_sync_a='SELECT public.s2t_apply_bolt_fleet_sync(
   )),
   now()
 );'
-atomic_sync_b='SELECT public.s2t_apply_bolt_fleet_sync(
-  :'"'"'company_id'"'"'::uuid,
+atomic_sync_b="SELECT public.s2t_apply_bolt_fleet_sync(
+  '$atomic_company_id'::uuid,
   jsonb_build_array(jsonb_build_object(
     'id','30000000-0000-0000-0000-000000000031','is_new',true,
     'plate','AT-31-AT','brand','Toyota','model','Yaris','vehicle_year',2024,
@@ -141,7 +141,6 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atq >"$atomic_a_log" 2>&1 <<SQL &
 BEGIN;
 SET LOCAL ROLE service_role;
 SELECT set_config('request.jwt.claim.role','service_role',true);
-SELECT set_config('company_id','$atomic_company_id',true);
 $atomic_sync_a
 COMMIT;
 SQL

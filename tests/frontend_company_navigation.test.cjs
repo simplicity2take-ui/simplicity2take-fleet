@@ -126,3 +126,66 @@ test("global administrator can open dashboard and company management settings", 
   assert.match(app.elements.get("#content").innerHTML, /Acessos à empresa/);
   assert.match(app.elements.get("#content").innerHTML, /Adicionar empresa/);
 });
+
+
+test("global administrator sees vehicle and driver expiry alerts", () => {
+  const app = createApp();
+  vm.runInContext(
+    "state.profile={id:'admin',role:'admin',full_name:'Admin'};" +
+    "state.sessionUserId='admin'; state.currentCompanyId='a'; state.currentCompanyRole=null;" +
+    "state.companies=[{id:'a',slug:'a',status:'Ativa'}]; state.activeView='alerts';" +
+    "state.drivers=[{id:'d-a',name:'Motorista A'}]; state.vehicles=[{id:'v-a',plate:'AA-00-AA',driverIds:[]}];" +
+    "state.documents=[" +
+      "{id:'company-a',companyId:'a',name:'Documento da empresa',type:'Outros',expiryDate:'2000-01-01'}," +
+      "{id:'vehicle-a',companyId:'a',vehicleId:'v-a',name:'Seguro expirado',type:'Seguro',expiryDate:'2000-01-01'}," +
+      "{id:'driver-a',companyId:'a',driverId:'d-a',name:'Carta expirada',type:'Carta de Condução',expiryDate:'2000-01-01'}" +
+    "]; renderApp();",
+    app.context
+  );
+  const html = app.elements.get("#content").innerHTML;
+  assert.match(html, /Documento da empresa/);
+  assert.match(html, /Seguro expirado/);
+  assert.match(html, /Carta expirada/);
+  assert.match(html, /data-edit-document-id/);
+});
+
+test("company administrator sees alerts only for the selected company without global edit actions", () => {
+  const app = createApp();
+  vm.runInContext(
+    "state.profile={id:'manager',role:'user',full_name:'Gestor'};" +
+    "state.sessionUserId='manager'; state.currentCompanyId='a'; state.currentCompanyRole='company_admin';" +
+    "state.companies=[{id:'a',slug:'a',status:'Ativa'}]; state.activeView='alerts';" +
+    "state.drivers=[{id:'d-a',name:'Motorista A'}]; state.vehicles=[{id:'v-a',plate:'AA-00-AA',driverIds:[]}];" +
+    "state.documents=[" +
+      "{id:'vehicle-a',companyId:'a',vehicleId:'v-a',name:'IPO empresa A',type:'IPO',expiryDate:'2000-01-01'}," +
+      "{id:'driver-a',companyId:'a',driverId:'d-a',name:'Carta empresa A',type:'Carta de Condução',expiryDate:'2000-01-01'}," +
+      "{id:'foreign',companyId:'b',vehicleId:'v-b',name:'Seguro empresa B',type:'Seguro',expiryDate:'2000-01-01'}" +
+    "]; renderApp();",
+    app.context
+  );
+  const html = app.elements.get("#content").innerHTML;
+  assert.equal(vm.runInContext("state.activeView", app.context), "alerts");
+  assert.match(app.elements.get("#sideNav").innerHTML, /Alertas/);
+  assert.match(html, /IPO empresa A/);
+  assert.match(html, /Carta empresa A/);
+  assert.doesNotMatch(html, /Seguro empresa B/);
+  assert.doesNotMatch(html, /data-edit-document-id/);
+});
+
+test("driver document visibility stays limited to their own and assigned vehicle", () => {
+  const app = createApp();
+  vm.runInContext(
+    "state.profile={id:'driver-user',role:'driver',full_name:'Motorista',driver_id:'d-a'};" +
+    "state.sessionUserId='driver-user'; state.currentCompanyRole=null; state.currentCompanyId=null;" +
+    "state.vehicles=[{id:'v-a',driverIds:['d-a']},{id:'v-b',driverIds:['d-b']}];" +
+    "state.documents=[" +
+      "{id:'own',driverId:'d-a'}," +
+      "{id:'assigned',vehicleId:'v-a'}," +
+      "{id:'shared',viewerDriverIds:['d-a']}," +
+      "{id:'other-driver',driverId:'d-b'}," +
+      "{id:'other-vehicle',vehicleId:'v-b'}" +
+    "];",
+    app.context
+  );
+  assert.equal(vm.runInContext("visibleDocuments().map(doc=>doc.id).sort().join(',')", app.context), "assigned,own,shared");
+});

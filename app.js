@@ -606,7 +606,10 @@ function alertLevel(doc) {
 
 function visibleDocuments() {
   const user = currentUser();
-  if (user.role === "admin" || state.currentCompanyRole) return companyDocuments();
+  if (user.role === "admin") return state.documents;
+  if (state.currentCompanyRole) {
+    return state.documents.filter(doc => Boolean(state.currentCompanyId && doc.companyId === state.currentCompanyId));
+  }
   return driverDocuments();
 }
 
@@ -892,7 +895,7 @@ async function logout() {
 function navigationForUser() {
   if (currentUser().role === "admin") return navByRole.admin;
   if (state.currentCompanyRole === "company_admin") {
-    return [["vehicles", "Viaturas", "VE"], ["drivers", "Motoristas", "MO"], ["documents", "Documentos da Empresa", "DO"], ["account", "Minha Conta", "EU"]];
+    return [["vehicles", "Viaturas", "VE"], ["drivers", "Motoristas", "MO"], ["documents", "Documentos da Empresa", "DO"], ["alerts", "Alertas", "AL"], ["account", "Minha Conta", "EU"]];
   }
   if (state.currentCompanyRole) return [["documents", "Documentos da Empresa", "DO"], ["account", "Minha Conta", "EU"]];
   return navByRole.driver;
@@ -1309,6 +1312,7 @@ function renderAlerts() {
     });
 
   const admin = currentUser().role === "admin";
+  const fleetManager = isFleetManager();
 
   const contextLabel = doc =>
     doc.driverId
@@ -1320,7 +1324,7 @@ function renderAlerts() {
   selectors.content.innerHTML = `
     ${heading(
       "Alertas documentais",
-      admin
+      fleetManager
         ? "Documentos expirados e documentos que entram nos períodos de 30, 15, 7 e 3 dias."
         : "Alertas apenas dos teus documentos e das viaturas que te estão atribuídas.",
       ""
@@ -1347,7 +1351,7 @@ function renderAlerts() {
             </div>
           </article>
         `;
-      }).join("") || emptyCard(admin ? "Não existem documentos com alerta neste momento." : "Não existem alertas nos teus documentos ou nas tuas viaturas.")}
+      }).join("") || emptyCard(fleetManager ? "Não existem documentos com alerta neste momento." : "Não existem alertas nos teus documentos ou nas tuas viaturas.")}
     </section>
   `;
 }

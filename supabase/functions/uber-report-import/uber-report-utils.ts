@@ -215,3 +215,51 @@ export function validatePeriodDates(periodStart: string | null, periodEnd: strin
 export function baseDates(periodStart: string | null, periodEnd: string | null) {
   return { period_start: periodStart || null, period_end: periodEnd || null };
 }
+
+/** Read a Supabase REST collection page by page without silently truncating at the 1000-row default. */
+export async function fetchPaginatedRestRows(
+  fetcher: typeof fetch,
+  baseUrl: string,
+  path: string,
+  headers: HeadersInit,
+  pageSize = 1000,
+): Promise<any[]> {
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 1000) {
+    throw new Error("O tamanho da página REST tem de estar entre 1 e 1000.");
+  }
+  const label = path.split("?")[0].replace(/[^a-zA-Z0-9_./-]/g, "").slice(0, 100);
+  const endpoint = new URL(baseUrl.replace(/\/+$/, "") + "/rest/v1/" + path);
+  if (!endpoint.searchParams.has("order")) endpoint.searchParams.set("order", "id.asc");
+
+  const rows: any[] = [];
+  const seenPages = new Set<string>();
+  let offset = 0;
+  for (let pageNumber = 0; pageNumber < 10000; pageNumber++) {
+    endpoint.searchParams.set("limit", String(pageSize));
+    endpoint.searchParams.set("offset", String(offset));
+    const response = await fetcher(endpoint.toString(), { headers });
+    if (!response.ok) {
+      const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 300);
+      throw new Error("Falha ao consultar correspondências internas (" + response.status + ") em " + label + (detail ? ": " + detail : "."));
+    }
+
+    let page: unknown;
+    try {
+      page = await response.json();
+    } catch {
+      throw new Error("Resposta REST inválida em " + label + ".");
+    }
+    if (!Array.isArray(page)) throw new Error("A consulta REST não devolveu uma lista em " + label + ".");
+    if (page.length > pageSize) throw new Error("A consulta REST excedeu o limite pedido em " + label + ".");
+    if (page.length === 0) return rows;
+
+    const fingerprint = JSON.stringify(page);
+    if (seenPages.has(fingerprint)) throw new Error("A paginação REST repetiu uma página em " + label + ".");
+    seenPages.add(fingerprint);
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+    offset += page.length;
+  }
+
+  throw new Error("A paginação REST excedeu o limite de segurança em " + label + ".");
+}

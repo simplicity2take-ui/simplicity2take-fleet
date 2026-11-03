@@ -1,5 +1,5 @@
 import {
-  baseDates, clockMinutes, detectDelimiter, integerValue, localLisbonTimestamp,
+  baseDates, clockMinutes, detectDelimiter, fetchPaginatedRestRows, integerValue, localLisbonTimestamp,
   minutes, numberValue, parseCsv, rateValue, uberStatusTimestamp, validatePeriodDates
 } from "./uber-report-utils.ts";
 
@@ -75,3 +75,50 @@ Deno.test("Uber period and base-date helpers validate calendar dates", () => {
   assertThrows(() => validatePeriodDates("2026-02-29", "2026-03-01"), "Data inicial inválida");
   assertThrows(() => validatePeriodDates("2026-10-02", "2026-10-01"), "posterior à data final");
 });
+
+Deno.test("Supabase REST matching reads every page with stable offset and ordering", async () => {
+  const requested: URL[] = [];
+  const fakeFetch: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    requested.push(url);
+    const rows = url.searchParams.get("offset") === "0"
+      ? [{ id: "a" }, { id: "b" }]
+      : [{ id: "c" }];
+    return new Response(JSON.stringify(rows), { status: 200 });
+  };
+  const rows = await fetchPaginatedRestRows(
+    fakeFetch,
+    "https://database.example/",
+    "drivers?company_id=eq.tenant&select=id",
+    { apikey: "test" },
+    2,
+  );
+  assertEquals(rows, [{ id: "a" }, { id: "b" }, { id: "c" }]);
+  assertEquals(requested.map(url => url.searchParams.get("offset")), ["0", "2"]);
+  assertEquals(requested.map(url => url.searchParams.get("limit")), ["2", "2"]);
+  assertEquals(requested[0].searchParams.get("order"), "id.asc");
+});
+
+Deno.test("Supabase REST matching rejects malformed and repeated pages", async () => {
+  const malformedFetch: typeof fetch = async () => new Response(JSON.stringify({ rows: [] }), { status: 200 });
+  await assertRejects(
+    () => fetchPaginatedRestRows(malformedFetch, "https://database.example", "drivers?select=id", {}, 2),
+    "não devolveu uma lista",
+  );
+
+  const repeatedFetch: typeof fetch = async () => new Response(JSON.stringify([{ id: "same-1" }, { id: "same-2" }]), { status: 200 });
+  await assertRejects(
+    () => fetchPaginatedRestRows(repeatedFetch, "https://database.example", "drivers?select=id", {}, 2),
+    "repetiu uma página",
+  );
+});
+
+async function assertRejects(action: () => Promise<unknown>, fragment: string): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes(fragment)) return;
+    throw error;
+  }
+  throw new Error("Expected a rejected operation containing: " + fragment);
+}

@@ -6,6 +6,8 @@
 
 drop policy if exists "s2t_platform_activity_admin_or_assigned"
   on public.platform_activity_events;
+drop policy if exists "s2t_platform_activity_company_scope"
+  on public.platform_activity_events;
 create policy "s2t_platform_activity_company_scope"
 on public.platform_activity_events
 for select
@@ -40,6 +42,8 @@ using (
 );
 
 drop policy if exists "s2t_platform_trips_admin_or_assigned"
+  on public.platform_trip_records;
+drop policy if exists "s2t_platform_trips_company_scope"
   on public.platform_trip_records;
 create policy "s2t_platform_trips_company_scope"
 on public.platform_trip_records

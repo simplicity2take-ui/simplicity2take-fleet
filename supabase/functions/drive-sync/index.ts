@@ -182,7 +182,7 @@ Deno.serve(async request => {
         results.push({ file: file.name, documentId: saved.id, type: classification.type, vehicleId, driverId, matched: Boolean(vehicle || driver) });
       } catch (error) {
         failed++;
-        results.push({ file: file.name, error: error?.message || "Erro" });
+        results.push({ file: file.name, error: error instanceof Error ? error.message : "Erro" });
       }
     }
 
@@ -191,7 +191,7 @@ Deno.serve(async request => {
     });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ ok: false, error: error?.message || "Erro na sincronização." }), {
+    return new Response(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : "Erro na sincronização." }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }

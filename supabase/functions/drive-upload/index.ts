@@ -193,6 +193,6 @@ Deno.serve(async request => {
     });
   } catch (error) {
     console.error(error);
-    return json({ ok: false, error: error?.message || "Erro ao carregar para o Google Drive." }, 500);
+    return json({ ok: false, error: error instanceof Error ? error.message : "Erro ao carregar para o Google Drive." }, 500);
   }
 });

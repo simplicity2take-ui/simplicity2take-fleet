@@ -2399,6 +2399,9 @@ async function saveCompany(values, id) {
 async function saveDriver(values, id) {
   if (!["Ativo", "Inativo"].includes(values.status)) throw new Error("Estado do motorista inválido.");
   const existingDriver = id ? state.drivers.find(driver => driver.id === id) : null;
+  if (id && (!state.currentCompanyId || !existingDriver || existingDriver.raw?.company_id !== state.currentCompanyId)) {
+    throw new Error("O motorista não pertence à empresa selecionada ou deixou de estar disponível.");
+  }
   if (!id && values.status !== "Ativo") throw new Error("Um motorista novo tem de ser criado ativo.");
   if (existingDriver?.status === "Ativo" && values.status === "Inativo") {
     throw new Error("Use a ação Desativar para fechar as associações e preservar o histórico.");
@@ -2420,9 +2423,10 @@ async function saveDriver(values, id) {
     showToast("Motorista criado. Entregue a palavra-passe diretamente.");
     return;
   }
-  const { error } = await supabaseClient.from("drivers").update(payload).eq("id", id).eq("company_id", state.currentCompanyId);
+  const { data, error } = await supabaseClient.from("drivers").update(payload).eq("id", id).eq("company_id", state.currentCompanyId).select("id").maybeSingle();
 
   if (error) throw error;
+  if (!data || data.id !== id) throw new Error("O motorista não foi atualizado. Verifique a empresa e as permissões.");
   showToast("Motorista atualizado.");
 }
 

@@ -189,3 +189,55 @@ test("driver document visibility stays limited to their own and assigned vehicle
   );
   assert.equal(vm.runInContext("visibleDocuments().map(doc=>doc.id).sort().join(',')", app.context), "assigned,own,shared");
 });
+
+
+function prepareDriverUpdate(app, result) {
+  app.context.driverUpdateResult = result;
+  app.context.driverUpdateCalls = [];
+  app.context.driverUpdateToasts = [];
+  vm.runInContext(
+    "supabaseClient.from = table => {" +
+      "driverUpdateCalls.push(['from', table]);" +
+      "return {" +
+        "update(payload) { driverUpdateCalls.push(['update', payload]); return this; }," +
+        "eq(column, value) { driverUpdateCalls.push(['eq', column, value]); return this; }," +
+        "select(columns) { driverUpdateCalls.push(['select', columns]); return this; }," +
+        "async maybeSingle() { return driverUpdateResult; }" +
+      "};" +
+    "};" +
+    "showToast = message => driverUpdateToasts.push(message);",
+    app.context
+  );
+}
+
+test("driver update rejects a missing or another company's driver before sending a request", async () => {
+  const app = createApp();
+  prepareDriverUpdate(app, { data: { id: "d1" }, error: null });
+  vm.runInContext("state.currentCompanyId='a'; state.drivers=[];", app.context);
+  const update = () => vm.runInContext(
+    "saveDriver({name:'Ana',email:'ana@example.test',phone:'1',status:'Ativo'},'d1')", app.context
+  );
+  await assert.rejects(update(), /não pertence à empresa selecionada/);
+  vm.runInContext("state.drivers=[{id:'d1',status:'Ativo',raw:{company_id:'b'}}];", app.context);
+  await assert.rejects(update(), /não pertence à empresa selecionada/);
+  assert.equal(app.context.driverUpdateCalls.length, 0);
+  assert.equal(app.context.driverUpdateToasts.length, 0);
+});
+
+test("driver update reports success only if the selected company row was updated", async () => {
+  const app = createApp();
+  prepareDriverUpdate(app, { data: null, error: null });
+  vm.runInContext(
+    "state.currentCompanyId='a'; state.drivers=[{id:'d1',status:'Ativo',raw:{company_id:'a'}}];",
+    app.context
+  );
+  const update = () => vm.runInContext(
+    "saveDriver({name:'Ana',email:'ana@example.test',phone:'1',status:'Ativo'},'d1')", app.context
+  );
+  await assert.rejects(update(), /não foi atualizado/);
+  assert.equal(app.context.driverUpdateToasts.length, 0);
+  assert.ok(app.context.driverUpdateCalls.some(call => call[0] === "eq" && call[1] === "company_id" && call[2] === "a"));
+  app.context.driverUpdateResult = { data: { id: "d1" }, error: null };
+  await update();
+  assert.equal(app.context.driverUpdateToasts[0], "Motorista atualizado.");
+});

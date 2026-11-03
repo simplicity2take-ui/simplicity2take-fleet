@@ -77,8 +77,8 @@ SQL
   fi
 }
 
-run_contended_pair "same-vehicle"   "20000000-0000-0000-0000-000000000001" "30000000-0000-0000-0000-000000000003"   "20000000-0000-0000-0000-000000000003" "30000000-0000-0000-0000-000000000003"
-same_vehicle_active="$(psql "$DATABASE_URL" -Atq -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.vehicle_assignments WHERE vehicle_id='30000000-0000-0000-0000-000000000003' AND active_from <= current_date AND (active_until IS NULL OR active_until >= current_date)")"
+run_contended_pair "same-vehicle"   "20000000-0000-0000-0000-000000000001" "30000000-0000-0000-0000-000000000004"   "20000000-0000-0000-0000-000000000003" "30000000-0000-0000-0000-000000000004"
+same_vehicle_active="$(psql "$DATABASE_URL" -Atq -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.vehicle_assignments WHERE vehicle_id='30000000-0000-0000-0000-000000000004' AND active_from <= current_date AND (active_until IS NULL OR active_until >= current_date)")"
 if [[ "$same_vehicle_active" != "1" ]]; then
   echo "Concurrent Bolt requests left $same_vehicle_active active assignments for one vehicle"
   exit 1

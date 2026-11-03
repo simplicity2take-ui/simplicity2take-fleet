@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { boltAssignmentAction, clean, first, isActiveAssignmentStatusConflict, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "../bolt-sync-utils.ts";
+import { clean, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "../bolt-sync-utils.ts";
 import { getBoltCollection, requestBolt, resolveBoltCompanyId } from "../bolt-api-client.ts";
 
 const corsHeaders = {
@@ -28,7 +28,7 @@ async function getBoltToken() {
   if (!response.ok || !data.access_token) throw new Error("A Bolt recusou a autenticação API. Verifique as credenciais e o acesso Fleet Integration.");
   return data.access_token as string;
 }
-async function upsertVehicle(admin: any, vehicle: any, now: string, companyId: string) {
+async function planVehicle(admin: any, vehicle: any, companyId: string) {
   const boltId = normalizeVehicleId(vehicle);
   const plate = normalizePlate(vehicle);
   const model = clean(first(vehicle, ["model", "vehicle_model"]));
@@ -38,9 +38,16 @@ async function upsertVehicle(admin: any, vehicle: any, now: string, companyId: s
   const brand = clean(first(vehicle, ["make", "brand", "vehicle_make"]));
   const state = first(vehicle, ["state", "status"]);
   let existing: any = null;
-  if (boltId) existing = (await admin.from("vehicles").select("*").eq("bolt_vehicle_uuid", boltId).eq("company_id", companyId).maybeSingle()).data;
+
+  if (boltId) {
+    const companyResult = await admin.from("vehicles").select("*")
+      .eq("bolt_vehicle_uuid", boltId).eq("company_id", companyId).maybeSingle();
+    if (companyResult.error) throw new Error("Não foi possível validar a viatura Bolt.");
+    existing = companyResult.data;
+  }
   if (!existing && boltId) {
-    const identityResult = await admin.from("vehicles").select("*").eq("bolt_vehicle_uuid", boltId).maybeSingle();
+    const identityResult = await admin.from("vehicles").select("*")
+      .eq("bolt_vehicle_uuid", boltId).maybeSingle();
     if (identityResult.error) throw new Error("Não foi possível validar a identidade Bolt da viatura.");
     if (identityResult.data && identityResult.data.company_id !== companyId) {
       throw new Error("Conflito Bolt: esta viatura já está registada noutra empresa. Não foi alterada.");
@@ -48,46 +55,41 @@ async function upsertVehicle(admin: any, vehicle: any, now: string, companyId: s
     existing = identityResult.data;
   }
   if (!existing && plate) {
-    const plateResult = await admin.from("vehicles").select("*").ilike("plate", plate).maybeSingle();
+    const plateResult = await admin.from("vehicles").select("*")
+      .ilike("plate", plate).maybeSingle();
     if (plateResult.error) throw new Error("Não foi possível validar a matrícula da viatura.");
     if (plateResult.data && plateResult.data.company_id !== companyId) {
       throw new Error("Conflito de matrícula: esta viatura já está registada noutra empresa. Não foi alterada.");
     }
     existing = plateResult.data;
   }
-  const payload: any = {
+
+  return {
+    id: existing?.id || crypto.randomUUID(),
+    is_new: !existing,
     plate: plate || existing?.plate || "",
     brand: brand || existing?.brand || "",
     model: model || existing?.model || "",
     vehicle_year: year || existing?.vehicle_year || null,
     vin: vin || existing?.vin || null,
     status: statusToPortal(state, existing?.status || "Inativo"),
-    bolt_vehicle_uuid: boltId || existing?.bolt_vehicle_uuid || null,
-    bolt_last_synced_at: now
+    bolt_vehicle_uuid: boltId || existing?.bolt_vehicle_uuid || null
   };
-  if (existing) {
-    const result = await admin.from("vehicles").update(payload).eq("id", existing.id).select("*").single();
-    if (!result.error) return { row: result.data, created: false, statusConflict: false };
-    if (payload.status === "Inativo" && existing.status !== "Inativo" &&
-        isActiveAssignmentStatusConflict(result.error, "vehicle")) {
-      const retryPayload = { ...payload, status: existing.status };
-      const retry = await admin.from("vehicles").update(retryPayload).eq("id", existing.id).select("*").single();
-      if (retry.error) throw retry.error;
-      return { row: retry.data, created: false, statusConflict: true };
-    }
-    throw result.error;
-  }
-  payload.company_id = companyId;
-  const result = await admin.from("vehicles").insert(payload).select("*").single();
-  if (result.error) throw result.error;
-  return { row: result.data, created: true, statusConflict: false };
 }
-async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string, any>, vehicleByPlate: Map<string, any>, now: string, companyId: string) {
+
+async function planDriver(
+  admin: any,
+  driver: any,
+  vehicleByBoltId: Map<string, any>,
+  vehicleByPlate: Map<string, any>,
+  companyId: string
+) {
   const boltId = normalizeDriverId(driver);
   const partnerUuid = clean(first(driver, ["partner_uuid", "partnerUuid"]));
   const firstName = clean(first(driver, ["first_name", "firstName"]));
   const lastName = clean(first(driver, ["last_name", "lastName"]));
-  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim() || clean(first(driver, ["display_name", "name"]));
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim() ||
+    clean(first(driver, ["display_name", "name"]));
   const email = clean(first(driver, ["email"]));
   const phone = clean(first(driver, ["phone", "phone_number"]));
   const state = first(driver, ["state", "status"]);
@@ -95,61 +97,49 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   const activeVehicleId = normalizeVehicleId(activeVehicle);
   const activePlate = normalizePlate(activeVehicle);
   let existing: any = null;
-  if (boltId) existing = (await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).eq("company_id", companyId).maybeSingle()).data;
+
+  if (boltId) {
+    const companyResult = await admin.from("drivers").select("*")
+      .eq("bolt_driver_uuid", boltId).eq("company_id", companyId).maybeSingle();
+    if (companyResult.error) throw new Error("Não foi possível validar o motorista Bolt.");
+    existing = companyResult.data;
+  }
   if (!existing && boltId) {
-    const identityResult = await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).maybeSingle();
+    const identityResult = await admin.from("drivers").select("*")
+      .eq("bolt_driver_uuid", boltId).maybeSingle();
     if (identityResult.error) throw new Error("Não foi possível validar a identidade Bolt do motorista.");
     if (identityResult.data && identityResult.data.company_id !== companyId) {
       throw new Error("Conflito Bolt: este motorista já está registado noutra empresa. Não foi alterado.");
     }
     existing = identityResult.data;
   }
-  if (!existing && email) existing = (await admin.from("drivers").select("*").ilike("email", email).eq("company_id", companyId).maybeSingle()).data;
-  if (!existing && phone) existing = (await admin.from("drivers").select("*").eq("phone", phone).eq("company_id", companyId).maybeSingle()).data;
-  const payload: any = {
+  if (!existing && email) {
+    const emailResult = await admin.from("drivers").select("*")
+      .ilike("email", email).eq("company_id", companyId).maybeSingle();
+    if (emailResult.error) throw new Error("Não foi possível validar o email do motorista.");
+    existing = emailResult.data;
+  }
+  if (!existing && phone) {
+    const phoneResult = await admin.from("drivers").select("*")
+      .eq("phone", phone).eq("company_id", companyId).maybeSingle();
+    if (phoneResult.error) throw new Error("Não foi possível validar o telefone do motorista.");
+    existing = phoneResult.data;
+  }
+
+  let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
+  if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
+
+  return {
+    id: existing?.id || crypto.randomUUID(),
+    is_new: !existing,
     full_name: fullName || existing?.full_name || "Motorista Bolt",
     email: email || existing?.email || null,
     phone: phone || existing?.phone || null,
     status: statusToPortal(state, existing?.status || "Inativo"),
     bolt_driver_uuid: boltId || existing?.bolt_driver_uuid || null,
     bolt_partner_uuid: partnerUuid || existing?.bolt_partner_uuid || null,
-    bolt_last_synced_at: now
+    assigned_vehicle_id: assignedVehicle?.id || null
   };
-  let row: any, created = false, statusConflict = false;
-  if (existing) {
-    const result = await admin.from("drivers").update(payload).eq("id", existing.id).select("*").single();
-    if (!result.error) {
-      row = result.data;
-    } else if (payload.status === "Inativo" && existing.status !== "Inativo" &&
-        isActiveAssignmentStatusConflict(result.error, "driver")) {
-      const retryPayload = { ...payload, status: existing.status };
-      const retry = await admin.from("drivers").update(retryPayload).eq("id", existing.id).select("*").single();
-      if (retry.error) throw retry.error;
-      row = retry.data;
-      statusConflict = true;
-    } else {
-      throw result.error;
-    }
-  } else {
-    payload.company_id = companyId;
-    const result = await admin.from("drivers").insert(payload).select("*").single();
-    if (result.error) throw result.error;
-    row = result.data;
-  }
-  let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
-  if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
-  let assignmentAction: "none" | "unchanged" | "created" | "conflict" = statusConflict || assignedVehicle?.boltStatusConflict ? "conflict" : "none";
-  if (!statusConflict && !assignedVehicle?.boltStatusConflict && assignedVehicle?.id) {
-    const assignmentResult = await admin.rpc("s2t_bolt_assign_vehicle", {
-      p_driver_id: row.id,
-      p_vehicle_id: assignedVehicle.id
-    });
-    if (assignmentResult.error) {
-      throw new Error("Não foi possível validar a associação Bolt no histórico da frota.");
-    }
-    assignmentAction = boltAssignmentAction(assignmentResult.data);
-  }
-  return { row, created, statusConflict, assignedVehicleId: assignedVehicle?.id || null, assignmentAction };
 }
 
 Deno.serve(async (req: Request) => {
@@ -205,34 +195,45 @@ Deno.serve(async (req: Request) => {
     }
 
     const now = new Date().toISOString();
+    const vehiclePlans: any[] = [];
     const vehicleByBoltId = new Map<string, any>();
     const vehicleByPlate = new Map<string, any>();
-    let vehiclesCreated = 0, vehicleStatusConflicts = 0;
+
     for (const vehicle of boltVehicles) {
-      const result = await upsertVehicle(admin, vehicle, now, companyId);
-      if (result.created) vehiclesCreated++;
-      if (result.statusConflict) vehicleStatusConflicts++;
-      const mappedVehicle = { ...result.row, boltStatusConflict: result.statusConflict };
+      const plan = await planVehicle(admin, vehicle, companyId);
+      vehiclePlans.push(plan);
+      const mappedVehicle = { id: plan.id };
       const boltId = normalizeVehicleId(vehicle);
       const plate = normalizePlate(vehicle);
       if (boltId) vehicleByBoltId.set(boltId, mappedVehicle);
       if (plate) vehicleByPlate.set(plate, mappedVehicle);
     }
-    let driversCreated = 0, assignmentsCreated = 0, assignmentsConflicts = 0, driverStatusConflicts = 0;
+
+    const driverPlans: any[] = [];
     for (const driver of boltDrivers) {
-      const result = await upsertDriver(admin, driver, vehicleByBoltId, vehicleByPlate, now, companyId);
-      if (result.created) driversCreated++;
-      if (result.statusConflict) driverStatusConflicts++;
-      if (result.assignmentAction === "created") assignmentsCreated++;
-      if (result.assignmentAction === "conflict") assignmentsConflicts++;
+      driverPlans.push(await planDriver(admin, driver, vehicleByBoltId, vehicleByPlate, companyId));
     }
-    return json({
-      ok: true, source: "bolt", syncedAt: now,
-      drivers: { received: boltDrivers.length, created: driversCreated, updated: boltDrivers.length - driversCreated },
-      vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: boltVehicles.length - vehiclesCreated },
-      assignments: { created: assignmentsCreated, conflictsRequiringReview: assignmentsConflicts },
-      statusConflictsRequiringReview: { drivers: driverStatusConflicts, vehicles: vehicleStatusConflicts }
+
+    const syncResult = await admin.rpc("s2t_apply_bolt_fleet_sync", {
+      p_company_id: companyId,
+      p_vehicles: vehiclePlans,
+      p_drivers: driverPlans,
+      p_synced_at: now
     });
+    if (syncResult.error) {
+      if (["23505", "23514", "P0002"].includes(syncResult.error.code)) {
+        return json({
+          ok: false,
+          error: "A sincronização Bolt encontrou um conflito de identidade ou atribuição. Nenhuma alteração foi gravada."
+        }, 409);
+      }
+      throw new Error("A sincronização Bolt falhou; nenhuma alteração foi gravada.");
+    }
+    if (!syncResult.data || typeof syncResult.data !== "object" || Array.isArray(syncResult.data)) {
+      throw new Error("A sincronização Bolt devolveu um resultado inválido.");
+    }
+
+    return json({ ok: true, source: "bolt", syncedAt: now, ...syncResult.data });
   } catch (error) {
     console.error("bolt-sync error", error);
     return json({ ok: false, error: "Não foi possível concluir a sincronização Bolt. Verifique a configuração e tente novamente." }, 500);

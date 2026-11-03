@@ -4,6 +4,33 @@ import { baseDates, localLisbonTimestamp, minutes, numberValue, parseCsv, rateVa
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+async function getRestRows(path: string) {
+  const response = await fetch(SUPABASE_URL + "/rest/v1/" + path, {
+    headers: { apikey: SERVICE_ROLE_KEY, Authorization: "Bearer " + SERVICE_ROLE_KEY }
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 300);
+    const label = path.split("?")[0].replace(/[^a-zA-Z0-9_./-]/g, "").slice(0, 100);
+    console.error("uber-report-import getRestRows failed", { status: response.status, path: label, detail });
+    throw new Error("Falha ao consultar correspondências internas (" + response.status + ") em " + label + (detail ? ": " + detail : "."));
+  }
+  return await response.json();
+}
+async function rpc(name: string, body: unknown) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "apikey": SERVICE_ROLE_KEY, "Authorization": `Bearer ${SERVICE_ROLE_KEY}` },
+    body: JSON.stringify(body)
+  });
+  const text = await r.text();
+  if (!r.ok) throw new Error(`${name}: ${r.status} ${text}`);
+  return JSON.parse(text);
+}
+
+
+
+
+
 Deno.serve(async (req) => {
   const response = await (async () => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204 });

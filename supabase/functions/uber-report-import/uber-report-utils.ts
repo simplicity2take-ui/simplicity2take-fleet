@@ -59,18 +59,6 @@ export function numberValue(v: string) {
   const n = Number(normalized);
   return normalized && Number.isFinite(n) ? n : null;
 }
-async function getRestRows(path: string) {
-  const response = await fetch(SUPABASE_URL + "/rest/v1/" + path, {
-    headers: { apikey: SERVICE_ROLE_KEY, Authorization: "Bearer " + SERVICE_ROLE_KEY }
-  });
-  if (!response.ok) {
-    const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 300);
-    const label = path.split("?")[0].replace(/[^a-zA-Z0-9_./-]/g, "").slice(0, 100);
-    console.error("uber-report-import getRestRows failed", { status: response.status, path: label, detail });
-    throw new Error("Falha ao consultar correspondências internas (" + response.status + ") em " + label + (detail ? ": " + detail : "."));
-  }
-  return await response.json();
-}
 export function localLisbonTimestamp(value: string) {
   if (!value) return null;
   const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
@@ -97,16 +85,6 @@ export function minutes(v: string) {
   if (p.some(Number.isNaN)) return null;
   if (p.length === 3) return p[0] * 24 * 60 + p[1] * 60 + p[2];
   return null;
-}
-async function rpc(name: string, body: unknown) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "apikey": SERVICE_ROLE_KEY, "Authorization": `Bearer ${SERVICE_ROLE_KEY}` },
-    body: JSON.stringify(body)
-  });
-  const text = await r.text();
-  if (!r.ok) throw new Error(`${name}: ${r.status} ${text}`);
-  return JSON.parse(text);
 }
 export function baseDates(periodStart: string | null, periodEnd: string | null) {
   return { period_start: periodStart || null, period_end: periodEnd || null };

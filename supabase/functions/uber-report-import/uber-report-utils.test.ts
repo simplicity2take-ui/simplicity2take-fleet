@@ -30,7 +30,7 @@ Deno.test("Uber rates convert percentages and preserve decimal fractions", () =>
 });
 
 Deno.test("Uber duration parser converts days, hours and minutes", () => {
-  assertEquals(minutes("1:02:03"), 1503);
+  assertEquals(minutes("1:02:03"), 1563);
   assertEquals(minutes("0:00:45"), 45);
   assertEquals(minutes(""), null);
   assertEquals(minutes("01:20"), null);

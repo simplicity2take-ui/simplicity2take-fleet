@@ -1,4 +1,4 @@
-function detectDelimiter(text: string): string {
+export function detectDelimiter(text: string): string {
   const firstLine = text.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] || "";
   const candidates = [",", ";", "\t"];
   const countOutsideQuotes = (line: string, delimiter: string) => {

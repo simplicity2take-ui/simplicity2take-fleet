@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE ROLE service_role NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $ BEGIN CREATE ROLE service_role NOLOGIN BYPASSRLS; EXCEPTION WHEN duplicate_object THEN ALTER ROLE service_role BYPASSRLS; END $;
 
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE OR REPLACE FUNCTION auth.uid()
@@ -33,6 +33,21 @@ CREATE TABLE public.drivers (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE public.drivers
+  ADD COLUMN bolt_driver_uuid text,
+  ADD COLUMN bolt_partner_uuid text,
+  ADD COLUMN bolt_last_synced_at timestamptz,
+  ADD COLUMN uber_driver_uuid text,
+  ADD COLUMN uber_status text,
+  ADD COLUMN uber_realtime_status text,
+  ADD COLUMN uber_status_at timestamptz,
+  ADD COLUMN uber_last_online_at timestamptz,
+  ADD COLUMN uber_status_raw jsonb,
+  ADD COLUMN uber_last_synced_at timestamptz;
+
+CREATE UNIQUE INDEX drivers_bolt_driver_uuid_uidx
+  ON public.drivers(bolt_driver_uuid) WHERE bolt_driver_uuid IS NOT NULL;
+
 CREATE TABLE public.vehicles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   plate text NOT NULL UNIQUE,
@@ -43,6 +58,189 @@ CREATE TABLE public.vehicles (
   status text NOT NULL DEFAULT 'Ativo',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.vehicles
+  ADD COLUMN bolt_vehicle_uuid text,
+  ADD COLUMN bolt_last_synced_at timestamptz,
+  ADD COLUMN uber_vehicle_uuid text;
+
+CREATE UNIQUE INDEX vehicles_bolt_vehicle_uuid_uidx
+  ON public.vehicles(bolt_vehicle_uuid) WHERE bolt_vehicle_uuid IS NOT NULL;
+
+
+-- Provider history tables mirror the pre-tenant schema. Their legacy UNIQUE
+-- constraints intentionally exercise the constraint-to-tenant-index migration.
+CREATE TABLE public.platform_activity_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  platform text NOT NULL CHECK (platform IN ('bolt','uber')),
+  driver_id uuid REFERENCES public.drivers(id) ON DELETE SET NULL,
+  vehicle_id uuid REFERENCES public.vehicles(id) ON DELETE SET NULL,
+  platform_driver_uuid text,
+  platform_vehicle_uuid text,
+  status text NOT NULL,
+  observed_at timestamptz NOT NULL,
+  event_key text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE public.platform_trip_records (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  platform text NOT NULL CHECK (platform IN ('bolt','uber')),
+  source_trip_id text NOT NULL,
+  driver_id uuid REFERENCES public.drivers(id) ON DELETE SET NULL,
+  vehicle_id uuid REFERENCES public.vehicles(id) ON DELETE SET NULL,
+  platform_driver_uuid text,
+  platform_vehicle_uuid text,
+  vehicle_plate text,
+  order_status text,
+  accepted_at timestamptz,
+  pickup_at timestamptz,
+  dropoff_at timestamptz,
+  finished_at timestamptz,
+  ride_distance_km numeric(12,3),
+  observed_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (platform, source_trip_id)
+);
+
+ALTER TABLE public.platform_activity_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.platform_trip_records ENABLE ROW LEVEL SECURITY;
+GRANT SELECT ON public.platform_activity_events, public.platform_trip_records TO authenticated;
+
+CREATE TABLE public.uber_driver_activity (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  driver_id uuid REFERENCES public.drivers(id) ON DELETE SET NULL,
+  uber_driver_uuid text,
+  driver_name text,
+  completed_trips integer,
+  online_duration_minutes integer,
+  trip_duration_minutes integer,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  raw jsonb NOT NULL DEFAULT '{}'::jsonb,
+  imported_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uber_driver_activity_uber_driver_uuid_period_start_period_e_key
+    UNIQUE (uber_driver_uuid, period_start, period_end)
+);
+
+CREATE TABLE public.uber_driver_payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  driver_id uuid REFERENCES public.drivers(id) ON DELETE SET NULL,
+  uber_driver_uuid text,
+  driver_name text,
+  paid_to_you numeric,
+  earnings numeric,
+  cash_received numeric,
+  fare numeric,
+  taxes numeric,
+  service_fee numeric,
+  tolls numeric,
+  tips numeric,
+  adjustments numeric,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  raw jsonb NOT NULL DEFAULT '{}'::jsonb,
+  imported_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uber_driver_payments_uber_driver_uuid_period_start_period_e_key
+    UNIQUE (uber_driver_uuid, period_start, period_end)
+);
+
+CREATE TABLE public.uber_driver_quality (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  driver_id uuid REFERENCES public.drivers(id) ON DELETE SET NULL,
+  uber_driver_uuid text,
+  driver_name text,
+  completed_trips integer,
+  acceptance_rate numeric,
+  cancellation_rate numeric,
+  completion_rate numeric,
+  rating_last_4_weeks numeric,
+  rating_last_500_trips numeric,
+  current_acceptance_rate numeric,
+  current_cancellation_rate numeric,
+  accepted_trips integer,
+  rejected_trips integer,
+  cancelled_trips integer,
+  driver_cancelled_trips integer,
+  failed_trips integer,
+  total_trip_assignments integer,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  raw jsonb NOT NULL DEFAULT '{}'::jsonb,
+  imported_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uber_driver_quality_uber_driver_uuid_period_start_period_en_key
+    UNIQUE (uber_driver_uuid, period_start, period_end)
+);
+
+CREATE TABLE public.uber_driver_time_distance (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  driver_id uuid REFERENCES public.drivers(id) ON DELETE SET NULL,
+  uber_driver_uuid text,
+  driver_name text,
+  opening_minutes integer,
+  route_minutes integer,
+  trip_minutes integer,
+  unavailable_minutes integer,
+  free_distance_km numeric,
+  route_distance_km numeric,
+  trip_distance_km numeric,
+  unavailable_distance_km numeric,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  raw jsonb NOT NULL DEFAULT '{}'::jsonb,
+  imported_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uber_driver_time_distance_uber_driver_uuid_period_start_per_key
+    UNIQUE (uber_driver_uuid, period_start, period_end)
+);
+
+CREATE TABLE public.uber_vehicle_performance (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  vehicle_id uuid REFERENCES public.vehicles(id) ON DELETE SET NULL,
+  uber_vehicle_uuid text,
+  plate text,
+  total_earnings numeric,
+  earnings_per_hour numeric,
+  cash_received numeric,
+  trips_per_hour numeric,
+  online_hours numeric,
+  trip_hours numeric,
+  work_hours numeric,
+  total_trips integer,
+  acceptance_rate numeric,
+  cancellation_rate numeric,
+  accepted_trips integer,
+  rejected_trips integer,
+  cancelled_trips integer,
+  failed_trips integer,
+  total_trip_assignments integer,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  raw jsonb NOT NULL DEFAULT '{}'::jsonb,
+  imported_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uber_vehicle_performance_uber_vehicle_uuid_period_start_per_key
+    UNIQUE (uber_vehicle_uuid, period_start, period_end)
+);
+
+CREATE TABLE public.uber_vehicle_time_distance (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  vehicle_id uuid REFERENCES public.vehicles(id) ON DELETE SET NULL,
+  uber_vehicle_uuid text,
+  plate text,
+  opening_minutes integer,
+  route_minutes integer,
+  trip_minutes integer,
+  unavailable_minutes integer,
+  free_distance_km numeric,
+  route_distance_km numeric,
+  trip_distance_km numeric,
+  unavailable_distance_km numeric,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  raw jsonb NOT NULL DEFAULT '{}'::jsonb,
+  imported_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uber_vehicle_time_distance_uber_vehicle_uuid_period_start_p_key
+    UNIQUE (uber_vehicle_uuid, period_start, period_end)
 );
 
 CREATE TABLE public.vehicle_assignments (

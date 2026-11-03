@@ -46,7 +46,12 @@ DO $company_a_member$
 BEGIN
   IF (SELECT count(*) FROM public.documents) <> 2
      OR EXISTS (SELECT 1 FROM public.documents WHERE id='50000000-0000-0000-0000-000000000002') THEN
-    RAISE EXCEPTION 'Company A member can see driver-private documents or cannot see company documents';
+    RAISE EXCEPTION 'Company A member document scope mismatch: visible_count=%, private_document_visible=%, driver_id=%, is_company_member=%, is_company_admin=%',
+      (SELECT count(*) FROM public.documents),
+      EXISTS (SELECT 1 FROM public.documents WHERE id='50000000-0000-0000-0000-000000000002'),
+      public.s2t_driver_id(),
+      public.s2t_is_company_member((SELECT id FROM public.companies WHERE slug='simplicity2take')),
+      public.s2t_is_company_admin((SELECT id FROM public.companies WHERE slug='simplicity2take'));
   END IF;
   IF EXISTS (SELECT 1 FROM public.document_viewers) THEN
     RAISE EXCEPTION 'Company member can inspect document viewer grants';

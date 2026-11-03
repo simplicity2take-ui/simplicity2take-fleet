@@ -8,7 +8,7 @@ This is a source-review checklist only. It does not authorize migration, deploym
 - [x] **Ownership changes preserve assignment integrity (PR #37).** Company ownership updates take the assignment-table mutex before row updates; transfers are rejected when a driver or vehicle has any active or historical assignment. CI covers active history, closed history, unassigned corrections, and the assignment/transfer race.
 - [ ] **All tenant data is scoped.** Inventory and test vehicles, drivers, assignments, documents, document viewers, trips/activity, Uber/Bolt reports, CarTrack records, recruitment, payment/order records, audit records, exports and server functions.
 - [ ] **Server-side authorization is authoritative.** No client-supplied company ID, email, or role can grant access. Edge Functions using service-role credentials must check active membership/role and tenant scope explicitly.
-- [ ] **Sync is atomic and retry-safe.** Apply the normalized full payload in one transaction; test rollback, duplicate request/retry, and concurrent runs. Keep the write gate closed until tests pass.
+- [x] **Sync is atomic and retry-safe (PR #37).** Bolt vehicle/driver writes and assignment decisions run in one service-only transaction. Disposable PostgreSQL CI passes rollback, idempotent retry, active-history conflict, and concurrent duplicate-provider-identity tests at commit `7243aa02caae85e3145a89ad01c6cbc84f4daa24`. Keep live writes disabled until the migration is reviewed and applied.
 
 ## P1 — Must be resolved before migration review can be marked PASS
 
@@ -31,6 +31,6 @@ This is a source-review checklist only. It does not authorize migration, deploym
 ## Current assessment
 
 - Ownership transfer with assignment history: guarded in PR #37; disposable PostgreSQL behavior and concurrency tests **PASS** at commit `f30e0707b744bde87c79cbf2e76ee08e5ed663b2`.
-- Static review remains **BLOCKED** on actual schema nullability, full tenant coverage, company-admin provisioning, and any production API transaction proof.
+- Static review remains **BLOCKED** on production schema verification, full tenant coverage, company-admin provisioning, and deployment/API validation. Disposable PostgreSQL Bolt atomic-sync behavior and concurrency tests **PASS** at commit `7243aa02caae85e3145a89ad01c6cbc84f4daa24`.
 - Hosted Supabase migration test: **NOT RUN**. Repository CI uses a disposable PostgreSQL database only.
 - Production mutation/deployment: **NOT PERFORMED**.

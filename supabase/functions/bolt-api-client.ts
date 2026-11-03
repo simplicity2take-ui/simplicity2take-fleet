@@ -129,6 +129,7 @@ export async function getBoltCollection(
     throw new Error("O tamanho de página Bolt tem de estar entre 1 e 1000.");
   }
   const rows: unknown[] = [];
+  const seenPages = new Set<string>();
   let expectedTotal: number | null = null;
   let offset = 0;
 
@@ -159,6 +160,11 @@ export async function getBoltCollection(
       return rows;
     }
 
+    const fingerprint = JSON.stringify(currentPage);
+    if (seenPages.has(fingerprint)) {
+      throw new Error("A Bolt repetiu uma página durante a paginação.");
+    }
+    seenPages.add(fingerprint);
     rows.push(...currentPage);
     if (expectedTotal !== null) {
       if (rows.length === expectedTotal) return rows;

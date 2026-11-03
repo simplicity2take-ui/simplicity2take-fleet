@@ -1,8 +1,8 @@
 \set ON_ERROR_STOP on
 
 BEGIN;
-SET ROLE authenticated;
-SELECT set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000099', false);
+SET ROLE service_role;
+SELECT set_config('request.jwt.claim.role', 'service_role', false);
 
 DO $test$
 DECLARE

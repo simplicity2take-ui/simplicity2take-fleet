@@ -4,8 +4,7 @@
 --
 -- Uber import remains a trusted S2T global-admin workflow. The tenant is resolved
 -- server-side from companies.slug; no company_id is accepted from imported CSV data.
--- All UUID/plate matching is tenant-scoped, and global unique-key conflicts can
--- update only rows already owned by the same tenant.
+-- All UUID/plate matching and unique-key conflicts are tenant-scoped.
 
 create or replace function public.sync_uber_driver_status(p_rows jsonb)
 returns jsonb
@@ -344,6 +343,12 @@ alter table public.uber_vehicle_time_distance alter column company_id set not nu
 
 -- The legacy unique keys omitted company_id. Replace them with tenant-scoped
 -- keys so the same provider identity/period can exist independently per company.
+alter table public.uber_driver_activity drop constraint if exists uber_driver_activity_uber_driver_uuid_period_start_period_e_key;
+alter table public.uber_driver_payments drop constraint if exists uber_driver_payments_uber_driver_uuid_period_start_period_e_key;
+alter table public.uber_driver_quality drop constraint if exists uber_driver_quality_uber_driver_uuid_period_start_period_en_key;
+alter table public.uber_driver_time_distance drop constraint if exists uber_driver_time_distance_uber_driver_uuid_period_start_per_key;
+alter table public.uber_vehicle_performance drop constraint if exists uber_vehicle_performance_uber_vehicle_uuid_period_start_per_key;
+alter table public.uber_vehicle_time_distance drop constraint if exists uber_vehicle_time_distance_uber_vehicle_uuid_period_start_p_key;
 drop index if exists public.uber_driver_activity_uber_driver_uuid_period_start_period_e_key;
 drop index if exists public.uber_driver_payments_uber_driver_uuid_period_start_period_e_key;
 drop index if exists public.uber_driver_quality_uber_driver_uuid_period_start_period_en_key;
@@ -412,6 +417,31 @@ begin
 
   if s2t_company_id is null then
     raise exception 'Simplicity2Take company is not configured';
+  end if;
+
+
+  -- Caller-supplied internal IDs must belong to the trusted S2T tenant.
+  if exists (
+    select 1
+    from jsonb_to_recordset(coalesce(p_trips, '[]'::jsonb)) as x(
+      source_trip_id text,
+      driver_id uuid,
+      vehicle_id uuid
+    )
+    left join public.drivers d
+      on d.id = x.driver_id
+     and d.company_id = s2t_company_id
+    left join public.vehicles v
+      on v.id = x.vehicle_id
+     and v.company_id = s2t_company_id
+    where nullif(x.source_trip_id, '') is not null
+      and (
+        (x.driver_id is not null and d.id is null)
+        or (x.vehicle_id is not null and v.id is null)
+      )
+  ) then
+    raise exception 'Uber trip contains a driver or vehicle outside the S2T company'
+      using errcode = '23514';
   end if;
 
   insert into public.platform_trip_records (

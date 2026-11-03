@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isActiveGlobalAdmin } from "../admin-auth-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -127,8 +128,12 @@ Deno.serve(async request => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return json({ ok: false, error: "Sessão inválida." }, 401);
 
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-    if (profile?.role !== "admin") return json({ ok: false, error: "Apenas o administrador pode carregar documentos." }, 403);
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles").select("role,status").eq("id", user.id).maybeSingle();
+    if (profileError) throw profileError;
+    if (!isActiveGlobalAdmin(profile)) {
+      return json({ ok: false, error: "Apenas o administrador global ativo pode carregar documentos." }, 403);
+    }
 
     const body = await request.json();
     const fileName = String(body.fileName || "").trim();
@@ -188,6 +193,6 @@ Deno.serve(async request => {
     });
   } catch (error) {
     console.error(error);
-    return json({ ok: false, error: error?.message || "Erro ao carregar para o Google Drive." }, 500);
+    return json({ ok: false, error: error instanceof Error ? error.message : "Erro ao carregar para o Google Drive." }, 500);
   }
 });

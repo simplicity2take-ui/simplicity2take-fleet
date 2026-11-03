@@ -4,18 +4,18 @@ This is a source-review checklist only. It does not authorize migration, deploym
 
 ## P0 — Must be resolved before any external company account is enabled
 
-- [ ] **Assignment identifiers fail closed.** Verify `vehicle_assignments.driver_id` and `vehicle_id` are both NOT NULL in the actual schema. If either can be NULL, reject NULL in a database constraint/trigger. Do not infer nullability from application types.
-- [ ] **Ownership changes preserve assignment integrity.** The current trigger only fires when `vehicle_assignments.driver_id` or `vehicle_id` changes. Add a reviewed database-enforced rule or controlled transfer workflow for updates to `drivers.company_id` and `vehicles.company_id`.
+- [ ] **Assignment identifiers fail closed in the target database.** PR #37 adds a migration that aborts if legacy NULL references exist, then applies NOT NULL to `driver_id` and `vehicle_id`; disposable PostgreSQL CI confirms both constraints and rejects NULL writes. Verify the target schema/data before applying. Do not infer nullability from application types.
+- [x] **Ownership changes preserve assignment integrity (PR #37).** Company ownership updates take the assignment-table mutex before row updates; transfers are rejected when a driver or vehicle has any active or historical assignment. CI covers active history, closed history, unassigned corrections, and the assignment/transfer race.
 - [ ] **All tenant data is scoped.** Inventory and test vehicles, drivers, assignments, documents, document viewers, trips/activity, Uber/Bolt reports, CarTrack records, recruitment, payment/order records, audit records, exports and server functions.
 - [ ] **Server-side authorization is authoritative.** No client-supplied company ID, email, or role can grant access. Edge Functions using service-role credentials must check active membership/role and tenant scope explicitly.
-- [ ] **Sync is atomic and retry-safe.** Apply the normalized full payload in one transaction; test rollback, duplicate request/retry, and concurrent runs. Keep the write gate closed until tests pass.
+- [x] **Fleet writes are atomic and retry-safe (PR #37).** Bolt vehicle/driver writes and assignments run in one service-only transaction. Manual vehicle details and assignment changes use one authenticated company-scoped RPC. Disposable PostgreSQL CI passes rollback, idempotent retry, active-history conflict, duplicate-provider-identity concurrency, and vehicle-create/update rollback tests at commit `d31e30560a29979baaa096eb735b2a32c663ee0c`. Keep live writes disabled until the migrations are reviewed and applied.
 
 ## P1 — Must be resolved before migration review can be marked PASS
 
 - [ ] Confirm dependencies `public.profiles`, `public.s2t_is_admin()`, `auth.uid()`, table names and ID types in a disposable local schema.
 - [ ] Capture baseline row counts and ownership/null counts using synthetic fixtures.
 - [ ] Verify the `simplicity2take` company slug resolves to exactly one row before backfill.
-- [ ] Apply the draft migrations in order to a disposable local database and repeat the migration workflow to test idempotency.
+- [x] Disposable PostgreSQL 17 CI applies and reapplies the migration set to test idempotency; the latest run passes. This does not verify the hosted target schema or data.
 - [ ] Test same-company assignment success, cross-company assignment rejection, NULL identifier rejection, and ownership-change rejection/transfer behavior.
 - [ ] Test RLS using separate authenticated users for Company A, Company B, no membership, inactive membership and global admin; do not use service-role queries as evidence of RLS enforcement.
 - [ ] Run failure injection and prove the database returns to the pre-test state.
@@ -30,6 +30,7 @@ This is a source-review checklist only. It does not authorize migration, deploym
 
 ## Current assessment
 
-- Static review: **BLOCKED** on actual schema nullability, ownership-transfer integrity, full tenant coverage, and transactional sync proof.
-- Remote migration test: **NOT RUN**.
+- Ownership transfer with assignment history: guarded in PR #37; disposable PostgreSQL behavior and concurrency tests **PASS** at commit `f30e0707b744bde87c79cbf2e76ee08e5ed663b2`.
+- Static review remains **BLOCKED** on target schema/data verification, full tenant coverage, company-admin invitation/provisioning, and deployment/API validation. Bolt atomic sync, manual vehicle-save rollback, assignment reference constraints, migration idempotency, document RLS, Drive import scoping, company-admin fleet access, and concurrency regressions **PASS** at commit `d0d50c51df164d1fa051eaee1e4097c0bdbbbb2f` ([push](https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/41715129274), [pull request](https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/41715145351)). Deno type checks for seven Edge Functions and 28 provider-independent tests pass. Company administrators can manage only their assigned company's vehicles/drivers; active membership is enforced for driver account creation. SQL regressions verify that ordinary members cannot create drivers, vehicles, or assignments, and that users without active membership cannot read company fleet data. Uber aggregate imports now require a valid complete period to preserve idempotency. Drive sync remains restricted to the configured S2T company; per-company Drive onboarding is not implemented. No live provider API was called.
+- Hosted Supabase migration test: **NOT RUN**. Repository CI uses a disposable PostgreSQL database only.
 - Production mutation/deployment: **NOT PERFORMED**.

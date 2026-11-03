@@ -118,9 +118,20 @@ Deno.serve(async request => {
     const accessToken = await googleToken(JSON.parse(serviceAccountJson));
     const files = await listDriveFiles(accessToken, inboxId);
 
+    // This configured shared inbox belongs to the current S2T company. Keep
+    // both matching and inserted metadata within that tenant.
+    const { data: company, error: companyError } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("slug", "simplicity2take")
+      .eq("status", "Ativa")
+      .maybeSingle();
+    if (companyError) throw companyError;
+    if (!company?.id) throw new Error("A empresa Simplicity2Take não está configurada para sincronizar documentos.");
+
     const [{ data: vehicles, error: vehicleError }, { data: drivers, error: driverError }] = await Promise.all([
-      supabase.from("vehicles").select("id,plate"),
-      supabase.from("drivers").select("id,full_name,name")
+      supabase.from("vehicles").select("id,plate").eq("company_id", company.id),
+      supabase.from("drivers").select("id,full_name,name").eq("company_id", company.id)
     ]);
     if (vehicleError) throw vehicleError;
     if (driverError) throw driverError;
@@ -158,6 +169,7 @@ Deno.serve(async request => {
           expiry_date: classification.expiryDate,
           original_file_name: file.name,
           mime_type: file.mimeType,
+          company_id: company.id,
           drive_file_id: file.id,
           drive_web_view_link: file.webViewLink || null,
           vehicle_id: vehicleId,
@@ -170,7 +182,7 @@ Deno.serve(async request => {
         results.push({ file: file.name, documentId: saved.id, type: classification.type, vehicleId, driverId, matched: Boolean(vehicle || driver) });
       } catch (error) {
         failed++;
-        results.push({ file: file.name, error: error?.message || "Erro" });
+        results.push({ file: file.name, error: error instanceof Error ? error.message : "Erro" });
       }
     }
 
@@ -179,7 +191,7 @@ Deno.serve(async request => {
     });
   } catch (error) {
     console.error(error);
-    return new Response(JSON.stringify({ ok: false, error: error?.message || "Erro na sincronização." }), {
+    return new Response(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : "Erro na sincronização." }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }

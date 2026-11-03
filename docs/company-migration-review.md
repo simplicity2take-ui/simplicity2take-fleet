@@ -8,22 +8,21 @@ Reviewed draft migrations:
 
 ## Findings
 
-### Blocker 1 — ownership changes can invalidate existing assignments
+### Ownership changes and assignment history — guarded in PR #37
 
-The assignment trigger checks company IDs when a row in `vehicle_assignments` is inserted or when its `driver_id`/`vehicle_id` changes. It does not run when `drivers.company_id` or `vehicles.company_id` changes. Changing the company of an already-assigned driver or vehicle could therefore leave a cross-company assignment behind.
+The initial review identified that changing `drivers.company_id` or `vehicles.company_id` could reclassify existing assignments. PR #37 adds statement-level assignment-table mutexes, acquired before fleet row updates, and rejects ownership transfers for any driver or vehicle with active or closed assignment history. Global administrators can still correct unassigned rows. The disposable PostgreSQL CI covers active-history rejection, closed-history rejection, unassigned corrections, and the concurrent assignment/transfer race.
 
-Required before multi-company use:
-- Add a safe ownership-transfer workflow that closes/reconciles affected assignments before changing ownership, or a reviewed database-enforced rule that validates affected assignments.
-- Test company changes for drivers and vehicles with active and historical assignments.
-- Define historical ownership semantics explicitly; joining old records to current ownership can misrepresent historical reports.
+Transfers with history remain intentionally fail-closed. A future controlled transfer feature must define historical ownership semantics and close or reconcile assignments before it can replace this guard. Staging and production migration application remain separate release steps.
 
 ### Blocker 2 — NULL assignment IDs need schema-level protection
 
 The current `s2t_guard_assignment_company()` trigger rejects a NULL `driver_id` or `vehicle_id` with SQLSTATE `23502`. This is an improvement over the earlier draft behavior, but a trigger is not a substitute for verifying schema constraints and foreign keys.
 
+PR #37 adds `20261103000500_assignment_reference_not_null.sql`. It checks for legacy NULL references before applying `NOT NULL` to both columns, and disposable PostgreSQL CI confirms the catalog constraints and rejects NULL inserts. The target database remains unverified; the migration must not be applied there without reviewing its precondition and the existing data.
+
 Required before testing/release:
 - Verify the actual nullability and foreign keys in the isolated test schema.
-- Prefer reviewed `NOT NULL` constraints as well as foreign keys, after checking existing data and the application’s legitimate assignment lifecycle.
+- Confirm the target data has no NULL references, then apply the reviewed `NOT NULL` constraints as well as the existing foreign keys. The PR migration aborts if it finds legacy NULL rows.
 - Test NULL driver and NULL vehicle attempts and confirm they fail without leaving partial changes.
 
 ### Blocker 3 — membership is not a complete authorization model
@@ -54,6 +53,10 @@ Required before applying in an isolated environment:
 - Verify existing assignments pair drivers and vehicles from the intended company before enabling the guard.
 - Run the migration twice to verify idempotency and compare row counts.
 - Exercise rollback only in a disposable database; do not automatically drop ownership data after it has been used.
+
+## Latest disposable CI evidence
+
+On 2026-11-03, commit `d0d50c51df164d1fa051eaee1e4097c0bdbbbb2f` passed both push and pull-request CI. PostgreSQL 17 applied the company, fleet and integration migrations twice and passed the idempotency check. Company A/B RLS checks cover company admins, an unlinked member, a driver, users without membership, and inactive membership; ordinary members still cannot write drivers, vehicles or assignments. Uber offline tests require a complete, valid date range for aggregate reports to keep repeated imports idempotent. Bolt and Uber adapter tests use simulated responses; no live provider API was called. Hosted schema/data, full tenant coverage, provider authorization and production deployment remain unverified. See [push CI](https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/41715129274) and [pull-request CI](https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/41715145351).
 
 ## Test matrix required in a disposable local database
 

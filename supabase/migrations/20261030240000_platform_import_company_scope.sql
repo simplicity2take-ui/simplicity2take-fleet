@@ -5,7 +5,7 @@
 -- Existing platform and Uber report rows are historical records of the sole configured
 -- integration tenant. They are therefore backfilled to the fixed S2T company.
 -- This migration deliberately leaves company_id nullable on the legacy Uber report tables
--- until all seven Uber RPCs are replaced. The platform tables become mandatory tenant rows
+-- until all eight Uber RPCs are replaced. The platform tables become mandatory tenant rows
 -- for new Bolt writes; the Uber direct-import path must be updated before tightening its columns.
 -- It does not grant browser access or change RLS policies.
 
@@ -67,7 +67,13 @@ where company_id is null;
 alter table public.platform_activity_events alter column company_id set not null;
 alter table public.platform_trip_records alter column company_id set not null;
 
--- Replace legacy global provider keys with tenant-scoped keys.
+-- Replace legacy global provider keys with tenant-scoped keys. Historical
+-- schemas may implement these keys as UNIQUE constraints, which own their
+-- backing indexes; remove either form before creating the scoped indexes.
+alter table public.platform_activity_events
+  drop constraint if exists platform_activity_events_event_key_key;
+alter table public.platform_trip_records
+  drop constraint if exists platform_trip_records_platform_source_trip_id_key;
 drop index if exists public.platform_activity_events_event_key_key;
 drop index if exists public.platform_trip_records_platform_source_trip_id_key;
 

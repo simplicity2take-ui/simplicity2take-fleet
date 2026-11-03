@@ -20,8 +20,13 @@ begin
     raise exception 'Atomic assignments preflight failed: RPC function is missing.';
   end if;
 
-  if (select p.prosecdef from pg_proc p where p.oid = v_function) then
-    raise exception 'RPC must remain SECURITY INVOKER.';
+  if not (select p.prosecdef from pg_proc p where p.oid = v_function) then
+    raise exception 'RPC must use SECURITY DEFINER with explicit company authorization.';
+  end if;
+
+  if has_table_privilege('authenticated', 'public.vehicle_assignments', 'INSERT')
+     or has_table_privilege('authenticated', 'public.vehicle_assignments', 'UPDATE') then
+    raise exception 'Direct assignment writes must be revoked; use the RPC.';
   end if;
 
   if not exists (

@@ -1,0 +1,157 @@
+name: Company fleet flow regressions
+
+on:
+  push:
+    branches:
+      - security/guard-driver-profile-and-assignment-history
+  pull_request:
+    branches:
+      - feature/company-fleet-foundation
+    paths:
+      - ".github/workflows/company-fleet-regressions.yml"
+      - "app.js"
+      - "tests/frontend_company_navigation.test.cjs"
+      - "supabase/functions/admin-create-driver/**"
+      - "supabase/functions/admin-auth-utils.ts"
+      - "supabase/functions/admin-auth-utils.test.ts"
+      - "supabase/functions/admin-reset-driver-password/**"
+      - "supabase/functions/drive-import/**"
+      - "supabase/functions/drive-sync/**"
+      - "supabase/functions/drive-upload/**"
+      - "supabase/functions/bolt-sync/**"
+      - "supabase/functions/bolt-sync-utils.ts"
+      - "supabase/functions/bolt-sync-utils.test.ts"
+      - "supabase/functions/bolt-api-client.ts"
+      - "supabase/functions/bolt-api-client.test.ts"
+      - "docs/bolt-api-v2.md"
+      - "supabase/functions/uber-report-import/**"
+      - "supabase/functions/uber-report-import/uber-report-utils.ts"
+      - "supabase/functions/uber-report-import/uber-report-utils.test.ts"
+      - "supabase/migrations/20261026190000_company_fleet_foundation.sql"
+      - "supabase/migrations/20261026200000_company_memberships_and_integrity.sql"
+      - "supabase/migrations/20261030210000_platform_history_company_rls.sql"
+      - "supabase/migrations/20261030220000_company_documents_rls.sql"
+      - "supabase/migrations/20261030230000_company_fleet_rls.sql"
+      - "supabase/migrations/20261030240000_platform_import_company_scope.sql"
+      - "supabase/migrations/20261030250000_uber_rpc_company_scope.sql"
+      - "supabase/migrations/20261103000100_fleet_assignment_history_security.sql"
+      - "supabase/migrations/20261103000200_bolt_assignment_decision_rpc.sql"
+      - "supabase/migrations/20261103000300_bolt_atomic_fleet_sync.sql"
+      - "supabase/migrations/20261103000400_fleet_vehicle_save_rpc.sql"
+      - "supabase/migrations/20261103000500_assignment_reference_not_null.sql"
+      - "supabase/tests/assignment_history_guard_preflight.sql"
+      - "supabase/tests/atomic_vehicle_assignments_preflight.sql"
+      - "supabase/tests/company_fleet_flow_ci_fixture.sql"
+      - "supabase/tests/company_fleet_flow_behavior.sql"
+      - "supabase/tests/company_document_scope_behavior.sql"
+      - "supabase/tests/company_integration_scope_behavior.sql"
+      - "supabase/tests/uber_rpc_company_scope_preflight.sql"
+      - "supabase/tests/company_fleet_flow_concurrency.sh"
+      - "supabase/tests/bolt_assignment_rpc_preflight.sql"
+      - "supabase/tests/bolt_assignment_rpc_behavior.sql"
+      - "supabase/tests/bolt_assignment_rpc_concurrency.sh"
+      - "supabase/tests/bolt_atomic_sync_preflight.sql"
+      - "supabase/tests/bolt_atomic_sync_behavior.sql"
+      - "supabase/tests/vehicle_save_rpc_preflight.sql"
+      - "supabase/tests/vehicle_save_rpc_behavior.sql"
+      - "supabase/tests/assignment_reference_not_null_preflight.sql"
+      - "supabase/tests/assignment_reference_not_null_behavior.sql"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend_and_integrations:
+    name: Frontend syntax and provider function type checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check application JavaScript syntax
+        run: node --check app.js
+      - name: Test company switching navigation
+        run: node --test tests/frontend_company_navigation.test.cjs
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check fleet creation and provider integrations without credentials
+        run: deno check supabase/functions/admin-create-driver/index.ts supabase/functions/admin-reset-driver-password/index.ts supabase/functions/drive-import/index.ts supabase/functions/drive-sync/index.ts supabase/functions/drive-upload/index.ts supabase/functions/bolt-sync/index.ts supabase/functions/uber-report-import/index.ts
+      - name: Run provider-independent Bolt and Uber regressions
+        run: deno test supabase/functions/admin-auth-utils.test.ts supabase/functions/bolt-sync-utils.test.ts supabase/functions/bolt-api-client.test.ts supabase/functions/uber-report-import/uber-report-utils.test.ts
+
+  postgres:
+    name: PostgreSQL company, vehicle and driver regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fleet_test
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Create disposable test database
+        run: psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE fleet_test"
+      - name: Apply isolated fixture and fleet migrations
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/company_fleet_flow_ci_fixture.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261026190000_company_fleet_foundation.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261026200000_company_memberships_and_integrity.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030230000_company_fleet_rls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030240000_platform_import_company_scope.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030210000_platform_history_company_rls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030220000_company_documents_rls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030250000_uber_rpc_company_scope.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000100_fleet_assignment_history_security.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000200_bolt_assignment_decision_rpc.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000300_bolt_atomic_fleet_sync.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000400_fleet_vehicle_save_rpc.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000500_assignment_reference_not_null.sql
+      - name: Reapply migrations to check idempotency
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261026190000_company_fleet_foundation.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261026200000_company_memberships_and_integrity.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030230000_company_fleet_rls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030240000_platform_import_company_scope.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030210000_platform_history_company_rls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030220000_company_documents_rls.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030250000_uber_rpc_company_scope.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000100_fleet_assignment_history_security.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000200_bolt_assignment_decision_rpc.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000300_bolt_atomic_fleet_sync.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000400_fleet_vehicle_save_rpc.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000500_assignment_reference_not_null.sql
+      - name: Run company isolation, fleet flow and history regressions
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/assignment_history_guard_preflight.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/atomic_vehicle_assignments_preflight.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/company_fleet_flow_behavior.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/company_document_scope_behavior.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/uber_rpc_company_scope_preflight.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/company_integration_scope_behavior.sql
+          bash supabase/tests/company_fleet_flow_concurrency.sh
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/bolt_assignment_rpc_preflight.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/bolt_assignment_rpc_behavior.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/bolt_atomic_sync_preflight.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/bolt_atomic_sync_behavior.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/vehicle_save_rpc_preflight.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/vehicle_save_rpc_behavior.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/assignment_reference_not_null_preflight.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/assignment_reference_not_null_behavior.sql
+          bash supabase/tests/bolt_assignment_rpc_concurrency.sh

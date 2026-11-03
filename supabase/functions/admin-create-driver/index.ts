@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { canCreateDriverForCompany, isActiveGlobalAdmin } from "../admin-auth-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -31,12 +32,28 @@ Deno.serve(async (request) => {
     if (!caller) return json({ ok: false, error: "Sessão inválida." }, 401);
 
     const adminClient = createClient(url, serviceRoleKey);
-    const { data: callerProfile } = await adminClient.from("profiles").select("role,status").eq("id", caller.id).single();
-    if (callerProfile?.role !== "admin" || callerProfile?.status !== "Ativo") {
-      return json({ ok: false, error: "Apenas o administrador pode criar motoristas." }, 403);
-    }
+    const { data: callerProfile, error: callerProfileError } = await adminClient
+      .from("profiles").select("role,status").eq("id", caller.id).maybeSingle();
+    if (callerProfileError) return json({ ok: false, error: "Não foi possível validar as permissões." }, 500);
 
     const body = await request.json();
+    const requestedCompanyId = String(body.companyId || "").trim();
+    let callerMembership = null;
+    if (!isActiveGlobalAdmin(callerProfile) && requestedCompanyId) {
+      const { data: membership, error: membershipError } = await adminClient
+        .from("company_memberships")
+        .select("company_id,role,status")
+        .eq("company_id", requestedCompanyId)
+        .eq("profile_id", caller.id)
+        .eq("role", "company_admin")
+        .eq("status", "Ativo")
+        .maybeSingle();
+      if (membershipError) return json({ ok: false, error: "Não foi possível validar a empresa selecionada." }, 500);
+      callerMembership = membership;
+    }
+    if (!canCreateDriverForCompany(callerProfile, callerMembership, requestedCompanyId)) {
+      return json({ ok: false, error: "Apenas um administrador global ativo ou o administrador ativo da empresa pode criar motoristas." }, 403);
+    }
     const fullName = String(body.fullName || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const phone = String(body.phone || "").trim();
@@ -44,9 +61,9 @@ Deno.serve(async (request) => {
     const status = String(body.status || "Ativo").trim();
 
     if (!fullName || !email || !password) return json({ ok: false, error: "Nome, email e palavra-passe são obrigatórios." }, 400);
+    if (status !== "Ativo") return json({ ok: false, error: "Um motorista novo tem de ser criado ativo." }, 400);
     if (password.length < 8) return json({ ok: false, error: "A palavra-passe deve ter pelo menos 8 caracteres." }, 400);
 
-    const requestedCompanyId = String(body.companyId || "").trim();
     const companyQuery = adminClient
       .from("companies")
       .select("id")
@@ -93,6 +110,6 @@ Deno.serve(async (request) => {
     return json({ ok: true, userId, driverId: driver.id });
   } catch (error) {
     console.error(error);
-    return json({ ok: false, error: error?.message || "Erro interno." }, 500);
+    return json({ ok: false, error: "Erro interno ao criar o motorista." }, 500);
   }
 });

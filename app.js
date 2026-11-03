@@ -191,6 +191,11 @@ function currentUser() {
   return state.users.find(user => user.id === state.sessionUserId);
 }
 
+function isFleetManager() {
+  const user = currentUser();
+  return user?.role === "admin" || state.currentCompanyRole === "company_admin";
+}
+
 function valueOf(row, ...keys) {
   for (const key of keys) if (row?.[key] !== undefined && row?.[key] !== null) return row[key];
   return "";
@@ -217,14 +222,71 @@ async function loadBackendData() {
     state.currentCompanyRole = null;
   }
 
-  if (currentUser()?.role !== "admin" && selectedMembership) {
-    // Company members receive only the document data permitted by document RLS.
-    // Do not even request fleet, platform, application or CarTrack tables until
-    // those tables have complete company-scoped policies.
-    const documentsResult = await supabaseClient.from("documents").select("id, company_id, name, document_type, document_number, policy_number, issue_date, expiry_date, observations, original_file_name, mime_type, vehicle_id, driver_id, uploaded_by");
-    if (documentsResult.error) throw documentsResult.error;
-    state.drivers = [];
-    state.vehicles = [];
+  if (currentUser()?.role !== "admin") {
+    const companyAdmin = selectedMembership?.role === "company_admin";
+    const shouldLoadFleet = companyAdmin || !selectedMembership;
+    const documentsQuery = supabaseClient
+      .from("documents")
+      .select("id, company_id, name, document_type, document_number, policy_number, issue_date, expiry_date, observations, original_file_name, mime_type, drive_file_id, drive_web_view_link, vehicle_id, driver_id, uploaded_by");
+    const driversQuery = supabaseClient.from("drivers").select("*");
+    const vehiclesQuery = supabaseClient.from("vehicles").select("*");
+    const companyDocumentsQuery = companyAdmin
+      ? documentsQuery.eq("company_id", state.currentCompanyId)
+      : documentsQuery;
+    const [documentsResult, driversResult, vehiclesResult, assignmentsResult, viewersResult] = await Promise.all([
+      companyDocumentsQuery,
+      shouldLoadFleet
+        ? (companyAdmin ? driversQuery.eq("company_id", state.currentCompanyId) : driversQuery)
+        : Promise.resolve({ data: [], error: null }),
+      shouldLoadFleet
+        ? (companyAdmin ? vehiclesQuery.eq("company_id", state.currentCompanyId) : vehiclesQuery)
+        : Promise.resolve({ data: [], error: null }),
+      shouldLoadFleet
+        ? supabaseClient.from("vehicle_assignments").select("*")
+        : Promise.resolve({ data: [], error: null }),
+      shouldLoadFleet
+        ? supabaseClient.from("document_viewers").select("*")
+        : Promise.resolve({ data: [], error: null })
+    ]);
+    const scopedError = [documentsResult, driversResult, vehiclesResult, assignmentsResult, viewersResult].find(result => result.error)?.error;
+    if (scopedError) throw scopedError;
+
+    const assignments = assignmentsResult.data || [];
+    const viewers = viewersResult.data || [];
+    state.drivers = (driversResult.data || []).map(row => ({
+      id: row.id,
+      profileId: valueOf(row, "profile_id", "user_id"),
+      name: valueOf(row, "full_name", "name"),
+      email: valueOf(row, "email"),
+      phone: valueOf(row, "phone"),
+      status: valueOf(row, "status") || "Ativo",
+      boltDriverUuid: valueOf(row, "bolt_driver_uuid"),
+      boltPartnerUuid: valueOf(row, "bolt_partner_uuid"),
+      boltLastSyncedAt: valueOf(row, "bolt_last_synced_at"),
+      uberDriverUuid: valueOf(row, "uber_driver_uuid"),
+      uberStatus: valueOf(row, "uber_status"),
+      uberRealtimeStatus: valueOf(row, "uber_realtime_status"),
+      uberLastOnlineAt: valueOf(row, "uber_last_online_at"),
+      uberLastSyncedAt: valueOf(row, "uber_last_synced_at"),
+      raw: row
+    }));
+    state.vehicles = (vehiclesResult.data || []).map(row => ({
+      id: row.id,
+      plate: valueOf(row, "plate", "registration_plate", "license_plate"),
+      brand: valueOf(row, "brand", "make"),
+      model: valueOf(row, "model"),
+      year: valueOf(row, "vehicle_year", "year"),
+      vin: valueOf(row, "vin"),
+      qrToken: valueOf(row, "qr_token", "qrToken"),
+      status: valueOf(row, "status") || "Ativo",
+      boltVehicleUuid: valueOf(row, "bolt_vehicle_uuid"),
+      boltLastSyncedAt: valueOf(row, "bolt_last_synced_at"),
+      uberVehicleUuid: valueOf(row, "uber_vehicle_uuid"),
+      uberVehicleEncryptedUuid: valueOf(row, "uber_vehicle_encrypted_uuid"),
+      uberLastSyncedAt: valueOf(row, "uber_last_synced_at"),
+      driverIds: assignments.filter(item => item.vehicle_id === row.id && assignmentIsActive(item)).map(item => item.driver_id),
+      raw: row
+    }));
     state.activityEvents = [];
     state.tripRecords = [];
     state.cartrackVehicles = [];
@@ -242,9 +304,11 @@ async function loadBackendData() {
       observations: valueOf(row, "observations", "notes"),
       fileName: valueOf(row, "original_file_name", "file_name", "name"),
       fileType: valueOf(row, "mime_type", "file_type"),
+      driveFileId: valueOf(row, "drive_file_id", "google_drive_file_id"),
+      driveUrl: valueOf(row, "drive_web_view_link", "drive_url", "web_view_link", "file_url"),
       vehicleId: valueOf(row, "vehicle_id"),
       driverId: valueOf(row, "driver_id"),
-      viewerDriverIds: [],
+      viewerDriverIds: viewers.filter(item => item.document_id === row.id).map(item => item.driver_id),
       raw: row
     }));
     return;
@@ -542,7 +606,10 @@ function alertLevel(doc) {
 
 function visibleDocuments() {
   const user = currentUser();
-  if (user.role === "admin" || state.currentCompanyRole) return companyDocuments();
+  if (user.role === "admin") return state.documents;
+  if (state.currentCompanyRole) {
+    return state.documents.filter(doc => Boolean(state.currentCompanyId && doc.companyId === state.currentCompanyId));
+  }
   return driverDocuments();
 }
 
@@ -805,7 +872,7 @@ async function startAuthenticatedSession(user) {
   state.profile = { ...profile, email: profile.email || user.email };
   state.sessionUserId = user.id;
   await loadBackendData();
-  state.activeView = profile.role === "admin" ? "dashboard" : state.currentCompanyRole ? "documents" : "vehicles";
+  state.activeView = profile.role === "admin" ? "dashboard" : state.currentCompanyRole === "company_admin" ? "vehicles" : state.currentCompanyRole ? "documents" : "vehicles";
   await openRequestedVehicle();
   selectors.loginScreen.classList.add("hidden");
   selectors.appShell.classList.remove("hidden");
@@ -827,6 +894,9 @@ async function logout() {
 
 function navigationForUser() {
   if (currentUser().role === "admin") return navByRole.admin;
+  if (state.currentCompanyRole === "company_admin") {
+    return [["vehicles", "Viaturas", "VE"], ["drivers", "Motoristas", "MO"], ["documents", "Documentos da Empresa", "DO"], ["alerts", "Alertas", "AL"], ["account", "Minha Conta", "EU"]];
+  }
   if (state.currentCompanyRole) return [["documents", "Documentos da Empresa", "DO"], ["account", "Minha Conta", "EU"]];
   return navByRole.driver;
 }
@@ -852,17 +922,24 @@ function renderCompanySwitcher() {
   if (selectors.contextLabel) selectors.contextLabel.textContent = selectedCompany ? `Simplicity2Take Fleet · ${selectedCompany.display_name || selectedCompany.legal_name}` : "Simplicity2Take Fleet";
   const integrationsEnabled = selectedCompany?.slug === "simplicity2take";
   document.querySelectorAll("[data-bolt-sync], [data-bolt-activity-sync], [data-uber-sync], [data-cartrack-sync], [data-uber-import-status], [data-uber-preview-status], [data-uber-import-activity], [data-uber-import-trip-activity], [data-uber-preview-trip-activity], [data-uber-import-vehicle-performance], [data-uber-import-vehicle-time-distance], [data-uber-import-driver-time-distance], [data-uber-import-driver-quality], [data-uber-import-driver-payments]").forEach(control => {
-    control.disabled = !integrationsEnabled;
-    control.title = integrationsEnabled ? "" : "Integração ainda não configurada para esta empresa.";
+    const uberDirectSyncPending = control.matches("[data-uber-sync]");
+    control.disabled = !integrationsEnabled || uberDirectSyncPending;
+    control.title = uberDirectSyncPending
+      ? "Sincronização direta pendente; os relatórios CSV continuam disponíveis."
+      : integrationsEnabled ? "" : "Integração ainda não configurada para esta empresa.";
   });
 }
 function renderApp() {
   const user = currentUser();
-  selectors.sessionRole.textContent = user.role === "admin" ? "Administrador" : state.currentCompanyRole ? "Utilizador da Empresa" : "Motorista";
+  const navigation = navigationForUser();
+  if (!navigation.some(([view]) => view === state.activeView)) {
+    state.activeView = navigation[0][0];
+  }
+  selectors.sessionRole.textContent = user.role === "admin" ? "Administrador global" : state.currentCompanyRole === "company_admin" ? "Administrador da empresa" : state.currentCompanyRole ? "Utilizador da empresa" : "Motorista";
   selectors.sessionName.textContent = user.name;
-  renderCompanySwitcher();
   renderNav();
   renderContent();
+  renderCompanySwitcher();
 }
 
 function renderNav() {
@@ -932,8 +1009,6 @@ function renderDashboard() {
       ${metric("Sem validade", missingExpiry.length)}
     </section>
 
-    ${companyPanel}
-    ${membershipPanel}
     <section class="content-grid">
       <article class="panel">
         <div class="panel-heading">
@@ -1019,7 +1094,7 @@ function vehicleDocumentsPanel(vehicle, compact = false) {
 }
 
 function renderVehicles() {
-  const admin = currentUser().role === "admin";
+  const admin = isFleetManager();
   const vehicles = admin ? state.vehicles : driverVehicles();
   const requested = vehicles.find(vehicle => vehicle.id === state.requestedVehicleId);
   selectors.pageTitle.textContent = admin ? "Veículos" : "Meus Veículos";
@@ -1096,7 +1171,7 @@ function vehicleRow(vehicle, admin) {
       <td><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></td>
       <td>${escapeHtml(vehicle.driverIds.map(driverName).join(", ") || "Sem motorista")}</td>
       <td><div class="vehicle-document-links">${documentSummary}</div></td>
-      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${escapeHtml(vehicle.id)}">QR</button><button class="mini-button" type="button" data-edit-vehicle="${escapeHtml(vehicle.id)}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${escapeHtml(vehicle.id)}">Eliminar</button></div>` : "Consulta"}</td>
+      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${escapeHtml(vehicle.id)}">QR</button><button class="mini-button" type="button" data-edit-vehicle="${escapeHtml(vehicle.id)}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${escapeHtml(vehicle.id)}">Arquivar</button></div>` : "Consulta"}</td>
     </tr>
   `;
 }
@@ -1104,7 +1179,7 @@ function vehicleRow(vehicle, admin) {
 function renderDrivers() {
   selectors.pageTitle.textContent = "Motoristas";
   selectors.content.innerHTML = `
-    ${heading("Gestão de motoristas", "Criar, editar, eliminar e definir palavras-passe. O administrador entrega a palavra-passe diretamente ao motorista.", `<button class="primary-button" type="button" data-open="driver">Criar motorista</button>`)}
+    ${heading("Gestão de motoristas", "Criar e gerir os motoristas da empresa selecionada. A palavra-passe inicial é entregue diretamente ao motorista.", `<button class="primary-button" type="button" data-open="driver">Criar motorista</button>`)}
     <div class="table-wrap">
       <table>
         <thead><tr><th>Nome completo</th><th>Email</th><th>Telemóvel</th><th>Estado</th><th>Uber</th><th>Documentos</th><th>Ações</th></tr></thead>
@@ -1116,6 +1191,7 @@ function renderDrivers() {
 
 function driverRow(driver) {
   const docs = state.documents.filter(doc => doc.driverId === driver.id);
+  const globalAdmin = currentUser().role === "admin";
   return `
     <tr>
       <td><strong>${escapeHtml(driver.name)}</strong></td>
@@ -1126,7 +1202,7 @@ function driverRow(driver) {
         ? `<span class="tag ${activityStateClass(driver.uberRealtimeStatus || driver.uberStatus)}">${escapeHtml(activityStateLabel(driver.uberRealtimeStatus || driver.uberStatus))}</span>`
         : '<span class="tag">Sem Uber</span>'}</td>
       <td><span class="tag">${docs.length} docs</span></td>
-      <td><div class="row-actions"><button class="mini-button" type="button" data-doc-driver="${escapeHtml(driver.id)}">Documento</button><button class="mini-button" type="button" data-edit-driver="${escapeHtml(driver.id)}">Editar</button><button class="mini-button" type="button" data-reset-password="${escapeHtml(driver.id)}">Definir passe</button><button class="danger-button" type="button" data-delete-driver="${escapeHtml(driver.id)}">Eliminar</button></div></td>
+      <td><div class="row-actions">${globalAdmin ? `<button class="mini-button" type="button" data-doc-driver="${escapeHtml(driver.id)}">Documento</button>` : ""}<button class="mini-button" type="button" data-edit-driver="${escapeHtml(driver.id)}">Editar</button>${globalAdmin ? `<button class="mini-button" type="button" data-reset-password="${escapeHtml(driver.id)}">Definir passe</button>` : ""}<button class="danger-button" type="button" data-delete-driver="${escapeHtml(driver.id)}">Desativar</button></div></td>
     </tr>
   `;
 }
@@ -1236,6 +1312,7 @@ function renderAlerts() {
     });
 
   const admin = currentUser().role === "admin";
+  const fleetManager = isFleetManager();
 
   const contextLabel = doc =>
     doc.driverId
@@ -1247,7 +1324,7 @@ function renderAlerts() {
   selectors.content.innerHTML = `
     ${heading(
       "Alertas documentais",
-      admin
+      fleetManager
         ? "Documentos expirados e documentos que entram nos períodos de 30, 15, 7 e 3 dias."
         : "Alertas apenas dos teus documentos e das viaturas que te estão atribuídas.",
       ""
@@ -1274,7 +1351,7 @@ function renderAlerts() {
             </div>
           </article>
         `;
-      }).join("") || emptyCard(admin ? "Não existem documentos com alerta neste momento." : "Não existem alertas nos teus documentos ou nas tuas viaturas.")}
+      }).join("") || emptyCard(fleetManager ? "Não existem documentos com alerta neste momento." : "Não existem alertas nos teus documentos ou nas tuas viaturas.")}
     </section>
   `;
 }
@@ -1500,8 +1577,17 @@ async function syncBolt() {
     renderApp();
     const drivers = data.drivers || {};
     const vehicles = data.vehicles || {};
-    const assignments = Number(data.assignmentsUpdated || 0);
-    showToast(`Bolt sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas ativos, ${vehicles.active ?? vehicles.received ?? 0} viaturas ativas e ${assignments} associações.`);
+    const assignments = data.assignments || {};
+    const statusConflicts = data.statusConflictsRequiringReview || {};
+    const assignmentsCreated = Number(assignments.created ?? data.assignmentsUpdated ?? 0);
+    const assignmentConflicts = Number(assignments.conflictsRequiringReview || 0);
+    const statusConflictCount = Number(statusConflicts.drivers || 0) + Number(statusConflicts.vehicles || 0);
+    let summary = `Bolt: motoristas ${drivers.created ?? 0} novos/${drivers.updated ?? 0} atualizados (${drivers.received ?? 0} recebidos); viaturas ${vehicles.created ?? 0} novas/${vehicles.updated ?? 0} atualizadas (${vehicles.received ?? 0} recebidas); ${assignmentsCreated} associações criadas.`;
+    const conflicts = [];
+    if (assignmentConflicts) conflicts.push(`${assignmentConflicts} conflitos de associação`);
+    if (statusConflictCount) conflicts.push(`${statusConflictCount} conflitos de estado`);
+    if (conflicts.length) summary += ` Revisão necessária: ${conflicts.join(" e ")}.`;
+    showToast(summary);
   } catch (error) {
     console.error("Bolt sync error", error);
     showToast(error?.message || "Não foi possível sincronizar a Bolt.");
@@ -1513,26 +1599,7 @@ async function syncBolt() {
 
 async function syncUber() {
   requireS2TIntegration();
-
-  const button = document.querySelector("[data-uber-sync]");
-  if (button) { button.disabled = true; button.textContent = "A sincronizar Uber…"; }
-  try {
-    const { data, error } = await supabaseClient.functions.invoke("uber-sync", { body: {} });
-    if (error) throw error;
-    if (!data?.ok) throw new Error(data?.error || "A sincronização Uber falhou.");
-    await loadBackendData();
-    renderApp();
-    const drivers = data.drivers || {};
-    const vehicles = data.vehicles || {};
-    const assignments = Number(data.assignmentsUpdated || 0);
-    showToast(`Uber sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas ativos, ${vehicles.active ?? vehicles.received ?? 0} viaturas ativas e ${assignments} associações.`);
-  } catch (error) {
-    console.error("Uber sync error", error);
-    showToast(error?.message || "Não foi possível sincronizar a Uber.");
-  } finally {
-    const currentButton = document.querySelector("[data-uber-sync]");
-    if (currentButton) { currentButton.disabled = false; currentButton.textContent = "Sincronizar Uber agora"; }
-  }
+  showToast("A sincronização direta da Uber ainda não está configurada. Importe os relatórios CSV Fleet Hub disponíveis.");
 }
 
 function inferUberReportPeriod(fileName) {
@@ -1550,6 +1617,23 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
   const inferred = inferUberReportPeriod(file.name);
   const text = await file.text();
   const inferredPeriod = { start: periodStart || inferred.start, end: periodEnd || inferred.end };
+  if (!["status", "trip_activity"].includes(type)) {
+    if (!inferredPeriod.start || !inferredPeriod.end) {
+      throw new Error("Este relatório exige as datas inicial e final. Inclua-as no nome do ficheiro (AAAAMMDD-AAAAMMDD).");
+    }
+    const isCalendarDate = value => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const [year, month, day] = value.split("-").map(Number);
+      const date = new Date(Date.UTC(year, month - 1, day));
+      return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+    };
+    if (!isCalendarDate(inferredPeriod.start) || !isCalendarDate(inferredPeriod.end)) {
+      throw new Error("O período do relatório tem uma data inválida. Utilize AAAAMMDD-AAAAMMDD.");
+    }
+    if (inferredPeriod.start > inferredPeriod.end) {
+      throw new Error("O período do relatório começa depois da data final.");
+    }
+  }
   if (type === "trip_activity" && !dryRun) {
     const previewQuery = new URLSearchParams({ type, dry_run: "true" });
     if (inferredPeriod.start) previewQuery.set("period_start", inferredPeriod.start);
@@ -1739,6 +1823,8 @@ function renderSettings() {
   selectors.content.innerHTML = `
     ${heading("Configurações", "Segurança, palavras-passe e integrações.", "")}
     <section class="content-grid">
+      ${companyPanel}
+      ${membershipPanel}
       <article class="panel">
         <div class="panel-heading"><h2>Segurança</h2><span class="tag active">Ativo</span></div>
         <div class="settings-list">
@@ -1764,7 +1850,7 @@ function renderSettings() {
           </div>
           <div class="integration-note">
             <strong>Credenciais seguras no Supabase</strong>
-            <p>O Portal usa a API Fleet Integration da Bolt com OAuth Client Credentials. O Client Secret nunca fica no navegador.</p>
+            <p>O Portal usa a Fleet API v2 com OAuth Client Credentials. Configure Client ID, Client Secret e, quando as credenciais tiverem acesso a várias empresas ativas, o BOLT_COMPANY_ID nos Secrets do Supabase. Nenhum segredo fica no navegador.</p>
           </div>
           <button class="primary-button" type="button" data-bolt-sync>Sincronizar Bolt agora</button>
         </div>
@@ -1793,7 +1879,7 @@ function renderSettings() {
             <div class="panel-heading">
               <div>
                 <strong>Uber Fleet</strong>
-                <p class="section-copy">Importação de motoristas, viaturas e associação motorista ↔ viatura.</p>
+                <p class="section-copy">A sincronização direta está pendente; a importação de relatórios Fleet Hub continua disponível.</p>
               </div>
               <span class="tag expiring">Acesso pendente</span>
             </div>
@@ -1803,7 +1889,7 @@ function renderSettings() {
               <div class="settings-row"><strong>Viagens Uber importadas</strong><span>${uberTripRecords.length}</span></div>
               <div class="settings-row"><strong>Último registo de viagem</strong><span>${lastUberTrip ? new Date(lastUberTrip).toLocaleString("pt-PT") : "Ainda sem viagens importadas"}</span></div>
               <div class="settings-row"><strong>Última sincronização</strong><span>${lastUberSync ? new Date(lastUberSync).toLocaleString("pt-PT") : "Ainda não executada"}</span></div>
-              <div class="settings-row"><strong>Backend de sincronização</strong><span class="tag active">Preparado</span></div>
+              <div class="settings-row"><strong>Sincronização direta da API</strong><span class="tag expiring">Pendente</span></div>
             </div>
             <div class="integration-note">
               <strong>Fleet Hub / Relatórios</strong>
@@ -1856,7 +1942,7 @@ function renderSettings() {
 
               <p class="section-copy">O período é lido automaticamente do nome do ficheiro quando estiver no formato AAAAMMDD-AAAAMMDD.</p>
             </div>
-            <button class="secondary-button" type="button" data-uber-sync title="Sincronizar a frota Uber agora">Sincronizar Uber agora</button>
+            <button class="secondary-button" type="button" data-uber-sync title="Sincronização direta pendente; os relatórios CSV continuam disponíveis." disabled>Acesso Uber pendente</button>
           </div>
           <div class="settings-row"><strong>Gestão de Revisões</strong><span class="tag">Preparado</span></div>
           <div class="settings-row"><strong>Gestão de Inspeções</strong><span class="tag">Preparado</span></div>
@@ -1887,7 +1973,7 @@ function renderAccount() {
 }
 
 function heading(title, copy, actions) {
-  return `<section class="section-heading"><div><p class="eyebrow">${currentUser().role === "admin" ? "Administrador" : "Motorista"}</p><h2>${escapeHtml(title)}</h2><p class="section-copy">${escapeHtml(copy)}</p></div><div class="button-row">${actions}</div></section>`;
+  return `<section class="section-heading"><div><p class="eyebrow">${currentUser().role === "admin" ? "Administrador global" : state.currentCompanyRole === "company_admin" ? "Administrador da empresa" : "Motorista"}</p><h2>${escapeHtml(title)}</h2><p class="section-copy">${escapeHtml(copy)}</p></div><div class="button-row">${actions}</div></section>`;
 }
 
 function emptyRow(message) {
@@ -1938,7 +2024,7 @@ function modalFields(type, id) {
       field("name", "Nome completo", driver.name),
       field("email", "Email", driver.email, "email"),
       field("phone", "Telemóvel", driver.phone, "tel"),
-      selectField("status", "Estado", ["Ativo", "Inativo"], driver.status || "Ativo"), setupPassword
+      selectField("status", "Estado", driver.status === "Inativo" ? ["Inativo", "Ativo"] : ["Ativo"], driver.status || "Ativo"), setupPassword
     ].join("");
   }
 
@@ -1966,7 +2052,7 @@ function modalFields(type, id) {
       field("model", "Modelo", vehicle.model),
       field("year", "Ano", vehicle.year, "number"),
       field("vin", "VIN", vehicle.vin, "text", false, "", false),
-      selectField("status", "Estado", ["Ativo", "Manutenção", "Inativo"], vehicle.status || "Ativo"),
+      selectField("status", "Estado", vehicle.status === "Inativo" ? ["Inativo", "Ativo", "Manutenção"] : ["Ativo", "Manutenção"], vehicle.status || "Ativo"),
       checkList("driverIds", "Motoristas atribuídos", state.drivers, vehicle.driverIds || [])
     ].join("");
   }
@@ -2311,6 +2397,15 @@ async function saveCompany(values, id) {
 }
 
 async function saveDriver(values, id) {
+  if (!["Ativo", "Inativo"].includes(values.status)) throw new Error("Estado do motorista inválido.");
+  const existingDriver = id ? state.drivers.find(driver => driver.id === id) : null;
+  if (id && (!state.currentCompanyId || !existingDriver || existingDriver.raw?.company_id !== state.currentCompanyId)) {
+    throw new Error("O motorista não pertence à empresa selecionada ou deixou de estar disponível.");
+  }
+  if (!id && values.status !== "Ativo") throw new Error("Um motorista novo tem de ser criado ativo.");
+  if (existingDriver?.status === "Ativo" && values.status === "Inativo") {
+    throw new Error("Use a ação Desativar para fechar as associações e preservar o histórico.");
+  }
   const payload = {
     full_name: values.name,
     email: values.email,
@@ -2328,24 +2423,35 @@ async function saveDriver(values, id) {
     showToast("Motorista criado. Entregue a palavra-passe diretamente.");
     return;
   }
-  const { error } = await supabaseClient.from("drivers").update(payload).eq("id", id).eq("company_id", state.currentCompanyId);
+  const { data, error } = await supabaseClient.from("drivers").update(payload).eq("id", id).eq("company_id", state.currentCompanyId).select("id").maybeSingle();
 
   if (error) throw error;
+  if (!data || data.id !== id) throw new Error("O motorista não foi atualizado. Verifique a empresa e as permissões.");
   showToast("Motorista atualizado.");
 }
 
 async function saveVehicle(values, driverIds, id) {
-  const payload = {
-    plate: values.plate.toUpperCase(),
-    brand: values.brand,
-    model: values.model,
-    vehicle_year: Number(values.year),
-    vin: values.vin,
-    status: values.status
-  };
+  if (!["Ativo", "Manutenção", "Inativo"].includes(values.status)) throw new Error("Estado da viatura inválido.");
+  const existingVehicle = id ? state.vehicles.find(vehicle => vehicle.id === id) : null;
+  if (id && !existingVehicle) throw new Error("A viatura selecionada já não está disponível.");
+  if (existingVehicle && existingVehicle.status !== "Inativo" && values.status === "Inativo") {
+    throw new Error("Use a ação Arquivar para encerrar as associações e preservar o histórico.");
+  }
+  const requestedDriverIds = Array.isArray(driverIds) ? driverIds : [];
+  if (new Set(requestedDriverIds).size !== requestedDriverIds.length) {
+    throw new Error("A lista de motoristas contém duplicados.");
+  }
+  const currentDriverIds = [...new Set(existingVehicle?.driverIds || [])].sort();
+  const selectedDriverIds = [...requestedDriverIds].sort();
+  const assignmentSelectionChanged =
+    currentDriverIds.length !== selectedDriverIds.length ||
+    currentDriverIds.some((driverId, index) => driverId !== selectedDriverIds[index]);
+  if (values.status !== "Ativo" && assignmentSelectionChanged) {
+    throw new Error("Mantenha a viatura ativa para alterar associações. Guarde primeiro as alterações das associações e depois mude o estado.");
+  }
+
   if (!state.currentCompanyId) throw new Error("Não foi possível determinar a empresa para esta viatura.");
-  if (!id) payload.company_id = state.currentCompanyId;
-  else if (state.vehicles.find(item => item.id === id)?.raw?.company_id !== state.currentCompanyId) {
+  if (id && existingVehicle.raw?.company_id !== state.currentCompanyId) {
     throw new Error("A viatura não pertence à empresa selecionada.");
   }
 
@@ -2354,24 +2460,24 @@ async function saveVehicle(values, driverIds, id) {
       .filter(driver => driver.raw?.company_id === state.currentCompanyId)
       .map(driver => driver.id)
   );
-  if (driverIds.some(driverId => !selectedDrivers.has(driverId))) {
+  if (requestedDriverIds.some(driverId => !selectedDrivers.has(driverId))) {
     throw new Error("Só pode associar motoristas da mesma empresa da viatura.");
   }
-  const query = id
-    ? supabaseClient.from("vehicles").update(payload).eq("id", id).select().single()
-    : supabaseClient.from("vehicles").insert(payload).select().single();
-  const { data: vehicle, error } = await query;
+
+  const { data: result, error } = await supabaseClient.rpc("s2t_save_vehicle_with_assignments", {
+    p_vehicle_id: id || null,
+    p_company_id: state.currentCompanyId,
+    p_plate: values.plate.toUpperCase(),
+    p_brand: values.brand,
+    p_model: values.model,
+    p_vehicle_year: Number(values.year),
+    p_vin: values.vin || null,
+    p_status: values.status,
+    p_driver_ids: requestedDriverIds
+  });
   if (error) throw error;
-  const vehicleId = id || vehicle.id;
-  const { error: deleteError } = await supabaseClient.from("vehicle_assignments").delete().eq("vehicle_id", vehicleId);
-  if (deleteError) throw deleteError;
-  if (driverIds.length) {
-    const { error: assignmentError } = await supabaseClient.from("vehicle_assignments").insert(
-      driverIds.map(driverId => ({ vehicle_id: vehicleId, driver_id: driverId, active_from: new Date().toISOString().slice(0, 10), active_until: null }))
-    );
-    if (assignmentError) throw assignmentError;
-  }
-  showToast(id ? "Veículo atualizado." : "Veículo criado.");
+  if (!result?.vehicle_id) throw new Error("A gravação da viatura não devolveu um identificador válido.");
+  showToast(id ? "Viatura atualizada. O histórico de associações foi preservado." : "Viatura criada.");
 }
 
 async function saveDocument(values, viewerDriverIds, id) {
@@ -2644,67 +2750,29 @@ async function handleAdminAction(action) {
       await loadBackendData(); renderApp(); showToast("Documento eliminado.");
     }
     if (action.type === "delete-vehicle") {
-      if (!confirm("Eliminar esta viatura do portal?")) return;
-      const { error: assignmentError } = await supabaseClient
-        .from("vehicle_assignments")
-        .delete()
-        .eq("vehicle_id", action.id);
-      if (assignmentError) throw assignmentError;
-
-      const { error } = await supabaseClient
-        .from("vehicles")
-        .delete()
-        .eq("id", action.id);
+      if (!confirm("Arquivar esta viatura? As associações ativas serão encerradas e todo o histórico será preservado.")) return;
+      const { error } = await supabaseClient.rpc("s2t_archive_vehicle", {
+        p_vehicle_id: action.id
+      });
       if (error) throw error;
 
       await loadBackendData();
       renderApp();
-      showToast("Viatura eliminada.");
+      showToast("Viatura arquivada. O histórico foi preservado.");
     }
     if (action.type === "delete-driver") {
       const driver = state.drivers.find(item => item.id === action.id);
       if (!driver) return;
+      if (!confirm("Desativar este motorista? As associações ativas serão encerradas e o histórico documental e operacional será preservado.")) return;
 
-      const driverDocs = state.documents.filter(doc => doc.driverId === action.id);
-
-      if (driver.status === "Inativo" && driverDocs.length === 0) {
-        if (!confirm("Eliminar definitivamente este motorista?")) return;
-
-        const { error: assignmentError } = await supabaseClient
-          .from("vehicle_assignments")
-          .delete()
-          .eq("driver_id", action.id);
-        if (assignmentError) throw assignmentError;
-
-        const { error: viewerError } = await supabaseClient
-          .from("document_viewers")
-          .delete()
-          .eq("driver_id", action.id);
-        if (viewerError) throw viewerError;
-
-        const { error } = await supabaseClient
-          .from("drivers")
-          .delete()
-          .eq("id", action.id);
-        if (error) throw error;
-
-        await loadBackendData();
-        renderApp();
-        showToast("Motorista eliminado definitivamente.");
-        return;
-      }
-
-      if (!confirm("Desativar este motorista? O histórico documental será preservado.")) return;
-
-      const { error } = await supabaseClient
-        .from("drivers")
-        .update({ status: "Inativo" })
-        .eq("id", action.id);
+      const { error } = await supabaseClient.rpc("s2t_deactivate_driver", {
+        p_driver_id: action.id
+      });
       if (error) throw error;
 
       await loadBackendData();
       renderApp();
-      showToast("Motorista desativado.");
+      showToast("Motorista desativado. O histórico foi preservado.");
     }
   } catch (error) {
     console.error(error);
@@ -2725,19 +2793,24 @@ function bindPortalEvents() {
   selectors.companySwitcher?.addEventListener("change", async event => {
     const nextCompanyId = event.target.value;
     if (!nextCompanyId || nextCompanyId === state.currentCompanyId) return;
-    const previousCompanyId = state.currentCompanyId;
+    const previousState = { ...state };
+    const previousInert = selectors.appShell.inert;
     state.currentCompanyId = nextCompanyId;
     selectors.companySwitcher.disabled = true;
+    selectors.appShell.inert = true;
     try {
       await loadBackendData();
-      renderApp();
+      if (state.sessionUserId === previousState.sessionUserId) renderApp();
     } catch (error) {
-      state.currentCompanyId = previousCompanyId;
       console.error(error);
-      showToast(error?.message || "Não foi possível mudar de empresa.");
-      renderCompanySwitcher();
+      if (state.sessionUserId === previousState.sessionUserId) {
+        Object.assign(state, previousState);
+        showToast(error?.message || "Não foi possível mudar de empresa.");
+        renderApp();
+      }
     } finally {
       selectors.companySwitcher.disabled = false;
+      selectors.appShell.inert = previousInert;
     }
   });
   selectors.loginForm?.addEventListener("submit", event => {

@@ -1,6 +1,7 @@
 import {
   baseDates, clockMinutes, detectDelimiter, fetchPaginatedRestRows, integerValue, localLisbonTimestamp,
-  minutes, numberValue, parseCsv, rateValue, uberStatusTimestamp, validatePeriodDates
+  minutes, numberValue, parseCsv, rateValue, uberStatusTimestamp, validatePeriodDates,
+  validateRequiredPeriodDates
 } from "./uber-report-utils.ts";
 
 function assertEquals(actual: unknown, expected: unknown): void {
@@ -74,6 +75,15 @@ Deno.test("Uber period and base-date helpers validate calendar dates", () => {
   validatePeriodDates("2024-02-29", "2024-03-01");
   assertThrows(() => validatePeriodDates("2026-02-29", "2026-03-01"), "Data inicial inválida");
   assertThrows(() => validatePeriodDates("2026-10-02", "2026-10-01"), "posterior à data final");
+});
+
+Deno.test("Uber aggregate reports require both period dates for idempotent imports", () => {
+  validateRequiredPeriodDates("2026-10-01", "2026-10-31");
+  assertThrows(() => validateRequiredPeriodDates(null, null), "exige as datas inicial e final");
+  assertThrows(() => validateRequiredPeriodDates("2026-10-01", null), "exige as datas inicial e final");
+  assertThrows(() => validateRequiredPeriodDates(null, "2026-10-31"), "exige as datas inicial e final");
+  assertThrows(() => validateRequiredPeriodDates("2026-02-30", "2026-03-01"), "Data inicial inválida");
+  assertThrows(() => validateRequiredPeriodDates("2026-10-02", "2026-10-01"), "posterior à data final");
 });
 
 Deno.test("Supabase REST matching reads every page with stable offset and ordering", async () => {

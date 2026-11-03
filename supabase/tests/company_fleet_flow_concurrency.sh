@@ -103,15 +103,15 @@ fi
 
 
 # Ownership transfer and assignment creation share the table mutex before parent row locks.
-ownership_driver_id="20000000-0000-0000-0000-000000000008"
-ownership_vehicle_id="30000000-0000-0000-0000-000000000008"
+ownership_driver_id="20000000-0000-0000-0000-000000000009"
+ownership_vehicle_id="30000000-0000-0000-0000-000000000009"
 company_a_id="$(psql "$DATABASE_URL" -Atq -v ON_ERROR_STOP=1 -c "SELECT id FROM public.companies WHERE slug='simplicity2take'")"
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
 INSERT INTO public.drivers (id,company_id,full_name,email,phone,status)
-VALUES ('$ownership_driver_id','$company_a_id','Motorista concorrente','race@example.test','910000008','Ativo')
+VALUES ('$ownership_driver_id','$company_a_id','Motorista concorrente','race@example.test','910000009','Ativo')
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.vehicles (id,company_id,plate,brand,model,vehicle_year,status)
-VALUES ('$ownership_vehicle_id','$company_a_id','AA-08-AA','Renault','Megane',2024,'Ativo')
+VALUES ('$ownership_vehicle_id','$company_a_id','AA-09-AA','Renault','Megane',2024,'Ativo')
 ON CONFLICT (id) DO NOTHING;
 SQL
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 >"$ownership_assignment_log" 2>&1 <<SQL &

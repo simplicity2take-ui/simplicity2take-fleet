@@ -1616,7 +1616,7 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
       throw new Error("Este relatório exige as datas inicial e final. Inclua-as no nome do ficheiro (AAAAMMDD-AAAAMMDD).");
     }
     const isCalendarDate = value => {
-      if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
       const [year, month, day] = value.split("-").map(Number);
       const date = new Date(Date.UTC(year, month - 1, day));
       return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;

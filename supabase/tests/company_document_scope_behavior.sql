@@ -3,10 +3,16 @@
 BEGIN;
 
 INSERT INTO public.profiles (id, full_name, email, role)
-VALUES ('10000000-0000-0000-0000-000000000006', 'Membro isolado A', 'member-isolated-a@example.test', 'user');
+VALUES
+  ('10000000-0000-0000-0000-000000000006', 'Membro isolado A', 'member-isolated-a@example.test', 'user'),
+  ('10000000-0000-0000-0000-000000000007', 'Sem membership', 'no-membership@example.test', 'user'),
+  ('10000000-0000-0000-0000-000000000008', 'Membership inativa', 'inactive-membership@example.test', 'user');
 INSERT INTO public.company_memberships (company_id, profile_id, role, status)
-VALUES ((SELECT id FROM public.companies WHERE slug='simplicity2take'),
-        '10000000-0000-0000-0000-000000000006', 'member', 'Ativo');
+VALUES
+  ((SELECT id FROM public.companies WHERE slug='simplicity2take'),
+   '10000000-0000-0000-0000-000000000006', 'member', 'Ativo'),
+  ((SELECT id FROM public.companies WHERE slug='simplicity2take'),
+   '10000000-0000-0000-0000-000000000008', 'member', 'Inativo');
 
 INSERT INTO public.documents (id, company_id, name, driver_id) VALUES
   ('50000000-0000-0000-0000-000000000001',
@@ -98,6 +104,32 @@ BEGIN
   END IF;
 END;
 $company_b_admin$;
+
+SELECT set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000007', false);
+DO $without_membership$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.documents)
+     OR EXISTS (SELECT 1 FROM public.document_viewers)
+     OR EXISTS (SELECT 1 FROM public.drivers)
+     OR EXISTS (SELECT 1 FROM public.vehicles)
+     OR EXISTS (SELECT 1 FROM public.vehicle_assignments) THEN
+    RAISE EXCEPTION 'A user without company membership can read company or fleet records';
+  END IF;
+END;
+$without_membership$;
+
+SELECT set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000008', false);
+DO $inactive_membership$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.documents)
+     OR EXISTS (SELECT 1 FROM public.document_viewers)
+     OR EXISTS (SELECT 1 FROM public.drivers)
+     OR EXISTS (SELECT 1 FROM public.vehicles)
+     OR EXISTS (SELECT 1 FROM public.vehicle_assignments) THEN
+    RAISE EXCEPTION 'A user with an inactive company membership can read company or fleet records';
+  END IF;
+END;
+$inactive_membership$;
 
 RESET ROLE;
 ROLLBACK;

@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { arrayFrom, boltApiEnvelopeError, clean, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "../bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -13,39 +14,6 @@ const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
-}
-function clean(value: unknown) { return value === undefined || value === null ? "" : String(value); }
-function first(obj: any, keys: string[]) {
-  for (const key of keys) {
-    const value = obj?.[key];
-    if (value !== undefined && value !== null && value !== "") return value;
-  }
-  return "";
-}
-function arrayFrom(payload: any, keys: string[]): any[] {
-  if (Array.isArray(payload)) return payload;
-  for (const key of keys) if (Array.isArray(payload?.[key])) return payload[key];
-  for (const key of ["data", "result", "response"]) {
-    if (payload?.[key] && typeof payload[key] === "object") {
-      const nested = arrayFrom(payload[key], keys);
-      if (nested.length) return nested;
-    }
-  }
-  return [];
-}
-function statusToPortal(value: unknown, current = "Ativo") {
-  const s = clean(value).toLowerCase();
-  if (!s) return current || "Ativo";
-  if (/(suspend|blocked|deactiv|inactive|terminated|banned|disabled)/.test(s)) return "Inativo";
-  if (/(active|activated|enabled|approved)/.test(s)) return "Ativo";
-  return current || "Ativo";
-}
-function normalizeVehicleId(vehicle: any) { return clean(first(vehicle, ["uuid", "vehicle_uuid", "id"])); }
-function normalizePlate(vehicle: any) { return clean(first(vehicle, ["reg_number", "registration_number", "plate", "license_plate"])); }
-function normalizeDriverId(driver: any) { return clean(first(driver, ["driver_uuid", "uuid", "id"])); }
-function normalizeActiveVehicle(driver: any) {
-  const v = driver?.active_vehicle;
-  return v && typeof v === "object" ? v : null;
 }
 async function getBoltToken() {
   const clientId = Deno.env.get("BOLT_CLIENT_ID") || "";
@@ -71,7 +39,11 @@ async function boltPost(path: string, token: string) {
     const text = await response.text();
     let data: any = {};
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    if (response.ok) return data;
+    if (response.ok) {
+      const envelopeError = boltApiEnvelopeError(data);
+      if (envelopeError) throw new Error(envelopeError);
+      return data;
+    }
     lastError = clean(data?.message || data?.error || text || lastError);
   }
   throw new Error(lastError);
@@ -107,7 +79,7 @@ async function upsertVehicle(admin: any, vehicle: any, now: string, companyId: s
     model: model || existing?.model || "",
     vehicle_year: year || existing?.vehicle_year || null,
     vin: vin || existing?.vin || null,
-    status: statusToPortal(state, existing?.status || "Ativo"),
+    status: statusToPortal(state, existing?.status || "Inativo"),
     bolt_vehicle_uuid: boltId || existing?.bolt_vehicle_uuid || null,
     bolt_last_synced_at: now
   };
@@ -149,7 +121,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     full_name: fullName || existing?.full_name || "Motorista Bolt",
     email: email || existing?.email || null,
     phone: phone || existing?.phone || null,
-    status: statusToPortal(state, existing?.status || "Ativo"),
+    status: statusToPortal(state, existing?.status || "Inativo"),
     bolt_driver_uuid: boltId || existing?.bolt_driver_uuid || null,
     bolt_partner_uuid: partnerUuid || existing?.bolt_partner_uuid || null,
     bolt_last_synced_at: now

@@ -10,13 +10,15 @@
 - Drivers cannot be deactivated while current or future assignments remain. Vehicles use the archive action to close their assignment history before becoming inactive.
 - RPCs use a pinned empty `search_path`, explicit authorization checks and restricted EXECUTE grants. The API roles cannot call them as anonymous users.
 
-## Flow validation
+## Flow and integration validation
 
 The CI workflow provisions PostgreSQL 17 as a disposable service container, loads only the checked-in company/fleet migrations and fixture, then runs:
 
 - Read-only catalog preflights for driver identity protection, assignment grants, RPC security settings and archive/deactivation guards.
 - Company isolation and the Empresa → Viaturas → Motoristas behavioral regression, including history preservation and forbidden cross-company operations.
 - Concurrent assignment-versus-deactivation and assignment-versus-archive regressions.
+- Bolt response normalization, selected-vehicle handling, status mapping and provider-error envelope tests.
+- Uber CSV parsing, locale-aware number and duration parsing, Lisbon time-zone and daylight-saving validation, and report-period checks.
 - `node --check app.js` and Deno type checks for driver creation, Bolt sync and Uber report import.
 
 The workflow runs on standard GitHub-hosted runners for this public repository. It does not create a Supabase project or invoke Bolt, Uber, Google Drive or other external APIs, so no paid service or provider credential is required. These checks validate local application and database behavior; they do not certify a live provider account or a production deployment.

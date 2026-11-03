@@ -19,8 +19,8 @@ DECLARE
   denied boolean;
 BEGIN
   SELECT id INTO company_a FROM public.companies WHERE slug = 'simplicity2take';
-  INSERT INTO public.companies (id, slug, legal_name, display_name)
-  VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'vehicle-rpc-company-b', 'Empresa B', 'Empresa B')
+  INSERT INTO public.companies (slug, legal_name, display_name)
+  VALUES ('vehicle-rpc-company-b', 'Empresa B', 'Empresa B')
   ON CONFLICT (slug) DO NOTHING;
   SELECT id INTO company_b FROM public.companies WHERE slug = 'vehicle-rpc-company-b';
 

@@ -4,7 +4,7 @@ This is a source-review checklist only. It does not authorize migration, deploym
 
 ## P0 — Must be resolved before any external company account is enabled
 
-- [ ] **Assignment identifiers fail closed.** Verify `vehicle_assignments.driver_id` and `vehicle_id` are both NOT NULL in the actual schema. If either can be NULL, reject NULL in a database constraint/trigger. Do not infer nullability from application types.
+- [ ] **Assignment identifiers fail closed in the target database.** PR #37 adds a migration that aborts if legacy NULL references exist, then applies NOT NULL to `driver_id` and `vehicle_id`; disposable PostgreSQL CI confirms both constraints and rejects NULL writes. Verify the target schema/data before applying. Do not infer nullability from application types.
 - [x] **Ownership changes preserve assignment integrity (PR #37).** Company ownership updates take the assignment-table mutex before row updates; transfers are rejected when a driver or vehicle has any active or historical assignment. CI covers active history, closed history, unassigned corrections, and the assignment/transfer race.
 - [ ] **All tenant data is scoped.** Inventory and test vehicles, drivers, assignments, documents, document viewers, trips/activity, Uber/Bolt reports, CarTrack records, recruitment, payment/order records, audit records, exports and server functions.
 - [ ] **Server-side authorization is authoritative.** No client-supplied company ID, email, or role can grant access. Edge Functions using service-role credentials must check active membership/role and tenant scope explicitly.
@@ -31,6 +31,6 @@ This is a source-review checklist only. It does not authorize migration, deploym
 ## Current assessment
 
 - Ownership transfer with assignment history: guarded in PR #37; disposable PostgreSQL behavior and concurrency tests **PASS** at commit `f30e0707b744bde87c79cbf2e76ee08e5ed663b2`.
-- Static review remains **BLOCKED** on production schema verification, full tenant coverage, company-admin provisioning, and deployment/API validation. Bolt atomic-sync and manual vehicle-save behavior/concurrency CI **PASS** at commit `d31e30560a29979baaa096eb735b2a32c663ee0c` ([push](https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/41681933221), [pull request](https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/41681946254)).
+- Static review remains **BLOCKED** on target schema/data verification, full tenant coverage, company-admin provisioning, and deployment/API validation. Bolt atomic sync, manual vehicle-save rollback, assignment reference constraints, and concurrency CI **PASS** at commit `f07b5e7aaf63ef3eb71523949c803a237fe7dfc7` ([push](https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/41682718317), [pull request](https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/41682730828)).
 - Hosted Supabase migration test: **NOT RUN**. Repository CI uses a disposable PostgreSQL database only.
 - Production mutation/deployment: **NOT PERFORMED**.

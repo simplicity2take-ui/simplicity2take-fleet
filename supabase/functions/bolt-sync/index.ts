@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { arrayFrom, boltApiEnvelopeError, clean, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "../bolt-sync-utils.ts";
+import { arrayFrom, boltApiEnvelopeError, boltAssignmentAction, clean, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "../bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -141,31 +141,14 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
   let assignmentAction: "none" | "unchanged" | "created" | "conflict" = "none";
   if (assignedVehicle?.id) {
-    // Preserve the complete assignment history. Bolt must never delete or
-    // silently replace an existing active Fleet assignment.
-    const assignmentDate = now.slice(0, 10);
-    const activeResult = await admin.from("vehicle_assignments")
-      .select("id, vehicle_id")
-      .eq("driver_id", row.id)
-      .lte("active_from", assignmentDate)
-      .or("active_until.is.null,active_until.gte." + assignmentDate);
-    if (activeResult.error) throw new Error("Não foi possível validar a associação ativa do motorista; sincronização interrompida.");
-    const activeAssignments = activeResult.data || [];
-    if (activeAssignments.length === 1 && activeAssignments[0].vehicle_id === assignedVehicle.id) {
-      assignmentAction = "unchanged";
-    } else if (activeAssignments.length > 0) {
-      // A different vehicle or multiple active rows require manual review.
-      assignmentAction = "conflict";
-    } else {
-      const assignment = await admin.from("vehicle_assignments").insert({
-        vehicle_id: assignedVehicle.id,
-        driver_id: row.id,
-        active_from: new Date().toISOString().slice(0, 10),
-        active_until: null
-      });
-      if (assignment.error) throw assignment.error;
-      assignmentAction = "created";
+    const assignmentResult = await admin.rpc("s2t_bolt_assign_vehicle", {
+      p_driver_id: row.id,
+      p_vehicle_id: assignedVehicle.id
+    });
+    if (assignmentResult.error) {
+      throw new Error("Não foi possível validar a associação Bolt no histórico da frota.");
     }
+    assignmentAction = boltAssignmentAction(assignmentResult.data);
   }
   return { row, created, assignedVehicleId: assignedVehicle?.id || null, assignmentAction };
 }

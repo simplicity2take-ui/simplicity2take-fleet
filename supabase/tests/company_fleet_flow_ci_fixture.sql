@@ -287,6 +287,7 @@ GRANT EXECUTE ON FUNCTION public.s2t_is_admin() TO authenticated;
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT SELECT ON public.profiles TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.drivers, public.vehicles, public.vehicle_assignments TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.drivers, public.vehicles, public.vehicle_assignments TO service_role;
 ALTER TABLE public.drivers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vehicle_assignments ENABLE ROW LEVEL SECURITY;

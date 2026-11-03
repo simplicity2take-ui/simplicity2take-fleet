@@ -17,6 +17,7 @@ The CI workflow provisions PostgreSQL 17 as a disposable service container, load
 - Read-only catalog preflights for driver identity protection, assignment grants, platform RPC grants, tenant ownership links and archive/deactivation guards.
 - Company isolation and the Empresa → Viaturas → Motoristas behavioral regression, including history preservation and forbidden cross-company operations.
 - The platform-history tenant migration and all nine service-only Bolt/Uber RPCs, including synthetic Bolt event/trip writes, Uber status/reports/trips, cross-tenant ID rejection, tenant-scoped duplicate trip keys, and company-member RLS reads.
+- A service-only transactional Bolt assignment RPC, shared assignment-table lock ordering, history-preserving conflict decisions and concurrent same-driver/same-vehicle regressions.
 - Concurrent assignment-versus-deactivation and assignment-versus-archive regressions.
 - Bolt response normalization, selected-vehicle handling, status mapping and provider-error envelope tests.
 - Uber CSV parsing, locale-aware number and duration parsing, Lisbon time-zone and daylight-saving validation, and report-period checks.

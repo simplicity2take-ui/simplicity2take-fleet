@@ -1,5 +1,5 @@
 import {
-  arrayFrom, boltApiEnvelopeError, clean, first, normalizeActiveVehicle,
+  arrayFrom, boltApiEnvelopeError, boltAssignmentAction, clean, first, normalizeActiveVehicle,
   normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal
 } from "./bolt-sync-utils.ts";
 
@@ -58,4 +58,17 @@ Deno.test("Bolt API envelope rejects provider errors on HTTP success", () => {
   assertEquals(boltApiEnvelopeError({ code: "0", data: {} }), null);
   assertEquals(boltApiEnvelopeError({ code: 17, message: "failed" }), "A API Bolt devolveu um código de erro.");
   assertEquals(boltApiEnvelopeError(null), "A Bolt devolveu uma resposta inválida.");
+});
+
+
+Deno.test("Bolt assignment RPC accepts only transaction decisions", () => {
+  assertEquals(boltAssignmentAction({ action: "created" }), "created");
+  assertEquals(boltAssignmentAction({ action: "unchanged" }), "unchanged");
+  assertEquals(boltAssignmentAction({ action: "conflict", reason: "active_assignment_exists" }), "conflict");
+
+  for (const invalid of [null, [], {}, { action: "updated" }]) {
+    let threw = false;
+    try { boltAssignmentAction(invalid); } catch { threw = true; }
+    if (!threw) throw new Error("Expected an invalid Bolt assignment response to be rejected");
+  }
 });

@@ -25,8 +25,10 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 >"$archive_log" 2>&1 <<SQL &
 SET ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',false);
 BEGIN;
-SELECT id FROM public.vehicles WHERE id='$archive_vehicle_id' FOR UPDATE;
+RESET ROLE;
+LOCK TABLE public.vehicle_assignments IN SHARE ROW EXCLUSIVE MODE;
 SELECT pg_sleep(2);
+SET ROLE authenticated;
 SELECT public.s2t_archive_vehicle('$archive_vehicle_id');
 COMMIT;
 SQL
@@ -64,8 +66,10 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 >"$deactivate_log" 2>&1 <<SQL &
 SET ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',false);
 BEGIN;
-SELECT pg_advisory_xact_lock(hashtextextended('s2t-driver:' || '$deactivate_driver_id',0));
+RESET ROLE;
+LOCK TABLE public.vehicle_assignments IN SHARE ROW EXCLUSIVE MODE;
 SELECT pg_sleep(2);
+SET ROLE authenticated;
 SELECT public.s2t_deactivate_driver('$deactivate_driver_id');
 COMMIT;
 SQL

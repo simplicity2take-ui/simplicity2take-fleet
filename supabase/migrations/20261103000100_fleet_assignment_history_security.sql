@@ -178,6 +178,9 @@ begin
     raise exception 'Sessão não autenticada' using errcode = '42501';
   end if;
 
+  -- Acquire the assignment-table mutex before driver/vehicle locks to keep one lock order.
+  lock table public.vehicle_assignments in share row exclusive mode;
+
   -- Serialize edits to each requested driver before locking the vehicle. The same
   -- lock is acquired by the deactivation RPC and assignment integrity trigger.
   perform pg_catalog.pg_advisory_xact_lock(
@@ -372,6 +375,9 @@ begin
     raise exception 'Sessão não autenticada' using errcode = '42501';
   end if;
 
+  -- Acquire the assignment-table mutex before driver/vehicle locks to keep one lock order.
+  lock table public.vehicle_assignments in share row exclusive mode;
+
   -- Serialize with assignment creation before discovering the driver's vehicles.
   perform pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended('s2t-driver:' || p_driver_id::text, 0)
@@ -483,6 +489,9 @@ begin
   if auth.uid() is null then
     raise exception 'Sessão não autenticada' using errcode = '42501';
   end if;
+
+  -- Acquire the assignment-table mutex before driver/vehicle locks to keep one lock order.
+  lock table public.vehicle_assignments in share row exclusive mode;
 
   -- Verify company access before taking a row lock, then reread under lock.
   select v.company_id, v.status

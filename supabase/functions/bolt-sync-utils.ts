@@ -71,3 +71,16 @@ export function boltApiEnvelopeError(payload: unknown): string | null {
   }
   return null;
 }
+
+
+export type BoltAssignmentAction = "unchanged" | "created" | "conflict";
+
+/** Accept only decisions returned by the transactional Bolt assignment RPC. */
+export function boltAssignmentAction(result: unknown): BoltAssignmentAction {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    throw new Error("Resposta inválida da RPC de associação Bolt.");
+  }
+  const action = (result as Record<string, unknown>).action;
+  if (action === "unchanged" || action === "created" || action === "conflict") return action;
+  throw new Error("Decisão inválida da RPC de associação Bolt.");
+}

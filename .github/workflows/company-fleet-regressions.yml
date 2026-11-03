@@ -24,6 +24,7 @@ on:
       - "supabase/migrations/20261030240000_platform_import_company_scope.sql"
       - "supabase/migrations/20261030250000_uber_rpc_company_scope.sql"
       - "supabase/migrations/20261103000100_fleet_assignment_history_security.sql"
+      - "supabase/migrations/20261103000200_bolt_assignment_decision_rpc.sql"
       - "supabase/tests/assignment_history_guard_preflight.sql"
       - "supabase/tests/atomic_vehicle_assignments_preflight.sql"
       - "supabase/tests/company_fleet_flow_ci_fixture.sql"
@@ -31,6 +32,9 @@ on:
       - "supabase/tests/company_integration_scope_behavior.sql"
       - "supabase/tests/uber_rpc_company_scope_preflight.sql"
       - "supabase/tests/company_fleet_flow_concurrency.sh"
+      - "supabase/tests/bolt_assignment_rpc_preflight.sql"
+      - "supabase/tests/bolt_assignment_rpc_behavior.sql"
+      - "supabase/tests/bolt_assignment_rpc_concurrency.sh"
   workflow_dispatch:
 
 permissions:
@@ -91,6 +95,7 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030210000_platform_history_company_rls.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261030250000_uber_rpc_company_scope.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000100_fleet_assignment_history_security.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261103000200_bolt_assignment_decision_rpc.sql
       - name: Run company isolation, fleet flow and history regressions
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/assignment_history_guard_preflight.sql
@@ -99,3 +104,6 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/uber_rpc_company_scope_preflight.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/company_integration_scope_behavior.sql
           bash supabase/tests/company_fleet_flow_concurrency.sh
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/bolt_assignment_rpc_preflight.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/bolt_assignment_rpc_behavior.sql
+          bash supabase/tests/bolt_assignment_rpc_concurrency.sh

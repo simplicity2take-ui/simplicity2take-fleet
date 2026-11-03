@@ -1611,8 +1611,22 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
   const inferred = inferUberReportPeriod(file.name);
   const text = await file.text();
   const inferredPeriod = { start: periodStart || inferred.start, end: periodEnd || inferred.end };
-  if (!["status", "trip_activity"].includes(type) && (!inferredPeriod.start || !inferredPeriod.end)) {
-    throw new Error("Este relatório exige as datas inicial e final. Inclua-as no nome do ficheiro (AAAAMMDD-AAAAMMDD).");
+  if (!["status", "trip_activity"].includes(type)) {
+    if (!inferredPeriod.start || !inferredPeriod.end) {
+      throw new Error("Este relatório exige as datas inicial e final. Inclua-as no nome do ficheiro (AAAAMMDD-AAAAMMDD).");
+    }
+    const isCalendarDate = value => {
+      if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+      const [year, month, day] = value.split("-").map(Number);
+      const date = new Date(Date.UTC(year, month - 1, day));
+      return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+    };
+    if (!isCalendarDate(inferredPeriod.start) || !isCalendarDate(inferredPeriod.end)) {
+      throw new Error("O período do relatório tem uma data inválida. Utilize AAAAMMDD-AAAAMMDD.");
+    }
+    if (inferredPeriod.start > inferredPeriod.end) {
+      throw new Error("O período do relatório começa depois da data final.");
+    }
   }
   if (type === "trip_activity" && !dryRun) {
     const previewQuery = new URLSearchParams({ type, dry_run: "true" });

@@ -47,7 +47,11 @@ Deno.test("Bolt v2 company ID must be accessible and active", () => {
   assertThrows(() => assertBoltCompanyAccessible(67890, companies), "empresa ativa acessível");
   assertThrows(() => assertBoltCompanyAccessible(77777, companies), "empresa ativa acessível");
   assertThrows(() => assertBoltCompanyAccessible(12345, { code: 0, data: {} }), "lista de empresas inválida");
-  assertThrows(() => resolveBoltCompanyId(undefined, companies), "BOLT_COMPANY_ID");
+  assertEquals(resolveBoltCompanyId(undefined, companies), 12345);
+  assertThrows(() => resolveBoltCompanyId(undefined, { code: 0, data: { companies: [
+    { company_id: 12345, status_code: "active" },
+    { company_id: 67890, status_code: "active" },
+  ] } }), "BOLT_COMPANY_ID");
   assertThrows(() => resolveBoltCompanyId("99999", companies), "empresa ativa acessível");
 });
 

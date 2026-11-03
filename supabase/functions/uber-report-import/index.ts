@@ -126,6 +126,22 @@ Deno.serve(async (req) => {
     const token = auth.slice(7);
     const me = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` } });
     if (!me.ok) return new Response(JSON.stringify({ error: "Sessão inválida" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    const user = await me.json();
+    if (!user?.id) return new Response(JSON.stringify({ error: "Sessão inválida" }), { status: 401, headers: { "Content-Type": "application/json" } });
+
+    // This Edge Function uses the service-role key for reads and writes.
+    // Require an active global administrator before processing any report type.
+    const profileResponse = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=role,status&limit=1`,
+      { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+    );
+    if (!profileResponse.ok) {
+      return new Response(JSON.stringify({ error: "Não foi possível validar as permissões do administrador." }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+    const profiles = await profileResponse.json();
+    if (!Array.isArray(profiles) || profiles.length !== 1 || profiles[0]?.role !== "admin" || profiles[0]?.status !== "Ativo") {
+      return new Response(JSON.stringify({ error: "Apenas um administrador ativo pode importar relatórios." }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
 
     const url = new URL(req.url);
     const requestedType = url.searchParams.get("type") || "status";
@@ -254,58 +270,15 @@ Deno.serve(async (req) => {
     }
 
     if (type === "status") {
-      const normalizeIdentity = (value: string) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleUpperCase("pt-PT").replace(/[^A-Z0-9]+/g, " ").trim();
-      const normalizePhone = (value: string) => String(value || "").replace(/\D/g, "");
-      const isOrganizationRow = (r: any) => {
-        const name = normalizeIdentity(r["Nome do motorista"] || "");
-        const organization = normalizeIdentity(r["Nome da organização"] || "");
-        return Boolean(name && organization && name === organization);
-      };
+      const { isOrganizationRow, isEligibleUberDriverRow, analyzeUberStatusMatches } = await import("./status-import-helpers.ts");
       const organizationRowsSkipped = rows.filter(isOrganizationRow).length;
       const driverRows = rows.filter((r: any) => !isOrganizationRow(r));
       if (url.searchParams.get("dry_run") === "true") {
-        const eligibleRows = driverRows.filter((r: any) =>
-          String(r["UUID do motorista"] || "").trim() &&
-          ["ACTIVE", "ACCEPTED"].includes(String(r["Estado"] || "").trim().toUpperCase())
-        );
+        const eligibleRows = driverRows.filter(isEligibleUberDriverRow);
         const skippedRows = driverRows.length - eligibleRows.length;
-        const seenUuids = new Set<string>();
-        const seenEmails = new Map<string, string>();
-        const seenPhones = new Map<string, string>();
-        const matchedDriverIds = new Set<string>();
-        let duplicateUuidRows = 0, matchedExisting = 0, wouldCreate = 0, ambiguousMatches = 0;
         const existingDrivers = await getRestRows("drivers?select=id,email,phone,uber_driver_uuid&limit=1000");
-        for (const row of eligibleRows as any[]) {
-          const uuid = String(row["UUID do motorista"] || "").trim();
-          if (seenUuids.has(uuid)) duplicateUuidRows++;
-          seenUuids.add(uuid);
-          const email = String(row["E-mail do motorista"] || "").trim().toLowerCase();
-          const phone = normalizePhone(row["Telemóvel"] || "");
-          if (email && seenEmails.has(email) && seenEmails.get(email) !== uuid) ambiguousMatches++;
-          if (phone && seenPhones.has(phone) && seenPhones.get(phone) !== uuid) ambiguousMatches++;
-          if (email) seenEmails.set(email, uuid);
-          if (phone) seenPhones.set(phone, uuid);
-          const candidates = (existingDrivers as any[]).filter(driver =>
-            (uuid && driver.uber_driver_uuid === uuid) ||
-            (email && String(driver.email || "").trim().toLowerCase() === email) ||
-            (phone && normalizePhone(driver.phone || "") === phone)
-          );
-          const candidateIds = new Set(candidates.map(driver => String(driver.id)));
-          // A UUID match does not make conflicting email/phone matches safe.
-          // Also prevent two distinct report rows from claiming the same internal driver.
-          if (candidateIds.size > 1) {
-            ambiguousMatches++;
-          } else if (candidateIds.size === 1) {
-            const matchedId = Array.from(candidateIds)[0];
-            if (matchedDriverIds.has(matchedId)) ambiguousMatches++;
-            else {
-              matchedDriverIds.add(matchedId);
-              matchedExisting++;
-            }
-          } else {
-            wouldCreate++;
-          }
-        }
+        const matchAnalysis = analyzeUberStatusMatches(eligibleRows, existingDrivers as any[]);
+        const { matchedExisting, wouldCreate, ambiguousMatches, duplicateUuidRows } = matchAnalysis;
         return new Response(JSON.stringify({
           ok: true, type, dry_run: true, rows: rows.length,
           result: {
@@ -322,49 +295,21 @@ Deno.serve(async (req) => {
       }
       // Enforce the same safety checks on the server, not only in the UI.
       // Authenticated clients must not be able to bypass the preview/confirmation guard.
-      const eligibleForImport = driverRows.filter((r: any) =>
-        String(r["UUID do motorista"] || "").trim() &&
-        ["ACTIVE", "ACCEPTED"].includes(String(r["Estado"] || "").trim().toUpperCase())
-      );
+      const eligibleForImport = driverRows.filter(isEligibleUberDriverRow);
       const existingForImport = await getRestRows("drivers?select=id,email,phone,uber_driver_uuid&limit=1000");
-      const seenImportUuids = new Set<string>();
-      const seenImportEmails = new Map<string, string>();
-      const seenImportPhones = new Map<string, string>();
-      const seenImportDriverIds = new Set<string>();
-      let importDuplicateUuidRows = 0;
-      let importAmbiguousMatches = 0;
-      for (const row of eligibleForImport as any[]) {
-        const uuid = String(row["UUID do motorista"] || "").trim();
-        if (seenImportUuids.has(uuid)) importDuplicateUuidRows++;
-        seenImportUuids.add(uuid);
-        const email = String(row["E-mail do motorista"] || "").trim().toLowerCase();
-        const phone = normalizePhone(row["Telemóvel"] || "");
-        if (email && seenImportEmails.has(email) && seenImportEmails.get(email) !== uuid) importAmbiguousMatches++;
-        if (phone && seenImportPhones.has(phone) && seenImportPhones.get(phone) !== uuid) importAmbiguousMatches++;
-        if (email) seenImportEmails.set(email, uuid);
-        if (phone) seenImportPhones.set(phone, uuid);
-        const candidates = (existingForImport as any[]).filter(driver =>
-          (uuid && driver.uber_driver_uuid === uuid) ||
-          (email && String(driver.email || "").trim().toLowerCase() === email) ||
-          (phone && normalizePhone(driver.phone || "") === phone)
-        );
-        const candidateIds = new Set(candidates.map(driver => String(driver.id)));
-        if (candidateIds.size > 1) {
-          importAmbiguousMatches++;
-        } else if (candidateIds.size === 1) {
-          const matchedId = Array.from(candidateIds)[0];
-          if (seenImportDriverIds.has(matchedId)) importAmbiguousMatches++;
-          else seenImportDriverIds.add(matchedId);
-        }
-      }
+      const importMatchAnalysis = analyzeUberStatusMatches(eligibleForImport, existingForImport as any[]);
+      const importDuplicateUuidRows = importMatchAnalysis.duplicateUuidRows;
+      const importAmbiguousMatches = importMatchAnalysis.ambiguousMatches;
       if (importAmbiguousMatches > 0 || importDuplicateUuidRows > 0) {
         throw new Error("Importação bloqueada no servidor: " + importAmbiguousMatches +
           " correspondências ambíguas e " + importDuplicateUuidRows +
           " linhas com UUID repetido. Reveja o CSV e corrija os conflitos antes de voltar a tentar.");
       }
-      const normalized = driverRows.map(r => ({
-        uber_driver_uuid: r["UUID do motorista"],
-        status: r["Estado"],
+      // Send only rows that passed the exact same eligibility checks as the preview.
+      // Non-active Uber states remain untouched in Fleet and are counted as skipped.
+      const normalized = eligibleForImport.map(r => ({
+        uber_driver_uuid: String(r["UUID do motorista"] || "").trim(),
+        status: String(r["Estado"] || "").trim().toUpperCase(),
         realtime_status: r["Tempo real"],
         full_name: r["Nome do motorista"],
         email: r["E-mail do motorista"],
@@ -375,9 +320,14 @@ Deno.serve(async (req) => {
       }));
       const result = await rpc("sync_uber_driver_status", { p_rows: normalized });
       return new Response(JSON.stringify({
-        ok: true, type, rows: driverRows.length,
-        result: { ...(result || {}), organizationRowsSkipped }
-      }), { headers: { "Content-Type": "application/json" } });
+        ok: true, type, rows: eligibleForImport.length,
+        result: {
+          ...(result || {}),
+          organizationRowsSkipped,
+          eligibleRows: eligibleForImport.length,
+          skippedRows: driverRows.length - eligibleForImport.length
+        }
+      }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     }
 
     if (type === "activity") {

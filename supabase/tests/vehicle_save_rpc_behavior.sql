@@ -87,7 +87,9 @@ BEGIN
   END IF;
 
   INSERT INTO public.company_memberships (company_id, profile_id, role, status)
-  VALUES (company_a, '10000000-0000-0000-0000-000000000001', 'company_admin', 'Ativo');
+  VALUES (company_a, '10000000-0000-0000-0000-000000000001', 'company_admin', 'Ativo')
+  ON CONFLICT (company_id, profile_id)
+  DO UPDATE SET role = excluded.role, status = excluded.status;
   PERFORM set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 
   result := public.s2t_save_vehicle_with_assignments(

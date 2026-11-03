@@ -1938,7 +1938,7 @@ function modalFields(type, id) {
       field("name", "Nome completo", driver.name),
       field("email", "Email", driver.email, "email"),
       field("phone", "Telemóvel", driver.phone, "tel"),
-      selectField("status", "Estado", ["Ativo", "Inativo"], driver.status || "Ativo"), setupPassword
+      selectField("status", "Estado", driver.status === "Inativo" ? ["Inativo", "Ativo"] : ["Ativo"], driver.status || "Ativo"), setupPassword
     ].join("");
   }
 
@@ -1966,7 +1966,7 @@ function modalFields(type, id) {
       field("model", "Modelo", vehicle.model),
       field("year", "Ano", vehicle.year, "number"),
       field("vin", "VIN", vehicle.vin, "text", false, "", false),
-      selectField("status", "Estado", ["Ativo", "Manutenção", "Inativo"], vehicle.status || "Ativo"),
+      selectField("status", "Estado", vehicle.status === "Inativo" ? ["Inativo", "Ativo", "Manutenção"] : ["Ativo", "Manutenção"], vehicle.status || "Ativo"),
       checkList("driverIds", "Motoristas atribuídos", state.drivers, vehicle.driverIds || [])
     ].join("");
   }
@@ -2311,6 +2311,12 @@ async function saveCompany(values, id) {
 }
 
 async function saveDriver(values, id) {
+  if (!["Ativo", "Inativo"].includes(values.status)) throw new Error("Estado do motorista inválido.");
+  const existingDriver = id ? state.drivers.find(driver => driver.id === id) : null;
+  if (!id && values.status !== "Ativo") throw new Error("Um motorista novo tem de ser criado ativo.");
+  if (existingDriver?.status === "Ativo" && values.status === "Inativo") {
+    throw new Error("Use a ação Desativar para fechar as associações e preservar o histórico.");
+  }
   const payload = {
     full_name: values.name,
     email: values.email,
@@ -2335,6 +2341,11 @@ async function saveDriver(values, id) {
 }
 
 async function saveVehicle(values, driverIds, id) {
+  if (!["Ativo", "Manutenção", "Inativo"].includes(values.status)) throw new Error("Estado da viatura inválido.");
+  const existingVehicle = id ? state.vehicles.find(vehicle => vehicle.id === id) : null;
+  if (existingVehicle && existingVehicle.status !== "Inativo" && values.status === "Inativo") {
+    throw new Error("Use a ação Arquivar para encerrar as associações e preservar o histórico.");
+  }
   const payload = {
     plate: values.plate.toUpperCase(),
     brand: values.brand,

@@ -241,6 +241,8 @@ SELECT set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000099
 DO $global_admin$
 DECLARE
   denied boolean := false;
+  company_a uuid := (SELECT id FROM public.companies WHERE slug='simplicity2take');
+  company_b uuid := 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 BEGIN
   UPDATE public.drivers
   SET profile_id='10000000-0000-0000-0000-000000000003'
@@ -250,6 +252,57 @@ BEGIN
     WHERE id='20000000-0000-0000-0000-000000000001'
       AND profile_id='10000000-0000-0000-0000-000000000003'
   ) THEN RAISE EXCEPTION 'Global admin could not correct driver profile linkage'; END IF;
+
+  -- An active assignment must not be reclassified by changing its driver's owner.
+  denied := false;
+  BEGIN
+    UPDATE public.drivers SET company_id=company_b
+    WHERE id='20000000-0000-0000-0000-000000000002';
+  EXCEPTION WHEN check_violation THEN denied := true;
+  END;
+  IF NOT denied THEN RAISE EXCEPTION 'Global admin transferred a driver with active assignment history'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.drivers WHERE id='20000000-0000-0000-0000-000000000002' AND company_id=company_a
+  ) THEN RAISE EXCEPTION 'Rejected driver ownership transfer changed company_id'; END IF;
+
+  denied := false;
+  BEGIN
+    UPDATE public.vehicles SET company_id=company_b
+    WHERE id='30000000-0000-0000-0000-000000000002';
+  EXCEPTION WHEN check_violation THEN denied := true;
+  END;
+  IF NOT denied THEN RAISE EXCEPTION 'Global admin transferred a vehicle with active assignment history'; END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.vehicles WHERE id='30000000-0000-0000-0000-000000000002' AND company_id=company_a
+  ) THEN RAISE EXCEPTION 'Rejected vehicle ownership transfer changed company_id'; END IF;
+
+  -- Closed history is protected too, so current ownership cannot rewrite old reports.
+  denied := false;
+  BEGIN
+    UPDATE public.drivers SET company_id=company_b
+    WHERE id='20000000-0000-0000-0000-000000000004';
+  EXCEPTION WHEN check_violation THEN denied := true;
+  END;
+  IF NOT denied THEN RAISE EXCEPTION 'Global admin transferred a driver with closed assignment history'; END IF;
+
+  denied := false;
+  BEGIN
+    UPDATE public.vehicles SET company_id=company_b
+    WHERE id='30000000-0000-0000-0000-000000000004';
+  EXCEPTION WHEN check_violation THEN denied := true;
+  END;
+  IF NOT denied THEN RAISE EXCEPTION 'Global admin transferred a vehicle with closed assignment history'; END IF;
+
+  -- Unassigned rows may still be corrected by a global administrator.
+  UPDATE public.drivers SET company_id=company_b
+  WHERE id='20000000-0000-0000-0000-000000000003';
+  UPDATE public.vehicles SET company_id=company_b
+  WHERE id='30000000-0000-0000-0000-000000000003';
+  IF NOT EXISTS (
+    SELECT 1 FROM public.drivers WHERE id='20000000-0000-0000-0000-000000000003' AND company_id=company_b
+  ) OR NOT EXISTS (
+    SELECT 1 FROM public.vehicles WHERE id='30000000-0000-0000-0000-000000000003' AND company_id=company_b
+  ) THEN RAISE EXCEPTION 'Global admin could not correct unassigned ownership'; END IF;
 
   BEGIN
     DELETE FROM public.vehicle_assignments

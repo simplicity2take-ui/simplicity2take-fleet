@@ -8,14 +8,11 @@ Reviewed draft migrations:
 
 ## Findings
 
-### Blocker 1 — ownership changes can invalidate existing assignments
+### Ownership changes and assignment history — guarded in PR #37
 
-The assignment trigger checks company IDs when a row in `vehicle_assignments` is inserted or when its `driver_id`/`vehicle_id` changes. It does not run when `drivers.company_id` or `vehicles.company_id` changes. Changing the company of an already-assigned driver or vehicle could therefore leave a cross-company assignment behind.
+The initial review identified that changing `drivers.company_id` or `vehicles.company_id` could reclassify existing assignments. PR #37 adds statement-level assignment-table mutexes, acquired before fleet row updates, and rejects ownership transfers for any driver or vehicle with active or closed assignment history. Global administrators can still correct unassigned rows. The disposable PostgreSQL CI covers active-history rejection, closed-history rejection, unassigned corrections, and the concurrent assignment/transfer race.
 
-Required before multi-company use:
-- Add a safe ownership-transfer workflow that closes/reconciles affected assignments before changing ownership, or a reviewed database-enforced rule that validates affected assignments.
-- Test company changes for drivers and vehicles with active and historical assignments.
-- Define historical ownership semantics explicitly; joining old records to current ownership can misrepresent historical reports.
+Transfers with history remain intentionally fail-closed. A future controlled transfer feature must define historical ownership semantics and close or reconcile assignments before it can replace this guard. Staging and production migration application remain separate release steps.
 
 ### Blocker 2 — NULL assignment IDs need schema-level protection
 

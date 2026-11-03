@@ -5,7 +5,7 @@ This is a source-review checklist only. It does not authorize migration, deploym
 ## P0 — Must be resolved before any external company account is enabled
 
 - [ ] **Assignment identifiers fail closed.** Verify `vehicle_assignments.driver_id` and `vehicle_id` are both NOT NULL in the actual schema. If either can be NULL, reject NULL in a database constraint/trigger. Do not infer nullability from application types.
-- [ ] **Ownership changes preserve assignment integrity.** The current trigger only fires when `vehicle_assignments.driver_id` or `vehicle_id` changes. Add a reviewed database-enforced rule or controlled transfer workflow for updates to `drivers.company_id` and `vehicles.company_id`.
+- [x] **Ownership changes preserve assignment integrity (PR #37).** Company ownership updates take the assignment-table mutex before row updates; transfers are rejected when a driver or vehicle has any active or historical assignment. CI covers active history, closed history, unassigned corrections, and the assignment/transfer race.
 - [ ] **All tenant data is scoped.** Inventory and test vehicles, drivers, assignments, documents, document viewers, trips/activity, Uber/Bolt reports, CarTrack records, recruitment, payment/order records, audit records, exports and server functions.
 - [ ] **Server-side authorization is authoritative.** No client-supplied company ID, email, or role can grant access. Edge Functions using service-role credentials must check active membership/role and tenant scope explicitly.
 - [ ] **Sync is atomic and retry-safe.** Apply the normalized full payload in one transaction; test rollback, duplicate request/retry, and concurrent runs. Keep the write gate closed until tests pass.
@@ -30,6 +30,7 @@ This is a source-review checklist only. It does not authorize migration, deploym
 
 ## Current assessment
 
-- Static review: **BLOCKED** on actual schema nullability, ownership-transfer integrity, full tenant coverage, and transactional sync proof.
-- Remote migration test: **NOT RUN**.
+- Ownership transfer with assignment history: guarded in PR #37; disposable PostgreSQL behavior and concurrency tests are being added.
+- Static review remains **BLOCKED** on actual schema nullability, full tenant coverage, company-admin provisioning, and any production API transaction proof.
+- Hosted Supabase migration test: **NOT RUN**. Repository CI uses a disposable PostgreSQL database only.
 - Production mutation/deployment: **NOT PERFORMED**.

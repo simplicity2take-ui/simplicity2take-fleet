@@ -7,6 +7,8 @@ archive_log="$work_dir/archive.log"
 assignment_log="$work_dir/assignment.log"
 deactivate_log="$work_dir/deactivate.log"
 reassign_log="$work_dir/reassign.log"
+ownership_assignment_log="$work_dir/ownership-assignment.log"
+ownership_transfer_log="$work_dir/ownership-transfer.log"
 trap 'rm -rf "$work_dir"' EXIT
 
 wait_for_lock_waiter() {
@@ -99,4 +101,54 @@ if [[ "$driver_status" != "Inativo" || "$driver_active_count" != "0" ]]; then
   exit 1
 fi
 
-echo "PASS: archive/assignment and driver deactivation/assignment races are serialized"
+
+# Ownership transfer and assignment creation share the table mutex before parent row locks.
+ownership_driver_id="20000000-0000-0000-0000-000000000008"
+ownership_vehicle_id="30000000-0000-0000-0000-000000000008"
+company_a_id="$(psql "$DATABASE_URL" -Atq -v ON_ERROR_STOP=1 -c "SELECT id FROM public.companies WHERE slug='simplicity2take'")"
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<SQL
+INSERT INTO public.drivers (id,company_id,full_name,email,phone,status)
+VALUES ('$ownership_driver_id','$company_a_id','Motorista concorrente','race@example.test','910000008','Ativo')
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO public.vehicles (id,company_id,plate,brand,model,vehicle_year,status)
+VALUES ('$ownership_vehicle_id','$company_a_id','AA-08-AA','Renault','Megane',2024,'Ativo')
+ON CONFLICT (id) DO NOTHING;
+SQL
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 >"$ownership_assignment_log" 2>&1 <<SQL &
+SET ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000001',false);
+BEGIN;
+RESET ROLE;
+LOCK TABLE public.vehicle_assignments IN SHARE ROW EXCLUSIVE MODE;
+SELECT pg_sleep(1.5);
+SET ROLE authenticated;
+SELECT public.s2t_replace_vehicle_assignments('$ownership_vehicle_id', ARRAY['$ownership_driver_id']::uuid[]);
+COMMIT;
+SQL
+ownership_assignment_pid=$!
+sleep 0.2
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 >"$ownership_transfer_log" 2>&1 <<SQL &
+SET ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','10000000-0000-0000-0000-000000000099',false);
+UPDATE public.drivers SET company_id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' WHERE id='$ownership_driver_id';
+SQL
+ownership_transfer_pid=$!
+wait_for_lock_waiter
+wait "$ownership_assignment_pid" || { cat "$ownership_assignment_log"; exit 1; }
+set +e
+wait "$ownership_transfer_pid"
+ownership_transfer_rc=$?
+set -e
+if [[ "$ownership_transfer_rc" -eq 0 ]] || ! grep -Eiq "Transferência recusada: o motorista tem histórico" "$ownership_transfer_log"; then
+  cat "$ownership_transfer_log"
+  echo "Ownership transfer race reclassified a driver with new assignment history"
+  exit 1
+fi
+ownership_company_id="$(psql "$DATABASE_URL" -Atq -v ON_ERROR_STOP=1 -c "SELECT company_id FROM public.drivers WHERE id='$ownership_driver_id'")"
+ownership_assignment_count="$(psql "$DATABASE_URL" -Atq -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.vehicle_assignments WHERE driver_id='$ownership_driver_id' AND vehicle_id='$ownership_vehicle_id'")"
+if [[ "$ownership_company_id" != "$company_a_id" || "$ownership_assignment_count" != "1" ]]; then
+  echo "Ownership race changed driver ownership or lost assignment history"
+  exit 1
+fi
+
+echo "PASS: assignment, deactivation, archive and ownership-transfer races are serialized"

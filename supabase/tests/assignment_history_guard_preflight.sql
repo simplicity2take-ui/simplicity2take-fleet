@@ -6,6 +6,8 @@ do $test$
 declare
   v_trigger_definition text;
   v_function_definition text;
+  v_transfer_mutex_definition text;
+  v_transfer_trigger_definition text;
   v_delete_policy_count integer;
 begin
   select pg_get_triggerdef(t.oid)
@@ -29,6 +31,50 @@ begin
   if position('new.profile_id' in v_function_definition) = 0
      or position('s2t_is_admin' in v_function_definition) = 0 then
     raise exception 'FAIL: trigger function does not enforce global-admin-only profile_id changes';
+  end if;
+
+  select pg_get_functiondef('public.s2t_lock_assignment_history_for_ownership_change()'::regprocedure)
+    into v_transfer_mutex_definition;
+
+  if position('share row exclusive' in lower(v_transfer_mutex_definition)) = 0 then
+    raise exception 'FAIL: ownership change does not share the assignment writer mutex';
+  end if;
+
+  select pg_get_triggerdef(t.oid)
+    into v_transfer_trigger_definition
+  from pg_trigger t
+  join pg_class c on c.oid = t.tgrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relname = 'drivers'
+    and t.tgname = 's2t_drivers_company_transfer_mutex'
+    and not t.tgisinternal;
+
+  if v_transfer_trigger_definition is null
+     or position('COMPANY_ID' in upper(v_transfer_trigger_definition)) = 0
+     or position('FOR EACH STATEMENT' in upper(v_transfer_trigger_definition)) = 0 then
+    raise exception 'FAIL: driver ownership mutex must run before row updates';
+  end if;
+
+  select pg_get_triggerdef(t.oid)
+    into v_transfer_trigger_definition
+  from pg_trigger t
+  join pg_class c on c.oid = t.tgrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relname = 'vehicles'
+    and t.tgname = 's2t_vehicles_company_transfer_mutex'
+    and not t.tgisinternal;
+
+  if v_transfer_trigger_definition is null
+     or position('COMPANY_ID' in upper(v_transfer_trigger_definition)) = 0
+     or position('FOR EACH STATEMENT' in upper(v_transfer_trigger_definition)) = 0 then
+    raise exception 'FAIL: vehicle ownership mutex must run before row updates';
+  end if;
+
+  if position('vehicle_assignments' in v_function_definition) = 0
+     or position('23514' in v_function_definition) = 0 then
+    raise exception 'FAIL: ownership guard does not reject transfers that reinterpret assignment history';
   end if;
 
   select count(*)
@@ -149,6 +195,6 @@ begin
     raise exception 'FAIL: vehicle archive RPC missing or has unsafe execution grants';
   end if;
 
-  raise notice 'PASS: profile guard, assignment delete prohibition and pinned definer RPC grants and write restrictions are present';
+  raise notice 'PASS: profile and ownership guards, assignment deletion prohibition, and pinned definer RPC grants are present';
 end;
 $test$;

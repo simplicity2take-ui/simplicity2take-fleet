@@ -2,21 +2,64 @@
 -- Depends on company_fleet_foundation, company_memberships_and_integrity and company_fleet_rls.
 -- This migration is exercised against a disposable PostgreSQL database in CI.
 -- Protects driver account linkage and prevents API-role deletion of assignment history.
+-- Company ownership changes serialize with every assignment writer before
+-- any driver/vehicle row lock is taken. This prevents transfer/assignment races.
+create or replace function public.s2t_lock_assignment_history_for_ownership_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+begin
+  lock table public.vehicle_assignments in share row exclusive mode;
+  return null;
+end;
+$function$;
+
+drop trigger if exists s2t_drivers_company_transfer_mutex on public.drivers;
+create trigger s2t_drivers_company_transfer_mutex
+before update of company_id on public.drivers
+for each statement execute function public.s2t_lock_assignment_history_for_ownership_change();
+
+drop trigger if exists s2t_vehicles_company_transfer_mutex on public.vehicles;
+create trigger s2t_vehicles_company_transfer_mutex
+before update of company_id on public.vehicles
+for each statement execute function public.s2t_lock_assignment_history_for_ownership_change();
+
+-- Ownership transfers that would reinterpret assignment history fail closed.
+-- Unassigned entities remain correctable by a global administrator.
 create or replace function public.s2t_guard_company_ownership_change()
 returns trigger language plpgsql security definer set search_path = ''
 as $function$
 begin
-  if new.company_id is distinct from old.company_id
-     and not public.s2t_is_admin() then
-    raise exception 'Alteração da empresa proprietária reservada ao administrador global'
-      using errcode = '42501';
-  end if;
-  if tg_table_name = 'drivers' then
-    if new.profile_id is distinct from old.profile_id
-       and not public.s2t_is_admin() then
-      raise exception 'Alteração da conta associada ao motorista reservada ao administrador global'
+  if new.company_id is distinct from old.company_id then
+    if not public.s2t_is_admin() then
+      raise exception 'Alteração da empresa proprietária reservada ao administrador global'
         using errcode = '42501';
     end if;
+
+    if tg_table_name = 'drivers' then
+      if exists (
+        select 1 from public.vehicle_assignments va where va.driver_id = old.id
+      ) then
+        raise exception 'Transferência recusada: o motorista tem histórico de atribuições'
+          using errcode = '23514';
+      end if;
+    elsif tg_table_name = 'vehicles' then
+      if exists (
+        select 1 from public.vehicle_assignments va where va.vehicle_id = old.id
+      ) then
+        raise exception 'Transferência recusada: a viatura tem histórico de atribuições'
+          using errcode = '23514';
+      end if;
+    end if;
+  end if;
+
+  if tg_table_name = 'drivers'
+     and new.profile_id is distinct from old.profile_id
+     and not public.s2t_is_admin() then
+    raise exception 'Alteração da conta associada ao motorista reservada ao administrador global'
+      using errcode = '42501';
   end if;
   return new;
 end;

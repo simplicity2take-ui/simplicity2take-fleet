@@ -191,6 +191,11 @@ function currentUser() {
   return state.users.find(user => user.id === state.sessionUserId);
 }
 
+function isFleetManager() {
+  const user = currentUser();
+  return user?.role === "admin" || state.currentCompanyRole === "company_admin";
+}
+
 function valueOf(row, ...keys) {
   for (const key of keys) if (row?.[key] !== undefined && row?.[key] !== null) return row[key];
   return "";
@@ -218,13 +223,64 @@ async function loadBackendData() {
   }
 
   if (currentUser()?.role !== "admin" && selectedMembership) {
-    // Company members receive only the document data permitted by document RLS.
-    // Do not even request fleet, platform, application or CarTrack tables until
-    // those tables have complete company-scoped policies.
-    const documentsResult = await supabaseClient.from("documents").select("id, company_id, name, document_type, document_number, policy_number, issue_date, expiry_date, observations, original_file_name, mime_type, vehicle_id, driver_id, uploaded_by");
-    if (documentsResult.error) throw documentsResult.error;
-    state.drivers = [];
-    state.vehicles = [];
+    const companyAdmin = selectedMembership.role === "company_admin";
+    const documentsQuery = supabaseClient
+      .from("documents")
+      .select("id, company_id, name, document_type, document_number, policy_number, issue_date, expiry_date, observations, original_file_name, mime_type, drive_file_id, drive_web_view_link, vehicle_id, driver_id, uploaded_by");
+    const [documentsResult, driversResult, vehiclesResult, assignmentsResult, viewersResult] = await Promise.all([
+      documentsQuery,
+      companyAdmin
+        ? supabaseClient.from("drivers").select("*").eq("company_id", state.currentCompanyId)
+        : Promise.resolve({ data: [], error: null }),
+      companyAdmin
+        ? supabaseClient.from("vehicles").select("*").eq("company_id", state.currentCompanyId)
+        : Promise.resolve({ data: [], error: null }),
+      companyAdmin
+        ? supabaseClient.from("vehicle_assignments").select("*")
+        : Promise.resolve({ data: [], error: null }),
+      companyAdmin
+        ? supabaseClient.from("document_viewers").select("*")
+        : Promise.resolve({ data: [], error: null })
+    ]);
+    const scopedError = [documentsResult, driversResult, vehiclesResult, assignmentsResult, viewersResult].find(result => result.error)?.error;
+    if (scopedError) throw scopedError;
+
+    const assignments = assignmentsResult.data || [];
+    const viewers = viewersResult.data || [];
+    state.drivers = (driversResult.data || []).map(row => ({
+      id: row.id,
+      profileId: valueOf(row, "profile_id", "user_id"),
+      name: valueOf(row, "full_name", "name"),
+      email: valueOf(row, "email"),
+      phone: valueOf(row, "phone"),
+      status: valueOf(row, "status") || "Ativo",
+      boltDriverUuid: valueOf(row, "bolt_driver_uuid"),
+      boltPartnerUuid: valueOf(row, "bolt_partner_uuid"),
+      boltLastSyncedAt: valueOf(row, "bolt_last_synced_at"),
+      uberDriverUuid: valueOf(row, "uber_driver_uuid"),
+      uberStatus: valueOf(row, "uber_status"),
+      uberRealtimeStatus: valueOf(row, "uber_realtime_status"),
+      uberLastOnlineAt: valueOf(row, "uber_last_online_at"),
+      uberLastSyncedAt: valueOf(row, "uber_last_synced_at"),
+      raw: row
+    }));
+    state.vehicles = (vehiclesResult.data || []).map(row => ({
+      id: row.id,
+      plate: valueOf(row, "plate", "registration_plate", "license_plate"),
+      brand: valueOf(row, "brand", "make"),
+      model: valueOf(row, "model"),
+      year: valueOf(row, "vehicle_year", "year"),
+      vin: valueOf(row, "vin"),
+      qrToken: valueOf(row, "qr_token", "qrToken"),
+      status: valueOf(row, "status") || "Ativo",
+      boltVehicleUuid: valueOf(row, "bolt_vehicle_uuid"),
+      boltLastSyncedAt: valueOf(row, "bolt_last_synced_at"),
+      uberVehicleUuid: valueOf(row, "uber_vehicle_uuid"),
+      uberVehicleEncryptedUuid: valueOf(row, "uber_vehicle_encrypted_uuid"),
+      uberLastSyncedAt: valueOf(row, "uber_last_synced_at"),
+      driverIds: assignments.filter(item => item.vehicle_id === row.id && assignmentIsActive(item)).map(item => item.driver_id),
+      raw: row
+    }));
     state.activityEvents = [];
     state.tripRecords = [];
     state.cartrackVehicles = [];
@@ -242,9 +298,11 @@ async function loadBackendData() {
       observations: valueOf(row, "observations", "notes"),
       fileName: valueOf(row, "original_file_name", "file_name", "name"),
       fileType: valueOf(row, "mime_type", "file_type"),
+      driveFileId: valueOf(row, "drive_file_id", "google_drive_file_id"),
+      driveUrl: valueOf(row, "drive_web_view_link", "drive_url", "web_view_link", "file_url"),
       vehicleId: valueOf(row, "vehicle_id"),
       driverId: valueOf(row, "driver_id"),
-      viewerDriverIds: [],
+      viewerDriverIds: viewers.filter(item => item.document_id === row.id).map(item => item.driver_id),
       raw: row
     }));
     return;
@@ -805,7 +863,7 @@ async function startAuthenticatedSession(user) {
   state.profile = { ...profile, email: profile.email || user.email };
   state.sessionUserId = user.id;
   await loadBackendData();
-  state.activeView = profile.role === "admin" ? "dashboard" : state.currentCompanyRole ? "documents" : "vehicles";
+  state.activeView = profile.role === "admin" ? "dashboard" : state.currentCompanyRole === "company_admin" ? "vehicles" : state.currentCompanyRole ? "documents" : "vehicles";
   await openRequestedVehicle();
   selectors.loginScreen.classList.add("hidden");
   selectors.appShell.classList.remove("hidden");
@@ -827,6 +885,9 @@ async function logout() {
 
 function navigationForUser() {
   if (currentUser().role === "admin") return navByRole.admin;
+  if (state.currentCompanyRole === "company_admin") {
+    return [["vehicles", "Viaturas", "VE"], ["drivers", "Motoristas", "MO"], ["documents", "Documentos da Empresa", "DO"], ["account", "Minha Conta", "EU"]];
+  }
   if (state.currentCompanyRole) return [["documents", "Documentos da Empresa", "DO"], ["account", "Minha Conta", "EU"]];
   return navByRole.driver;
 }
@@ -861,7 +922,7 @@ function renderCompanySwitcher() {
 }
 function renderApp() {
   const user = currentUser();
-  selectors.sessionRole.textContent = user.role === "admin" ? "Administrador" : state.currentCompanyRole ? "Utilizador da Empresa" : "Motorista";
+  selectors.sessionRole.textContent = user.role === "admin" ? "Administrador global" : state.currentCompanyRole === "company_admin" ? "Administrador da empresa" : state.currentCompanyRole ? "Utilizador da empresa" : "Motorista";
   selectors.sessionName.textContent = user.name;
   renderCompanySwitcher();
   renderNav();
@@ -1022,7 +1083,7 @@ function vehicleDocumentsPanel(vehicle, compact = false) {
 }
 
 function renderVehicles() {
-  const admin = currentUser().role === "admin";
+  const admin = isFleetManager();
   const vehicles = admin ? state.vehicles : driverVehicles();
   const requested = vehicles.find(vehicle => vehicle.id === state.requestedVehicleId);
   selectors.pageTitle.textContent = admin ? "Veículos" : "Meus Veículos";
@@ -1107,7 +1168,7 @@ function vehicleRow(vehicle, admin) {
 function renderDrivers() {
   selectors.pageTitle.textContent = "Motoristas";
   selectors.content.innerHTML = `
-    ${heading("Gestão de motoristas", "Criar, editar, eliminar e definir palavras-passe. O administrador entrega a palavra-passe diretamente ao motorista.", `<button class="primary-button" type="button" data-open="driver">Criar motorista</button>`)}
+    ${heading("Gestão de motoristas", "Criar e gerir os motoristas da empresa selecionada. A palavra-passe inicial é entregue diretamente ao motorista.", `<button class="primary-button" type="button" data-open="driver">Criar motorista</button>`)}
     <div class="table-wrap">
       <table>
         <thead><tr><th>Nome completo</th><th>Email</th><th>Telemóvel</th><th>Estado</th><th>Uber</th><th>Documentos</th><th>Ações</th></tr></thead>
@@ -1119,6 +1180,7 @@ function renderDrivers() {
 
 function driverRow(driver) {
   const docs = state.documents.filter(doc => doc.driverId === driver.id);
+  const globalAdmin = currentUser().role === "admin";
   return `
     <tr>
       <td><strong>${escapeHtml(driver.name)}</strong></td>
@@ -1129,7 +1191,7 @@ function driverRow(driver) {
         ? `<span class="tag ${activityStateClass(driver.uberRealtimeStatus || driver.uberStatus)}">${escapeHtml(activityStateLabel(driver.uberRealtimeStatus || driver.uberStatus))}</span>`
         : '<span class="tag">Sem Uber</span>'}</td>
       <td><span class="tag">${docs.length} docs</span></td>
-      <td><div class="row-actions"><button class="mini-button" type="button" data-doc-driver="${escapeHtml(driver.id)}">Documento</button><button class="mini-button" type="button" data-edit-driver="${escapeHtml(driver.id)}">Editar</button><button class="mini-button" type="button" data-reset-password="${escapeHtml(driver.id)}">Definir passe</button><button class="danger-button" type="button" data-delete-driver="${escapeHtml(driver.id)}">Desativar</button></div></td>
+      <td><div class="row-actions">${globalAdmin ? `<button class="mini-button" type="button" data-doc-driver="${escapeHtml(driver.id)}">Documento</button>` : ""}<button class="mini-button" type="button" data-edit-driver="${escapeHtml(driver.id)}">Editar</button>${globalAdmin ? `<button class="mini-button" type="button" data-reset-password="${escapeHtml(driver.id)}">Definir passe</button>` : ""}<button class="danger-button" type="button" data-delete-driver="${escapeHtml(driver.id)}">Desativar</button></div></td>
     </tr>
   `;
 }
@@ -1880,7 +1942,7 @@ function renderAccount() {
 }
 
 function heading(title, copy, actions) {
-  return `<section class="section-heading"><div><p class="eyebrow">${currentUser().role === "admin" ? "Administrador" : "Motorista"}</p><h2>${escapeHtml(title)}</h2><p class="section-copy">${escapeHtml(copy)}</p></div><div class="button-row">${actions}</div></section>`;
+  return `<section class="section-heading"><div><p class="eyebrow">${currentUser().role === "admin" ? "Administrador global" : state.currentCompanyRole === "company_admin" ? "Administrador da empresa" : "Motorista"}</p><h2>${escapeHtml(title)}</h2><p class="section-copy">${escapeHtml(copy)}</p></div><div class="button-row">${actions}</div></section>`;
 }
 
 function emptyRow(message) {

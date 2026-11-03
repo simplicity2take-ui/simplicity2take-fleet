@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid } from "../bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -189,7 +189,7 @@ async function getBoltV2Collection(path: string, token: string, companyId: strin
       throw new Error("A Bolt v2 excedeu o limite de segurança de 5.000 registos.");
     }
     records.push(...page);
-    if (records.length >= totalRows) break;
+    if (records.length >= reportedTotal) break;
     if (page.length === 0) throw new Error("A Bolt v2 devolveu uma página vazia antes do fim; sincronização interrompida.");
   }
   if (totalRows === null || records.length !== totalRows) {

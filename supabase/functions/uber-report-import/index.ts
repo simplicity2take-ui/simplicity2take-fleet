@@ -11,7 +11,7 @@ import {
   parseCsv,
   rateValue,
   uberStatusTimestamp,
-  validatePeriodDates
+  validateRequiredPeriodDates
 } from "./uber-report-utils.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
     const periodStart = url.searchParams.get("period_start");
     const periodEnd = url.searchParams.get("period_end");
     if (type !== "status" && type !== "trip_activity") {
-      validatePeriodDates(periodStart, periodEnd);
+      validateRequiredPeriodDates(periodStart, periodEnd);
     }
     const rows = parseCsv(await req.text());
     if (!rows.length) throw new Error("CSV vazio ou sem linhas de dados.");

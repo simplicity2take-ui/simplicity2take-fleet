@@ -32,12 +32,12 @@ create trigger s2t_vehicles_company_ownership_guard
 before update of company_id on public.vehicles
 for each row execute function public.s2t_guard_company_ownership_change();
 
--- Assignment rows are operational history. API roles must not delete them,
--- including global admins. Correct rows by closing active_until and inserting
--- a replacement; exceptional retention belongs in a separately audited process.
-drop policy if exists "s2t assignments company admin delete"
-  on public.vehicle_assignments;
-revoke delete on table public.vehicle_assignments from public, anon, authenticated;
+-- Assignment rows are operational history. Only the authorized transactional RPCs
+-- may write them; API roles cannot delete or directly edit assignment intervals.
+drop policy if exists "s2t assignments company admin insert" on public.vehicle_assignments;
+drop policy if exists "s2t assignments company admin update" on public.vehicle_assignments;
+drop policy if exists "s2t assignments company admin delete" on public.vehicle_assignments;
+revoke insert, update, delete on table public.vehicle_assignments from public, anon, authenticated;
 
 -- Parent rows must not be hard-deleted either: their existing foreign keys use
 -- ON DELETE CASCADE and would otherwise erase assignment history indirectly.
@@ -162,7 +162,7 @@ create or replace function public.s2t_replace_vehicle_assignments(
 )
 returns jsonb
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $function$
 declare
@@ -190,7 +190,20 @@ begin
     order by requested.driver_id
   ) requested;
 
-  -- Serialize edits to this vehicle before reading or changing its assignments.
+  -- Verify access before taking a row lock, then lock and recheck state.
+  select v.company_id, v.status
+    into v_company_id, v_vehicle_status
+  from public.vehicles v
+  where v.id = p_vehicle_id;
+
+  if v_company_id is null then
+    raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
+  end if;
+  if not public.s2t_is_admin()
+     and not public.s2t_is_company_admin(v_company_id) then
+    raise exception 'Sem permissões para gerir as atribuições desta viatura' using errcode = '42501';
+  end if;
+
   select v.company_id, v.status
     into v_company_id, v_vehicle_status
   from public.vehicles v
@@ -200,14 +213,12 @@ begin
   if v_company_id is null then
     raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
   end if;
-
-  if coalesce(v_vehicle_status, 'Ativo') <> 'Ativo' then
-    raise exception 'Não é possível atribuir motoristas a uma viatura inativa ou arquivada' using errcode = '23514';
-  end if;
-
   if not public.s2t_is_admin()
      and not public.s2t_is_company_admin(v_company_id) then
     raise exception 'Sem permissões para gerir as atribuições desta viatura' using errcode = '42501';
+  end if;
+  if coalesce(v_vehicle_status, 'Ativo') <> 'Ativo' then
+    raise exception 'Não é possível atribuir motoristas a uma viatura inativa ou arquivada' using errcode = '23514';
   end if;
 
   select count(*) into v_requested_count
@@ -339,7 +350,7 @@ revoke all on function public.s2t_replace_vehicle_assignments(uuid, uuid[]) from
 grant execute on function public.s2t_replace_vehicle_assignments(uuid, uuid[]) to authenticated;
 
 comment on function public.s2t_replace_vehicle_assignments(uuid, uuid[]) is
-  'Atomically replaces active vehicle assignments, preserving completed history and enforcing company-admin authorization under RLS.';
+  'Atomically replaces active vehicle assignments, preserving completed history and checking company-admin authorization explicitly with a pinned search path.';
 
 
 -- Deactivate a driver without deleting their identity or assignment history.
@@ -349,7 +360,7 @@ comment on function public.s2t_replace_vehicle_assignments(uuid, uuid[]) is
 create or replace function public.s2t_deactivate_driver(p_driver_id uuid)
 returns jsonb
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $function$
 declare
@@ -366,7 +377,20 @@ begin
     pg_catalog.hashtextextended('s2t-driver:' || p_driver_id::text, 0)
   );
 
-  -- Lock all vehicles currently associated with this driver in stable order.
+  -- Reject unauthorized callers before locking any fleet rows.
+  select d.company_id, d.status
+    into v_company_id, v_driver_status
+  from public.drivers d
+  where d.id = p_driver_id;
+  if v_company_id is null then
+    raise exception 'Motorista não encontrado ou sem empresa associada' using errcode = 'P0002';
+  end if;
+  if not public.s2t_is_admin()
+     and not public.s2t_is_company_admin(v_company_id) then
+    raise exception 'Sem permissões para desativar este motorista' using errcode = '42501';
+  end if;
+
+  -- Lock vehicles in stable order, then lock and recheck the driver.
   perform v.id
   from public.vehicles v
   join public.vehicle_assignments va on va.vehicle_id = v.id
@@ -376,7 +400,6 @@ begin
   order by v.id
   for update of v;
 
-  -- Then lock the driver row, matching the assignment RPC lock order.
   select d.company_id, d.status
     into v_company_id, v_driver_status
   from public.drivers d
@@ -386,14 +409,12 @@ begin
   if v_company_id is null then
     raise exception 'Motorista não encontrado ou sem empresa associada' using errcode = 'P0002';
   end if;
-
-  if coalesce(v_driver_status, 'Ativo') <> 'Ativo' then
-    raise exception 'O motorista já está inativo' using errcode = '23514';
-  end if;
-
   if not public.s2t_is_admin()
      and not public.s2t_is_company_admin(v_company_id) then
     raise exception 'Sem permissões para desativar este motorista' using errcode = '42501';
+  end if;
+  if coalesce(v_driver_status, 'Ativo') <> 'Ativo' then
+    raise exception 'O motorista já está inativo' using errcode = '23514';
   end if;
 
   if exists (
@@ -451,7 +472,7 @@ comment on function public.s2t_deactivate_driver(uuid) is
 create or replace function public.s2t_archive_vehicle(p_vehicle_id uuid)
 returns jsonb
 language plpgsql
-security invoker
+security definer
 set search_path = ''
 as $function$
 declare
@@ -463,7 +484,20 @@ begin
     raise exception 'Sessão não autenticada' using errcode = '42501';
   end if;
 
-  -- Serialize with assignment replacement and inspect status under the same lock.
+  -- Verify company access before taking a row lock, then reread under lock.
+  select v.company_id, v.status
+    into v_company_id, v_vehicle_status
+  from public.vehicles v
+  where v.id = p_vehicle_id;
+
+  if v_company_id is null then
+    raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
+  end if;
+  if not public.s2t_is_admin()
+     and not public.s2t_is_company_admin(v_company_id) then
+    raise exception 'Sem permissões para arquivar esta viatura' using errcode = '42501';
+  end if;
+
   select v.company_id, v.status
     into v_company_id, v_vehicle_status
   from public.vehicles v
@@ -473,14 +507,12 @@ begin
   if v_company_id is null then
     raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
   end if;
-
-  if coalesce(v_vehicle_status, 'Ativo') = 'Inativo' then
-    raise exception 'A viatura já está inativa ou arquivada' using errcode = '23514';
-  end if;
-
   if not public.s2t_is_admin()
      and not public.s2t_is_company_admin(v_company_id) then
     raise exception 'Sem permissões para arquivar esta viatura' using errcode = '42501';
+  end if;
+  if coalesce(v_vehicle_status, 'Ativo') = 'Inativo' then
+    raise exception 'A viatura já está inativa ou arquivada' using errcode = '23514';
   end if;
 
   if exists (

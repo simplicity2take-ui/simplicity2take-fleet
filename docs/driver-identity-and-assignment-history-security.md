@@ -1,73 +1,30 @@
-# Security patch proposal — driver identity and assignment history
+# Driver identity and assignment history security
 
-**Status:** review-only draft. Not a Supabase migration; not executed.
+**Status:** implemented in the versioned migration `supabase/migrations/20261103000100_fleet_assignment_history_security.sql`, on draft PR #37. The migration and its regressions run only in an isolated PostgreSQL database in GitHub Actions. It has not been applied to a production or hosted Supabase project.
 
-## Proposed changes
+## Protections
 
-1. Extend the existing trigger-only `s2t_guard_company_ownership_change()` to reject changes to `drivers.profile_id` unless `s2t_is_admin()` is true. Company administrators retain ordinary operational updates, but cannot bind a driver record to another person's login. The trigger covers direct SQL/API updates as well as application code.
-2. Remove the assignment DELETE policy and revoke DELETE from `anon` and `authenticated`. This intentionally includes global admins through the public API. Correct assignments by setting `active_until`, then insert a new row where appropriate. Exceptional retention/deletion must be a separate audited maintenance process.
+- Company administrators cannot change `drivers.profile_id` or move fleet records between companies. Those identity and ownership changes remain reserved to global administrators.
+- Assignment history cannot be hard-deleted or edited directly through the API roles. The migration removes the assignment write policies and revokes direct INSERT, UPDATE and DELETE privileges.
+- The authenticated fleet UI manages assignments with transaction-scoped RPCs. The RPCs verify the caller's company access, preserve closed intervals, and serialize competing assignment, deactivation and archive operations.
+- Drivers cannot be deactivated while current or future assignments remain. Vehicles use the archive action to close their assignment history before becoming inactive.
+- RPCs use a pinned empty `search_path`, explicit authorization checks and restricted EXECUTE grants. The API roles cannot call them as anonymous users.
 
-## Disposable-database validation required
+## Flow validation
 
-### Driver profile linkage
-- company_admin updates ordinary driver fields: succeeds.
-- company_admin changes `profile_id`: fails with SQLSTATE `42501`.
-- ordinary company member changes `profile_id`: fails.
-- global admin changes `profile_id`: succeeds only through the intended authorized administrative workflow.
-- global admin ownership correction remains possible.
-- company_admin changes driver or vehicle `company_id`: fails.
-- updates changing both `company_id` and `profile_id` still invoke the guard.
+The CI workflow provisions PostgreSQL 17 as a disposable service container, loads only the checked-in company/fleet migrations and fixture, then runs:
 
-### Assignment history
-- company_admin DELETE through API: denied.
-- global admin DELETE through API: denied.
-- anon DELETE: denied.
-- authorized SELECT/INSERT/UPDATE continue under existing RLS/grants.
-- closing an active assignment with `active_until` remains possible.
-- inserting a replacement leaves the previous row intact and queryable.
+- Read-only catalog preflights for driver identity protection, assignment grants, RPC security settings and archive/deactivation guards.
+- Company isolation and the Empresa → Viaturas → Motoristas behavioral regression, including history preservation and forbidden cross-company operations.
+- Concurrent assignment-versus-deactivation and assignment-versus-archive regressions.
+- `node --check app.js` and Deno type checks for driver creation, Bolt sync and Uber report import.
 
-### Gates
-- Inspect existing table grants/policies, including inherited grants.
-- Verify trigger function owner and SECURITY DEFINER semantics; do not broaden EXECUTE grants.
-- Test with actual authenticated JWT claims and at least two companies.
-- Verify cross-company driver/profile reassignment is rejected.
-- Run Supabase security advisors after a real migration.
-- Confirm no frontend path expects assignment DELETE.
-- Only after validation, generate a migration using `supabase migration new`; do not hand-rename this draft into a migration.
+The workflow runs on standard GitHub-hosted runners for this public repository. It does not create a Supabase project or invoke Bolt, Uber, Google Drive or other external APIs, so no paid service or provider credential is required. These checks validate local application and database behavior; they do not certify a live provider account or a production deployment.
 
-## Explicitly not done
-- No SQL executed; no production data or policies changed.
-- No migration generated or deployed.
-- No assignment history deleted or modified.
-- No PR merged.
+## Historical proposal
 
+`supabase/drafts/atomic_vehicle_assignments.sql` is retained for history and explicitly marked superseded. Do not apply it; use the versioned migration above.
 
-## Application integration added in PR #37
+## Release boundary
 
-- Editing a vehicle now calls `s2t_replace_vehicle_assignments`; the browser no longer deletes/reinserts assignment rows directly.
-- The vehicle action is now **Arquivar**: `s2t_archive_vehicle` closes active assignments and sets the vehicle status to `Inativo` in one transaction; the vehicle row is retained.
-- The driver action is now **Desativar**: `s2t_deactivate_driver` closes active assignments and sets the driver status to `Inativo` in one transaction; the driver row and documents remain.
-- Assignment replacement now rejects inactive drivers, preventing them from being newly assigned.
-
-## Additional SQL preflight
-
-`supabase/tests/assignment_history_guard_preflight.sql` checks, without creating fixtures, that:
-- the driver trigger includes `profile_id`;
-- the trigger function contains the global-admin guard;
-- no authenticated/public DELETE policy or table DELETE grant remains on `vehicle_assignments`;
-- both RPCs are SECURITY INVOKER and executable by authenticated but not anon.
-
-This preflight is not a substitute for behavioral tests with two authenticated users in two companies. It has not been run because no disposable database has been provisioned.
-
-
-## Cascade-delete protection discovered during schema inspection
-
-A read-only inspection of the current production catalog confirmed:
-- `vehicle_assignments.driver_id` references `drivers(id) ON DELETE CASCADE`;
-- `vehicle_assignments.vehicle_id` references `vehicles(id) ON DELETE CASCADE`;
-- the existing unique key `(vehicle_id, driver_id, active_from)` supports the RPC's idempotent insert;
-- `authenticated` currently has a DELETE table grant on `vehicle_assignments`.
-
-Because parent deletion would erase assignment rows through FK cascades, the proposed patch also removes the global-admin DELETE policies and revokes DELETE on `drivers` and `vehicles` for `PUBLIC`, `anon` and `authenticated`. The app now archives/deactivates instead of hard-deleting these records.
-
-This catalog inspection was read-only. No grants, policies, constraints or rows were changed in production.
+PR #37 remains a draft and depends on the company foundation in PR #32. No PR has been merged and no production or hosted database has been changed. Apply the dependency chain only after review and environment-specific operational approval.

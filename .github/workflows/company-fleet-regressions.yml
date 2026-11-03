@@ -18,6 +18,7 @@ on:
       - "supabase/migrations/20261030230000_company_fleet_rls.sql"
       - "supabase/migrations/20261103000100_fleet_assignment_history_security.sql"
       - "supabase/tests/assignment_history_guard_preflight.sql"
+      - "supabase/tests/atomic_vehicle_assignments_preflight.sql"
       - "supabase/tests/company_fleet_flow_ci_fixture.sql"
       - "supabase/tests/company_fleet_flow_behavior.sql"
       - "supabase/tests/company_fleet_flow_concurrency.sh"
@@ -79,5 +80,6 @@ jobs:
       - name: Run company isolation, fleet flow and history regressions
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/assignment_history_guard_preflight.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/atomic_vehicle_assignments_preflight.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/company_fleet_flow_behavior.sql
           bash supabase/tests/company_fleet_flow_concurrency.sh

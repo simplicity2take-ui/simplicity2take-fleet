@@ -1,5 +1,5 @@
--- Disposable-database preflight for the PR #37 security patch.
--- Run only after applying the reviewed migrations and RPC draft in a local/test DB.
+-- Disposable-database preflight for the PR #37 versioned security migration.
+-- Run after the versioned security migration in an isolated test database.
 -- This file is read-only and deliberately contains no fixture writes.
 
 do $test$
@@ -41,6 +41,11 @@ begin
 
   if v_delete_policy_count <> 0 then
     raise exception 'FAIL: vehicle_assignments still has a DELETE/ALL policy for authenticated/public';
+  end if;
+
+  if has_table_privilege('authenticated', 'public.vehicle_assignments', 'INSERT')
+     or has_table_privilege('authenticated', 'public.vehicle_assignments', 'UPDATE') then
+    raise exception 'FAIL: authenticated can directly write assignment rows; use the authorized RPCs';
   end if;
 
   if exists (
@@ -86,7 +91,8 @@ begin
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname = 's2t_replace_vehicle_assignments'
-      and p.prosecdef = false
+      and p.prosecdef = true
+      and coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=%'
       and has_function_privilege('authenticated', p.oid, 'EXECUTE')
       and not has_function_privilege('anon', p.oid, 'EXECUTE')
   ) then
@@ -122,7 +128,8 @@ begin
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname = 's2t_deactivate_driver'
-      and p.prosecdef = false
+      and p.prosecdef = true
+      and coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=%'
       and has_function_privilege('authenticated', p.oid, 'EXECUTE')
       and not has_function_privilege('anon', p.oid, 'EXECUTE')
   ) then
@@ -134,13 +141,14 @@ begin
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname = 's2t_archive_vehicle'
-      and p.prosecdef = false
+      and p.prosecdef = true
+      and coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=%'
       and has_function_privilege('authenticated', p.oid, 'EXECUTE')
       and not has_function_privilege('anon', p.oid, 'EXECUTE')
   ) then
     raise exception 'FAIL: vehicle archive RPC missing or has unsafe execution grants';
   end if;
 
-  raise notice 'PASS: profile guard, assignment delete prohibition and invoker RPC grants are present';
+  raise notice 'PASS: profile guard, assignment delete prohibition and pinned definer RPC grants and write restrictions are present';
 end;
 $test$;

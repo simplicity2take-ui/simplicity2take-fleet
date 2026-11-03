@@ -56,7 +56,7 @@ Required before applying in an isolated environment:
 
 ## Latest disposable CI evidence
 
-On 2026-11-03, the branch CI applied the company, fleet and integration migrations twice to PostgreSQL 17 and passed the idempotency check. The same run passed Company A/B document RLS checks for company admins, an unlinked company member, a driver, and explicit viewer grants. Bolt and Uber offline/type checks also passed. These results cover only the synthetic disposable database; hosted schema/data, full tenant coverage, live Bolt/Uber access, and production deployment remain unverified.
+On 2026-11-03, the branch CI applied the company, fleet and integration migrations twice to PostgreSQL 17 and passed the idempotency check. Company A/B document RLS checks cover company admins, an unlinked company member, a driver and explicit viewer grants. Fleet behavior verifies that company admins can create and assign their own company's driver/vehicle, while ordinary members cannot write drivers, vehicles or assignments. Bolt and Uber offline/type checks also pass. These results cover only the synthetic disposable database; hosted schema/data, full tenant coverage, live Bolt/Uber access, and production deployment remain unverified.
 
 ## Test matrix required in a disposable local database
 

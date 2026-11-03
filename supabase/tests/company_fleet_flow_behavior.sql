@@ -224,14 +224,44 @@ SELECT set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003
 DO $company_a_member$
 DECLARE
   affected integer;
+  denied boolean;
+  company_a uuid := (SELECT id FROM public.companies WHERE slug='simplicity2take');
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.vehicles WHERE id='30000000-0000-0000-0000-000000000001') THEN
     RAISE EXCEPTION 'Company member cannot read its company vehicle';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.drivers WHERE id='20000000-0000-0000-0000-000000000001') THEN
+    RAISE EXCEPTION 'Company member cannot read its company driver';
   END IF;
   UPDATE public.drivers SET full_name='Unauthorized edit'
   WHERE id='20000000-0000-0000-0000-000000000001';
   GET DIAGNOSTICS affected = ROW_COUNT;
   IF affected <> 0 THEN RAISE EXCEPTION 'Company member updated a driver'; END IF;
+
+  denied := false;
+  BEGIN
+    INSERT INTO public.drivers (company_id, full_name, email, phone, status)
+    VALUES (company_a, 'Não autorizado', 'member-write@example.test', '919000001', 'Ativo');
+  EXCEPTION WHEN insufficient_privilege THEN denied := true;
+  END;
+  IF NOT denied THEN RAISE EXCEPTION 'Company member created a driver'; END IF;
+
+  denied := false;
+  BEGIN
+    INSERT INTO public.vehicles (company_id, plate, brand, model, vehicle_year, status)
+    VALUES (company_a, 'MM-00-MM', 'Teste', 'Bloqueado', 2026, 'Ativo');
+  EXCEPTION WHEN insufficient_privilege THEN denied := true;
+  END;
+  IF NOT denied THEN RAISE EXCEPTION 'Company member created a vehicle'; END IF;
+
+  denied := false;
+  BEGIN
+    INSERT INTO public.vehicle_assignments (vehicle_id, driver_id, active_from)
+    VALUES ('30000000-0000-0000-0000-000000000001',
+            '20000000-0000-0000-0000-000000000001', current_date);
+  EXCEPTION WHEN insufficient_privilege THEN denied := true;
+  END;
+  IF NOT denied THEN RAISE EXCEPTION 'Company member created a vehicle assignment'; END IF;
 END;
 $company_a_member$;
 

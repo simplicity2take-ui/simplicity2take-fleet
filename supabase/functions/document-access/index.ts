@@ -22,6 +22,9 @@ Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: cors });
   }
+  if (request.method !== "POST") {
+    return json({ error: "Método não permitido." }, 405);
+  }
 
   try {
     const auth = request.headers.get("Authorization");
@@ -124,20 +127,16 @@ Deno.serve(async (request) => {
     );
 
     headers.set("cache-control", "private, no-store");
+    headers.set("x-content-type-options", "nosniff");
 
     return new Response(bytes, {
       status: 200,
       headers,
     });
 
-  } catch (error) {
-    console.error(error);
-
-    return json({
-      error:
-        error instanceof Error
-          ? error.message
-          : "Erro interno."
-    }, 500);
+  } catch {
+    // Never return raw database, provider or Drive errors to the caller.
+    console.error("document-access failed");
+    return json({ error: "Não foi possível obter o documento. Confirme as permissões ou tente novamente." }, 500);
   }
 });

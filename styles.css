@@ -2339,3 +2339,91 @@ textarea:focus {
     align-items: flex-start;
   }
 }
+
+
+.company-switcher-label {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 11rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.company-switcher-label select {
+  min-height: 2.7rem;
+  max-width: 18rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  color: var(--ink);
+  background: var(--surface);
+  font-weight: 700;
+}
+
+
+/* Gestão de empresas no painel global */
+.company-management-panel {
+  margin-bottom: 1.25rem;
+}
+.company-management-row {
+  align-items: center;
+  gap: 1rem;
+}
+.company-management-row > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.company-management-row small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.company-management-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.company-management-actions button {
+  min-height: 2.2rem;
+  padding: 0.4rem 0.65rem;
+}
+@media (max-width: 700px) {
+  .company-management-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .company-management-actions {
+    justify-content: flex-start;
+  }
+}
+
+
+.company-membership-form {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 0.7fr) auto;
+  align-items: end;
+  gap: 0.8rem;
+  margin: 1rem 0;
+}
+.company-membership-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.company-membership-form select {
+  width: 100%;
+  min-height: 2.65rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--surface);
+  color: var(--ink);
+}
+@media (max-width: 700px) {
+  .company-membership-form {
+    grid-template-columns: 1fr;
+  }
+}

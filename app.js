@@ -9,6 +9,12 @@ const state = {
   smartPreview: null,
   requestedVehicleId: null,
   documentContext: "company",
+  currentCompanyId: null,
+  currentCompanyRole: null,
+  companies: [],
+  companyProfiles: [],
+  companyMemberships: [],
+  companyMembershipLoadError: "",
   users: [
     { id: "admin", role: "admin", name: "Administrador Simplicity2Take", email: "admin@simplicity2take.pt", phone: "210000000" },
     { id: "u-joao", role: "driver", name: "João Silva", email: "joao@simplicity2take.pt", phone: "912345678", driverId: "d-joao" },
@@ -161,6 +167,9 @@ const selectors = {
   sessionRole: $("#sessionRole"),
   sessionName: $("#sessionName"),
   pageTitle: $("#pageTitle"),
+  contextLabel: $("#contextLabel"),
+  companySwitcher: $("#companySwitcher"),
+  companySwitcherWrap: $("#companySwitcherWrap"),
   modal: $("#entityModal"),
   form: $("#entityForm"),
   modalTitle: $("#modalTitle"),
@@ -188,6 +197,59 @@ function valueOf(row, ...keys) {
 }
 
 async function loadBackendData() {
+  const membershipResult = state.sessionUserId
+    ? await supabaseClient.from("company_memberships").select("company_id, role").eq("profile_id", state.sessionUserId).eq("status", "Ativo").order("created_at", { ascending: true })
+    : { data: [], error: null };
+  if (membershipResult.error) throw membershipResult.error;
+  const activeMemberships = currentUser()?.role === "admin" ? [] : (membershipResult.data || []);
+  let selectedMembership = null;
+  if (currentUser()?.role !== "admin") {
+    const companyResult = await supabaseClient.from("companies").select("id, slug, legal_name, display_name, status").eq("status", "Ativa").order("display_name");
+    if (companyResult.error) throw companyResult.error;
+    const membershipByCompany = new Map(activeMemberships.map(item => [item.company_id, item]));
+    state.companies = (companyResult.data || []).filter(company => membershipByCompany.has(company.id));
+    selectedMembership = activeMemberships.find(item => item.company_id === state.currentCompanyId && state.companies.some(company => company.id === item.company_id))
+      || activeMemberships.find(item => state.companies.some(company => company.id === item.company_id))
+      || null;
+    state.currentCompanyId = selectedMembership?.company_id || null;
+    state.currentCompanyRole = selectedMembership?.role || null;
+  } else {
+    state.currentCompanyRole = null;
+  }
+
+  if (currentUser()?.role !== "admin" && selectedMembership) {
+    // Company members receive only the document data permitted by document RLS.
+    // Do not even request fleet, platform, application or CarTrack tables until
+    // those tables have complete company-scoped policies.
+    const documentsResult = await supabaseClient.from("documents").select("id, company_id, name, document_type, document_number, policy_number, issue_date, expiry_date, observations, original_file_name, mime_type, vehicle_id, driver_id, uploaded_by");
+    if (documentsResult.error) throw documentsResult.error;
+    state.drivers = [];
+    state.vehicles = [];
+    state.activityEvents = [];
+    state.tripRecords = [];
+    state.cartrackVehicles = [];
+    state.cartrackSnapshots = [];
+    state.applications = [];
+    state.documents = (documentsResult.data || []).map(row => ({
+      id: row.id,
+      companyId: valueOf(row, "company_id"),
+      name: valueOf(row, "name", "title", "file_name"),
+      type: valueOf(row, "document_type", "type") || "Outros",
+      number: valueOf(row, "document_number", "number"),
+      policyNumber: valueOf(row, "policy_number"),
+      issueDate: valueOf(row, "issue_date"),
+      expiryDate: valueOf(row, "expiry_date"),
+      observations: valueOf(row, "observations", "notes"),
+      fileName: valueOf(row, "original_file_name", "file_name", "name"),
+      fileType: valueOf(row, "mime_type", "file_type"),
+      vehicleId: valueOf(row, "vehicle_id"),
+      driverId: valueOf(row, "driver_id"),
+      viewerDriverIds: [],
+      raw: row
+    }));
+    return;
+  }
+
   const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult] = await Promise.all([
     supabaseClient.from("drivers").select("*"),
     supabaseClient.from("vehicles").select("*"),
@@ -205,6 +267,23 @@ async function loadBackendData() {
 
   const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult].find(result => result.error)?.error;
   if (firstError) throw firstError;
+
+  if (currentUser()?.role === "admin") {
+    const companyResult = await supabaseClient.from("companies").select("id, slug, legal_name, display_name, tax_number, status").order("display_name");
+    if (companyResult.error) throw companyResult.error;
+    state.companies = companyResult.data || [];
+    const [profilesResult, membershipsResult] = await Promise.all([
+      supabaseClient.from("profiles").select("id, full_name, email, status, role").order("full_name"),
+      supabaseClient.from("company_memberships").select("id, company_id, profile_id, role, status").order("created_at", { ascending: false })
+    ]);
+    state.companyMembershipLoadError = profilesResult.error?.message || membershipsResult.error?.message || "";
+    state.companyProfiles = profilesResult.error ? [] : (profilesResult.data || []).filter(profile => profile.role !== "admin" && profile.status === "Ativo");
+    state.companyMemberships = membershipsResult.error ? [] : (membershipsResult.data || []);
+    const selected = state.companies.find(company => company.id === state.currentCompanyId && company.status === "Ativa")
+      || state.companies.find(company => company.slug === "simplicity2take" && company.status === "Ativa")
+      || state.companies.find(company => company.status === "Ativa");
+    state.currentCompanyId = selected?.id || null;
+  }
 
   const assignments = assignmentsResult.data || [];
   const viewers = viewersResult.data || [];
@@ -244,6 +323,7 @@ async function loadBackendData() {
   }));
   state.documents = (documentsResult.data || []).map(row => ({
     id: row.id,
+    companyId: valueOf(row, "company_id"),
     name: valueOf(row, "name", "title", "file_name"),
     type: valueOf(row, "document_type", "type") || "Outros",
     number: valueOf(row, "document_number", "number"),
@@ -263,7 +343,7 @@ async function loadBackendData() {
   state.activityEvents = (activityResult.data || []).map(row => ({
     id: row.id, driverId: row.driver_id, vehicleId: row.vehicle_id,
     driverUuid: row.platform_driver_uuid, vehicleUuid: row.platform_vehicle_uuid,
-    status: row.status, observedAt: row.observed_at, eventKey: row.event_key
+    status: row.status, observedAt: row.observed_at, eventKey: row.event_key, raw: row
   }));
   state.cartrackVehicles = (cartrackVehiclesResult.data || []).map(row => ({
     registration: row.registration,
@@ -288,7 +368,7 @@ async function loadBackendData() {
     id: row.id, platform: row.platform || "bolt", sourceTripId: row.source_trip_id, driverId: row.driver_id, vehicleId: row.vehicle_id,
     driverUuid: row.platform_driver_uuid, vehicleUuid: row.platform_vehicle_uuid, plate: row.vehicle_plate,
     status: row.order_status, acceptedAt: row.accepted_at, pickupAt: row.pickup_at,
-    dropoffAt: row.dropoff_at, finishedAt: row.finished_at, distance: row.ride_distance_km, observedAt: row.observed_at
+    dropoffAt: row.dropoff_at, finishedAt: row.finished_at, distance: row.ride_distance_km, observedAt: row.observed_at, raw: row
   }));
   const applicationDocuments = applicationDocumentsResult.data || [];
   const applicationMessages = applicationMessagesResult.data || [];
@@ -317,6 +397,29 @@ async function loadBackendData() {
     })),
     raw: row
   }));
+  if (currentUser()?.role === "admin") {
+    const selectedCompany = state.companies.find(company => company.id === state.currentCompanyId);
+    const driverIds = new Set(state.drivers.filter(driver => driver.raw?.company_id === state.currentCompanyId).map(driver => driver.id));
+    const vehicleIds = new Set(state.vehicles.filter(vehicle => vehicle.raw?.company_id === state.currentCompanyId).map(vehicle => vehicle.id));
+    // Cartrack's vehicle_id is its own numeric provider ID, not Fleet's UUID.
+    // Scope telemetry by registration against the selected company's Fleet plates.
+    const companyVehiclePlates = new Set(state.vehicles
+      .filter(vehicle => vehicleIds.has(vehicle.id))
+      .map(vehicle => String(vehicle.plate || "").replace(/[^a-z0-9]/gi, "").toUpperCase())
+      .filter(Boolean));
+    const belongsToCompany = item => companyVehiclePlates.has(
+      String(item.registration || "").replace(/[^a-z0-9]/gi, "").toUpperCase()
+    );
+    state.drivers = state.drivers.filter(driver => driverIds.has(driver.id));
+    state.vehicles = state.vehicles.filter(vehicle => vehicleIds.has(vehicle.id));
+    state.vehicles.forEach(vehicle => { vehicle.driverIds = vehicle.driverIds.filter(driverId => driverIds.has(driverId)); });
+    state.documents = state.documents.filter(document => document.companyId === state.currentCompanyId);
+    state.activityEvents = state.activityEvents.filter(event => event.raw?.company_id === state.currentCompanyId);
+    state.tripRecords = state.tripRecords.filter(trip => trip.raw?.company_id === state.currentCompanyId);
+    state.cartrackVehicles = state.cartrackVehicles.filter(belongsToCompany);
+    state.cartrackSnapshots = state.cartrackSnapshots.filter(belongsToCompany);
+    if (selectedCompany?.slug !== "simplicity2take") state.applications = [];
+  }
   state.backendReady = true;
 }
 
@@ -398,7 +501,12 @@ function showVehicleQr(vehicleId) {
 }
 
 function companyDocuments() {
-  return state.documents.filter(doc => !doc.driverId && !doc.vehicleId);
+  const isGlobalAdmin = currentUser()?.role === "admin";
+  return state.documents.filter(doc => {
+    if (doc.driverId || doc.vehicleId) return false;
+    if (isGlobalAdmin) return true;
+    return Boolean(state.currentCompanyId && doc.companyId === state.currentCompanyId);
+  });
 }
 
 function driverDocuments() {
@@ -434,7 +542,7 @@ function alertLevel(doc) {
 
 function visibleDocuments() {
   const user = currentUser();
-  if (user.role === "admin") return state.documents;
+  if (user.role === "admin" || state.currentCompanyRole) return companyDocuments();
   return driverDocuments();
 }
 
@@ -697,7 +805,7 @@ async function startAuthenticatedSession(user) {
   state.profile = { ...profile, email: profile.email || user.email };
   state.sessionUserId = user.id;
   await loadBackendData();
-  state.activeView = profile.role === "admin" ? "dashboard" : "vehicles";
+  state.activeView = profile.role === "admin" ? "dashboard" : state.currentCompanyRole ? "documents" : "vehicles";
   await openRequestedVehicle();
   selectors.loginScreen.classList.add("hidden");
   selectors.appShell.classList.remove("hidden");
@@ -709,22 +817,57 @@ async function logout() {
   documentBlobCache.clear();
   state.sessionUserId = null;
   state.profile = null;
+  state.currentCompanyId = null;
+  state.currentCompanyRole = null;
+  state.companies = [];
   selectors.appShell.classList.add("hidden");
   selectors.loginScreen.classList.remove("hidden");
   selectors.loginPassword.value = "";
 }
 
+function navigationForUser() {
+  if (currentUser().role === "admin") return navByRole.admin;
+  if (state.currentCompanyRole) return [["documents", "Documentos da Empresa", "DO"], ["account", "Minha Conta", "EU"]];
+  return navByRole.driver;
+}
+
+function isS2TCompanySelected() {
+  return state.companies.find(company => company.id === state.currentCompanyId)?.slug === "simplicity2take";
+}
+function requireS2TIntegration() {
+  if (!isS2TCompanySelected()) throw new Error("Esta integração ainda está configurada apenas para a Simplicity2Take. Configure as credenciais da empresa selecionada antes de sincronizar.");
+}
+function renderCompanySwitcher() {
+  const isAdmin = currentUser()?.role === "admin";
+  const canSwitchCompany = isAdmin || Boolean(state.currentCompanyRole);
+  if (!selectors.companySwitcher) return;
+  selectors.companySwitcherWrap?.classList.toggle("hidden", !canSwitchCompany);
+  if (!canSwitchCompany) return;
+  const activeCompanies = state.companies.filter(company => company.status === "Ativa");
+  selectors.companySwitcher.innerHTML = activeCompanies.map(company =>
+    `<option value="${escapeHtml(company.id)}" ${company.id === state.currentCompanyId ? "selected" : ""}>${escapeHtml(company.display_name || company.legal_name)}</option>`
+  ).join("");
+  selectors.companySwitcher.disabled = !activeCompanies.length;
+  const selectedCompany = state.companies.find(company => company.id === state.currentCompanyId);
+  if (selectors.contextLabel) selectors.contextLabel.textContent = selectedCompany ? `Simplicity2Take Fleet · ${selectedCompany.display_name || selectedCompany.legal_name}` : "Simplicity2Take Fleet";
+  const integrationsEnabled = selectedCompany?.slug === "simplicity2take";
+  document.querySelectorAll("[data-bolt-sync], [data-bolt-activity-sync], [data-uber-sync], [data-cartrack-sync], [data-uber-import-status], [data-uber-preview-status], [data-uber-import-activity], [data-uber-import-trip-activity], [data-uber-preview-trip-activity], [data-uber-import-vehicle-performance], [data-uber-import-vehicle-time-distance], [data-uber-import-driver-time-distance], [data-uber-import-driver-quality], [data-uber-import-driver-payments]").forEach(control => {
+    control.disabled = !integrationsEnabled;
+    control.title = integrationsEnabled ? "" : "Integração ainda não configurada para esta empresa.";
+  });
+}
 function renderApp() {
   const user = currentUser();
-  selectors.sessionRole.textContent = user.role === "admin" ? "Administrador" : "Motorista";
+  selectors.sessionRole.textContent = user.role === "admin" ? "Administrador" : state.currentCompanyRole ? "Utilizador da Empresa" : "Motorista";
   selectors.sessionName.textContent = user.name;
+  renderCompanySwitcher();
   renderNav();
   renderContent();
 }
 
 function renderNav() {
   const user = currentUser();
-  selectors.sideNav.innerHTML = navByRole[user.role].map(([view, label, icon]) => `
+  selectors.sideNav.innerHTML = navigationForUser().map(([view, label, icon]) => `
     <button class="nav-item ${state.activeView === view ? "active" : ""}" type="button" data-view="${view}">
       <span class="nav-icon">${icon}</span>
       <span>${label}</span>
@@ -733,7 +876,7 @@ function renderNav() {
 }
 
 function setView(view) {
-  const allowed = navByRole[currentUser().role].some(item => item[0] === view);
+  const allowed = navigationForUser().some(item => item[0] === view);
   if (!allowed) return;
   state.activeView = view;
   renderApp();
@@ -789,6 +932,8 @@ function renderDashboard() {
       ${metric("Sem validade", missingExpiry.length)}
     </section>
 
+    ${companyPanel}
+    ${membershipPanel}
     <section class="content-grid">
       <article class="panel">
         <div class="panel-heading">
@@ -987,16 +1132,18 @@ function driverRow(driver) {
 }
 
 function renderDocuments() {
-  const admin = currentUser().role === "admin";
-  const documents = admin ? companyDocuments() : driverDocuments();
-  selectors.pageTitle.textContent = admin ? "Documentos da Empresa" : "Meus Documentos";
+  const globalAdmin = currentUser().role === "admin";
+  const companyMember = globalAdmin || Boolean(state.currentCompanyRole);
+  const companyAdmin = globalAdmin || state.currentCompanyRole === "company_admin";
+  const documents = companyMember ? companyDocuments() : driverDocuments();
+  selectors.pageTitle.textContent = companyMember ? "Documentos da Empresa" : "Meus Documentos";
   selectors.content.innerHTML = `
     ${heading(
-      admin ? "Gestão documental da empresa" : "Os meus documentos",
-      admin ? "Aqui ficam apenas os documentos da empresa. Documentos de viaturas e de motoristas são geridos nas respetivas áreas." : "Aqui ficam os teus documentos pessoais, os documentos das viaturas atribuídas e os documentos da empresa partilhados contigo.",
-      admin ? `<button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>` : ""
+      companyAdmin ? "Gestão documental da empresa" : companyMember ? "Documentos da empresa" : "Os meus documentos",
+      companyAdmin ? "Aqui ficam apenas os documentos da empresa. Documentos de viaturas e de motoristas são geridos nas respetivas áreas." : companyMember ? "Consulta os documentos gerais da tua empresa. Para documentos de viaturas e motoristas, usa as áreas autorizadas." : "Aqui ficam os teus documentos pessoais, os documentos das viaturas atribuídas e os documentos da empresa partilhados contigo.",
+      globalAdmin ? `<button class="primary-button" type="button" data-open="document">Carregar documento da empresa</button>` : ""
     )}
-    <section class="cards-grid">${documents.map(doc => documentCard(doc, admin)).join("") || emptyCard(admin ? "Ainda não existem documentos da empresa." : "Sem documentos para apresentar.")}</section>
+    <section class="cards-grid">${documents.map(doc => documentCard(doc, globalAdmin)).join("") || emptyCard(companyMember ? "Ainda não existem documentos da empresa." : "Sem documentos para apresentar.")}</section>
   `;
 }
 
@@ -1301,6 +1448,8 @@ function renderActivity() {
 }
 
 async function syncCartrack() {
+  requireS2TIntegration();
+
   const button = document.querySelector("[data-cartrack-sync]");
   if (button) { button.disabled = true; button.textContent = "A sincronizar Cartrack…"; }
   try {
@@ -1319,6 +1468,8 @@ async function syncCartrack() {
 }
 
 async function syncBoltActivity() {
+  requireS2TIntegration();
+
   const button = document.querySelector("[data-bolt-activity-sync]");
   if (button) { button.disabled = true; button.textContent = "A recolher atividade Bolt…"; }
   try {
@@ -1337,6 +1488,8 @@ async function syncBoltActivity() {
 }
 
 async function syncBolt() {
+  requireS2TIntegration();
+
   const button = document.querySelector("[data-bolt-sync]");
   if (button) { button.disabled = true; button.textContent = "A sincronizar Bolt…"; }
   try {
@@ -1359,6 +1512,8 @@ async function syncBolt() {
 }
 
 async function syncUber() {
+  requireS2TIntegration();
+
   const button = document.querySelector("[data-uber-sync]");
   if (button) { button.disabled = true; button.textContent = "A sincronizar Uber…"; }
   try {
@@ -1388,6 +1543,8 @@ function inferUberReportPeriod(fileName) {
 }
 
 async function importUberReport(type, input, periodStart = "", periodEnd = "", dryRun = false) {
+  requireS2TIntegration();
+
   const file = input?.files?.[0];
   if (!file) throw new Error("Selecione um ficheiro CSV.");
   const inferred = inferUberReportPeriod(file.name);
@@ -1513,6 +1670,63 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
 
 function renderSettings() {
   selectors.pageTitle.textContent = "Configurações";
+  const companyPanel = currentUser()?.role === "admin" ? `
+    <article class="panel company-management-panel">
+      <div class="panel-heading">
+        <div><h2>Empresas</h2><p class="section-copy">Gerir as empresas e o respetivo acesso ao Fleet.</p></div>
+        <button class="primary-button" type="button" data-company-add>Adicionar empresa</button>
+      </div>
+      <div class="settings-list">
+        ${state.companies.map(company => `
+          <div class="settings-row company-management-row">
+            <div><strong>${escapeHtml(company.display_name || company.legal_name)}</strong><small>${escapeHtml(company.legal_name)} · ${escapeHtml(company.slug)}</small></div>
+            <div class="company-management-actions"><span class="tag ${company.status === "Ativa" ? "active" : "expiring"}">${escapeHtml(company.status)}</span><button class="secondary-button" type="button" data-company-edit="${escapeHtml(company.id)}">Editar</button>${company.status === "Ativa" ? `<button class="ghost-button" type="button" data-company-deactivate="${escapeHtml(company.id)}">Desativar</button>` : `<button class="secondary-button" type="button" data-company-activate="${escapeHtml(company.id)}">Reativar</button>`}</div>
+          </div>`).join("") || '<p class="section-copy">Ainda não existem empresas registadas.</p>'}
+      </div>
+      <p class="section-copy">As empresas desativadas deixam de aparecer no seletor. O histórico e os registos não são eliminados.</p>
+    </article>` : "";
+  const selectedCompany = state.companies.find(company => company.id === state.currentCompanyId);
+  const companyMemberships = state.companyMemberships.filter(item => item.company_id === state.currentCompanyId);
+  const membershipPanel = currentUser()?.role === "admin" ? `
+    <article class="panel company-management-panel">
+      <div class="panel-heading">
+        <div><h2>Acessos à empresa</h2><p class="section-copy">${escapeHtml(selectedCompany?.display_name || "Selecione uma empresa")} · atribuir utilizadores e permissões.</p></div>
+      </div>
+      ${state.companyMembershipLoadError ? `<p class="integration-note">Não foi possível carregar a lista de acessos: ${escapeHtml(state.companyMembershipLoadError)}</p>` : ""}
+      ${selectedCompany ? `
+        <div class="company-membership-form">
+          <label>Utilizador existente
+            <select id="companyMembershipProfile">
+              <option value="">Selecionar utilizador</option>
+              ${state.companyProfiles.filter(profile => !companyMemberships.some(item => item.profile_id === profile.id && item.status === "Ativo")).map(profile => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.full_name || profile.email || profile.id)} · ${escapeHtml(profile.email || "sem email")}</option>`).join("")}
+            </select>
+          </label>
+          <label>Permissão
+            <select id="companyMembershipRole">
+              <option value="member">Utilizador</option>
+              <option value="company_admin">Administrador da empresa</option>
+            </select>
+          </label>
+          <button class="primary-button" type="button" data-membership-add>Associar utilizador</button>
+        </div>
+        <div class="settings-list">
+          ${companyMemberships.map(item => {
+            const profile = state.companyProfiles.find(candidate => candidate.id === item.profile_id);
+            const active = item.status === "Ativo";
+            return `<div class="settings-row company-management-row">
+              <div><strong>${escapeHtml(profile?.full_name || "Utilizador sem nome")}</strong><small>${escapeHtml(profile?.email || item.profile_id)}</small></div>
+              <div class="company-management-actions">
+                <span class="tag">${item.role === "company_admin" ? "Administrador" : "Utilizador"}</span>
+                <span class="tag ${active ? "active" : "expiring"}">${active ? "Ativo" : "Inativo"}</span>
+                <button class="secondary-button" type="button" data-membership-role="${escapeHtml(item.id)}" data-role="${item.role === "company_admin" ? "member" : "company_admin"}">${item.role === "company_admin" ? "Tornar utilizador" : "Promover admin"}</button>
+                <button class="ghost-button" type="button" data-membership-toggle="${escapeHtml(item.id)}" data-status="${active ? "Inativo" : "Ativo"}">${active ? "Retirar acesso" : "Reativar"}</button>
+              </div>
+            </div>`;
+          }).join("") || '<p class="section-copy">Ainda não existem utilizadores associados a esta empresa.</p>'}
+        </div>
+        <p class="section-copy">Só associa contas já existentes. O envio de convites e a criação de contas ficam para uma fase posterior. As permissões de administrador de empresa ficam registadas, mas as funções de gestão dessa empresa só serão ativadas depois de concluirmos e testarmos o isolamento de dados.</p>
+      ` : '<p class="section-copy">Selecione uma empresa ativa no seletor superior.</p>'}
+    </article>` : "";
   const boltDrivers = state.drivers.filter(driver => driver.boltDriverUuid).length;
   const boltVehicles = state.vehicles.filter(vehicle => vehicle.boltVehicleUuid).length;
   const lastBoltSync = [...state.drivers, ...state.vehicles].map(item => item.boltLastSyncedAt).filter(Boolean).sort().pop();
@@ -1708,7 +1922,7 @@ function openModal(type, id = "", options = {}) {
     const existing = state.documents.find(item => item.id === id);
     state.documentContext = options.scope || (existing?.vehicleId ? "vehicle" : existing?.driverId ? "driver" : "company");
   }
-  const title = { driver: "motorista", vehicle: "veículo", document: "documento", "admin-password": "palavra-passe do motorista" }[type];
+  const title = { driver: "motorista", vehicle: "veículo", document: "documento", company: "empresa", "admin-password": "palavra-passe do motorista" }[type];
   const action = type === "admin-password" ? "Definir" : id && type !== "document" ? "Editar" : type === "document" ? "Carregar" : "Criar";
   selectors.modalTitle.textContent = `${action} ${title}`;
   selectors.modalFields.innerHTML = modalFields(type, id);
@@ -1728,6 +1942,18 @@ function modalFields(type, id) {
     ].join("");
   }
 
+  if (type === "company") {
+    if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir empresas.");
+    const company = state.companies.find(item => item.id === id) || {};
+    return [
+      field("legalName", "Denominação social", company.legal_name || "", "text", true),
+      field("displayName", "Nome de apresentação", company.display_name || "", "text", true),
+      field("slug", "Identificador (slug)", company.slug || "", "text", true, id ? "readonly" : "", false),
+      field("taxNumber", "NIF (opcional)", company.tax_number || "", "text", false, "", false),
+      selectField("status", "Estado", ["Ativa", "Inativa"], company.status || "Ativa"),
+      `<div class="smartdocs-box span-full"><p>O identificador é permanente depois da criação. Desativar uma empresa não elimina os seus dados.</p></div>`
+    ].join("");
+  }
   if (type === "admin-password") {
     const driver = state.drivers.find(item => item.id === id) || {};
     return [`<div class="smartdocs-box span-full"><strong>Administrador</strong><p>Defina uma nova palavra-passe para ${escapeHtml(driver.name || "o motorista")}. Entregue-a diretamente ao motorista.</p></div>`, field("password", "Nova palavra-passe", "", "password", true), field("passwordConfirm", "Confirmar palavra-passe", "", "password", true)].join("");
@@ -2011,6 +2237,7 @@ async function submitModal(event) {
   try {
     if (type === "driver") await saveDriver(values, id);
     if (type === "vehicle") await saveVehicle(values, checked("driverIds"), id);
+    if (type === "company") await saveCompany(values, id);
     if (type === "document") await saveDocument(values, checked("viewerDriverIds"), id);
     if (type === "password") await savePassword(values.password);
     if (type === "admin-password") await saveAdminPassword(id, values.password, values.passwordConfirm);
@@ -2026,6 +2253,63 @@ async function submitModal(event) {
   }
 }
 
+async function addCompanyMembership() {
+  if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir acessos.");
+  const profileId = $("#companyMembershipProfile")?.value;
+  const role = $("#companyMembershipRole")?.value;
+  if (!state.currentCompanyId) throw new Error("Selecione uma empresa.");
+  if (!profileId) throw new Error("Selecione um utilizador.");
+  if (!["member", "company_admin"].includes(role)) throw new Error("Permissão inválida.");
+  const { error } = await supabaseClient.from("company_memberships").upsert({
+    company_id: state.currentCompanyId, profile_id: profileId, role, status: "Ativo"
+  }, { onConflict: "company_id,profile_id" });
+  if (error) throw error;
+  await loadBackendData();
+  renderApp();
+  showToast("Acesso associado à empresa.");
+}
+
+async function updateCompanyMembership(id, changes) {
+  if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir acessos.");
+  const membership = state.companyMemberships.find(item => item.id === id);
+  if (!membership || membership.company_id !== state.currentCompanyId) throw new Error("Acesso não encontrado nesta empresa.");
+  if (changes.role && !["member", "company_admin"].includes(changes.role)) throw new Error("Permissão inválida.");
+  if (changes.status && !["Ativo", "Inativo"].includes(changes.status)) throw new Error("Estado inválido.");
+  const { error } = await supabaseClient.from("company_memberships").update(changes).eq("id", id).eq("company_id", state.currentCompanyId);
+  if (error) throw error;
+  await loadBackendData();
+  renderApp();
+  showToast("Acesso atualizado.");
+}
+
+async function saveCompany(values, id) {
+  if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir empresas.");
+  const legalName = String(values.legalName || "").trim();
+  const displayName = String(values.displayName || "").trim();
+  const taxNumber = String(values.taxNumber || "").trim();
+  if (!legalName || !displayName) throw new Error("Indique a denominação social e o nome de apresentação.");
+  const existing = state.companies.find(company => company.id === id);
+  const slug = id
+    ? existing?.slug
+    : String(values.slug || displayName).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (!slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("O identificador deve conter apenas letras minúsculas, números e hífen.");
+  const payload = { legal_name: legalName, display_name: displayName, tax_number: taxNumber || null, status: values.status || "Ativa" };
+  if (!id) payload.slug = slug;
+  if (id && existing?.status === "Ativa" && payload.status === "Inativa") {
+    const activeCount = state.companies.filter(company => company.status === "Ativa").length;
+    if (activeCount <= 1) throw new Error("Não pode desativar a última empresa ativa.");
+  }
+  const query = id
+    ? supabaseClient.from("companies").update(payload).eq("id", id)
+    : supabaseClient.from("companies").insert(payload);
+  const { error } = await query;
+  if (error) {
+    if (error.code === "23505") throw new Error("Já existe uma empresa com esse identificador.");
+    throw error;
+  }
+  showToast(id ? "Empresa atualizada." : "Empresa criada.");
+}
+
 async function saveDriver(values, id) {
   const payload = {
     full_name: values.name,
@@ -2037,13 +2321,14 @@ async function saveDriver(values, id) {
   if (!id) {
     if (!values.password || values.password.length < 8) throw new Error("Use pelo menos 8 caracteres na palavra-passe inicial.");
     if (values.password !== values.passwordConfirm) throw new Error("As palavras-passe não coincidem.");
-    const { data, error } = await supabaseClient.functions.invoke("admin-create-driver", { body: { fullName: values.name, email: values.email, phone: values.phone, status: values.status, password: values.password } });
+    if (!state.currentCompanyId) throw new Error("Selecione uma empresa antes de criar o motorista.");
+    const { data, error } = await supabaseClient.functions.invoke("admin-create-driver", { body: { companyId: state.currentCompanyId, fullName: values.name, email: values.email, phone: values.phone, status: values.status, password: values.password } });
     if (error) throw error;
     if (!data?.ok) throw new Error(data?.error || "Não foi possível criar o motorista.");
     showToast("Motorista criado. Entregue a palavra-passe diretamente.");
     return;
   }
-  const { error } = await supabaseClient.from("drivers").update(payload).eq("id", id);
+  const { error } = await supabaseClient.from("drivers").update(payload).eq("id", id).eq("company_id", state.currentCompanyId);
 
   if (error) throw error;
   showToast("Motorista atualizado.");
@@ -2058,6 +2343,20 @@ async function saveVehicle(values, driverIds, id) {
     vin: values.vin,
     status: values.status
   };
+  if (!state.currentCompanyId) throw new Error("Não foi possível determinar a empresa para esta viatura.");
+  if (!id) payload.company_id = state.currentCompanyId;
+  else if (state.vehicles.find(item => item.id === id)?.raw?.company_id !== state.currentCompanyId) {
+    throw new Error("A viatura não pertence à empresa selecionada.");
+  }
+
+  const selectedDrivers = new Set(
+    state.drivers
+      .filter(driver => driver.raw?.company_id === state.currentCompanyId)
+      .map(driver => driver.id)
+  );
+  if (driverIds.some(driverId => !selectedDrivers.has(driverId))) {
+    throw new Error("Só pode associar motoristas da mesma empresa da viatura.");
+  }
   const query = id
     ? supabaseClient.from("vehicles").update(payload).eq("id", id).select().single()
     : supabaseClient.from("vehicles").insert(payload).select().single();
@@ -2144,7 +2443,8 @@ async function saveDocument(values, viewerDriverIds, id) {
     drive_web_view_link: driveData.webViewLink,
     vehicle_id: finalVehicleId,
     driver_id: finalDriverId,
-    uploaded_by: state.sessionUserId
+    uploaded_by: state.sessionUserId,
+    company_id: context === "company" ? (existing?.companyId || state.currentCompanyId) : (context === "vehicle" ? state.vehicles.find(vehicle => vehicle.id === finalVehicleId)?.raw?.company_id || null : state.drivers.find(driver => driver.id === finalDriverId)?.raw?.company_id || null)
   };
 
   const query = id
@@ -2316,6 +2616,27 @@ async function saveAdminPassword(driverId, password, confirmation) {
 }
 async function handleAdminAction(action) {
   try {
+    if (action.type === "deactivate-company") {
+      if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir empresas.");
+      const company = state.companies.find(item => item.id === action.id);
+      if (!company) return;
+      if (state.companies.filter(item => item.status === "Ativa").length <= 1) throw new Error("Não pode desativar a última empresa ativa.");
+      if (!confirm(`Desativar "${company.display_name || company.legal_name}"? Os dados e o histórico serão preservados.`)) return;
+      const { error } = await supabaseClient.from("companies").update({ status: "Inativa" }).eq("id", action.id);
+      if (error) throw error;
+      if (state.currentCompanyId === action.id) state.currentCompanyId = null;
+      await loadBackendData();
+      renderApp();
+      showToast("Empresa desativada. Os dados foram preservados.");
+    }
+    if (action.type === "activate-company") {
+      if (currentUser()?.role !== "admin") throw new Error("Apenas o administrador global pode gerir empresas.");
+      const { error } = await supabaseClient.from("companies").update({ status: "Ativa" }).eq("id", action.id);
+      if (error) throw error;
+      await loadBackendData();
+      renderApp();
+      showToast("Empresa reativada.");
+    }
     if (action.type === "delete-document") {
       if (!confirm("Eliminar este documento do portal?")) return;
       const { error } = await supabaseClient.from("documents").delete().eq("id", action.id);
@@ -2401,6 +2722,24 @@ function printQr() {
 }
 
 function bindPortalEvents() {
+  selectors.companySwitcher?.addEventListener("change", async event => {
+    const nextCompanyId = event.target.value;
+    if (!nextCompanyId || nextCompanyId === state.currentCompanyId) return;
+    const previousCompanyId = state.currentCompanyId;
+    state.currentCompanyId = nextCompanyId;
+    selectors.companySwitcher.disabled = true;
+    try {
+      await loadBackendData();
+      renderApp();
+    } catch (error) {
+      state.currentCompanyId = previousCompanyId;
+      console.error(error);
+      showToast(error?.message || "Não foi possível mudar de empresa.");
+      renderCompanySwitcher();
+    } finally {
+      selectors.companySwitcher.disabled = false;
+    }
+  });
   selectors.loginForm?.addEventListener("submit", event => {
     event.preventDefault();
     login(selectors.loginIdentifier.value, selectors.loginPassword.value);
@@ -2431,6 +2770,22 @@ function bindPortalEvents() {
     }
     if (target.id === "closeDocumentViewer") {
       return document.querySelector("#documentViewerModal")?.close();
+    }
+    if (target.dataset.companyAdd !== undefined) return openModal("company");
+    if (target.dataset.companyEdit) return openModal("company", target.dataset.companyEdit);
+    if (target.dataset.companyDeactivate) return handleAdminAction({type:"deactivate-company",id:target.dataset.companyDeactivate});
+    if (target.dataset.companyActivate) return handleAdminAction({type:"activate-company",id:target.dataset.companyActivate});
+    if (target.dataset.membershipAdd !== undefined) {
+      try { await addCompanyMembership(); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível associar o utilizador."); }
+      return;
+    }
+    if (target.dataset.membershipToggle) {
+      try { await updateCompanyMembership(target.dataset.membershipToggle, { status: target.dataset.status }); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível alterar o acesso."); }
+      return;
+    }
+    if (target.dataset.membershipRole) {
+      try { await updateCompanyMembership(target.dataset.membershipRole, { role: target.dataset.role }); } catch (error) { console.error(error); showToast(error?.message || "Não foi possível alterar a permissão."); }
+      return;
     }
     if (target.dataset.editDriver) return openModal("driver", target.dataset.editDriver);
     if (target.dataset.editVehicle) return openModal("vehicle", target.dataset.editVehicle);
@@ -2506,6 +2861,9 @@ function bindPortalEvents() {
       documentBlobCache.clear();
       state.sessionUserId = null;
       state.profile = null;
+      state.currentCompanyId = null;
+      state.currentCompanyRole = null;
+      state.companies = [];
       selectors.appShell.classList.add("hidden");
       selectors.loginScreen.classList.remove("hidden");
     }

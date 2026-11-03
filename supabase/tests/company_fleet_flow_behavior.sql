@@ -294,14 +294,18 @@ BEGIN
   IF NOT denied THEN RAISE EXCEPTION 'Global admin transferred a vehicle with closed assignment history'; END IF;
 
   -- Unassigned rows may still be corrected by a global administrator.
+  INSERT INTO public.drivers (id, company_id, full_name, email, phone, status)
+  VALUES ('20000000-0000-0000-0000-000000000010', company_a, 'Motorista sem histórico', 'transfer@example.test', '910000010', 'Ativo');
+  INSERT INTO public.vehicles (id, company_id, plate, brand, model, vehicle_year, status)
+  VALUES ('30000000-0000-0000-0000-000000000010', company_a, 'AA-10-AA', 'Toyota', 'Yaris', 2025, 'Ativo');
   UPDATE public.drivers SET company_id=company_b
-  WHERE id='20000000-0000-0000-0000-000000000003';
+  WHERE id='20000000-0000-0000-0000-000000000010';
   UPDATE public.vehicles SET company_id=company_b
-  WHERE id='30000000-0000-0000-0000-000000000003';
+  WHERE id='30000000-0000-0000-0000-000000000010';
   IF NOT EXISTS (
-    SELECT 1 FROM public.drivers WHERE id='20000000-0000-0000-0000-000000000003' AND company_id=company_b
+    SELECT 1 FROM public.drivers WHERE id='20000000-0000-0000-0000-000000000010' AND company_id=company_b
   ) OR NOT EXISTS (
-    SELECT 1 FROM public.vehicles WHERE id='30000000-0000-0000-0000-000000000003' AND company_id=company_b
+    SELECT 1 FROM public.vehicles WHERE id='30000000-0000-0000-0000-000000000010' AND company_id=company_b
   ) THEN RAISE EXCEPTION 'Global admin could not correct unassigned ownership'; END IF;
 
   BEGIN

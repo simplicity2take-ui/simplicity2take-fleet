@@ -2353,17 +2353,8 @@ async function saveVehicle(values, driverIds, id) {
     throw new Error("Mantenha a viatura ativa para alterar associações. Guarde primeiro as alterações das associações e depois mude o estado.");
   }
 
-  const payload = {
-    plate: values.plate.toUpperCase(),
-    brand: values.brand,
-    model: values.model,
-    vehicle_year: Number(values.year),
-    vin: values.vin,
-    status: values.status
-  };
   if (!state.currentCompanyId) throw new Error("Não foi possível determinar a empresa para esta viatura.");
-  if (!id) payload.company_id = state.currentCompanyId;
-  else if (existingVehicle.raw?.company_id !== state.currentCompanyId) {
+  if (id && existingVehicle.raw?.company_id !== state.currentCompanyId) {
     throw new Error("A viatura não pertence à empresa selecionada.");
   }
 
@@ -2375,22 +2366,20 @@ async function saveVehicle(values, driverIds, id) {
   if (requestedDriverIds.some(driverId => !selectedDrivers.has(driverId))) {
     throw new Error("Só pode associar motoristas da mesma empresa da viatura.");
   }
-  const query = id
-    ? supabaseClient.from("vehicles").update(payload).eq("id", id).select().single()
-    : supabaseClient.from("vehicles").insert(payload).select().single();
-  const { data: vehicle, error } = await query;
-  if (error) throw error;
 
-  // Inactive and maintenance vehicles cannot receive assignment changes. When
-  // their selection is unchanged, skip the RPC so metadata edits remain valid.
-  if (values.status === "Ativo") {
-    const vehicleId = id || vehicle.id;
-    const { error: assignmentError } = await supabaseClient.rpc("s2t_replace_vehicle_assignments", {
-      p_vehicle_id: vehicleId,
-      p_driver_ids: requestedDriverIds
-    });
-    if (assignmentError) throw assignmentError;
-  }
+  const { data: result, error } = await supabaseClient.rpc("s2t_save_vehicle_with_assignments", {
+    p_vehicle_id: id || null,
+    p_company_id: state.currentCompanyId,
+    p_plate: values.plate.toUpperCase(),
+    p_brand: values.brand,
+    p_model: values.model,
+    p_vehicle_year: Number(values.year),
+    p_vin: values.vin || null,
+    p_status: values.status,
+    p_driver_ids: requestedDriverIds
+  });
+  if (error) throw error;
+  if (!result?.vehicle_id) throw new Error("A gravação da viatura não devolveu um identificador válido.");
   showToast(id ? "Viatura atualizada. O histórico de associações foi preservado." : "Viatura criada.");
 }
 

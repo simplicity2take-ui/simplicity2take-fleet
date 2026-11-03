@@ -43,8 +43,8 @@ BEGIN
   END IF;
 
   IF EXISTS (
-    SELECT 1 FROM public.vehicle_assignments
-    WHERE driver_id IS NULL OR vehicle_id IS NULL
+    SELECT 1 FROM public.vehicle_assignments va
+    WHERE va.driver_id IS NULL OR va.vehicle_id IS NULL
   ) THEN
     RAISE EXCEPTION 'A rejected NULL assignment left a partial row';
   END IF;

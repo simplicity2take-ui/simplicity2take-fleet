@@ -56,7 +56,7 @@ Required before applying in an isolated environment:
 
 ## Latest disposable CI evidence
 
-On 2026-11-03, the branch CI applied the company, fleet and integration migrations twice to PostgreSQL 17 and passed the idempotency check. Company A/B document RLS checks cover company admins, an unlinked company member, a driver and explicit viewer grants. Fleet behavior verifies that company admins can create and assign their own company's driver/vehicle, while ordinary members cannot write drivers, vehicles or assignments. Bolt and Uber offline/type checks also pass. These results cover only the synthetic disposable database; hosted schema/data, full tenant coverage, live Bolt/Uber access, and production deployment remain unverified.
+On 2026-11-03, commit `d0d50c51df164d1fa051eaee1e4097c0bdbbbb2f` passed both push and pull-request CI. PostgreSQL 17 applied the company, fleet and integration migrations twice and passed the idempotency check. Company A/B RLS checks cover company admins, an unlinked member, a driver, users without membership, and inactive membership; ordinary members still cannot write drivers, vehicles or assignments. Uber offline tests require a complete, valid date range for aggregate reports to keep repeated imports idempotent. Bolt and Uber adapter tests use simulated responses; no live provider API was called. Hosted schema/data, full tenant coverage, provider authorization and production deployment remain unverified. See [push CI](https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/41715129274) and [pull-request CI](https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/41715145351).
 
 ## Test matrix required in a disposable local database
 

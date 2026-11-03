@@ -8,11 +8,10 @@ DO $test$
 DECLARE
   company_a uuid;
   company_b uuid;
-  vehicle_a uuid := '30000000-0000-0000-0000-000000000070';
+  vehicle_a uuid;
   vehicle_other uuid := '30000000-0000-0000-0000-000000000071';
-  vehicle_rollback uuid := '30000000-0000-0000-0000-000000000072';
+  vehicle_rollback_plate text := 'AD-72-AD';
   vehicle_b uuid := '30000000-0000-0000-0000-000000000073';
-  vehicle_member uuid := '30000000-0000-0000-0000-000000000074';
   driver_a uuid := '20000000-0000-0000-0000-000000000070';
   driver_other uuid := '20000000-0000-0000-0000-000000000071';
   result jsonb;
@@ -30,9 +29,10 @@ BEGIN
     (driver_other, company_a, 'Motorista RPC B', 'vehicle-rpc-b@example.test', '910000071', 'Ativo');
 
   result := public.s2t_save_vehicle_with_assignments(
-    vehicle_a, company_a, 'AA-70-AA', 'Toyota', 'Yaris', 2024, null, 'Ativo', ARRAY[driver_a]
+    null, company_a, 'AA-70-AA', 'Toyota', 'Yaris', 2024, null, 'Ativo', ARRAY[driver_a]
   );
-  IF result->>'created' <> 'true' OR result->>'vehicle_id' <> vehicle_a::text
+  vehicle_a := (result->>'vehicle_id')::uuid;
+  IF result->>'created' <> 'true' OR vehicle_a IS NULL
      OR result #>> '{assignment,created_assignments}' <> '1' THEN
     RAISE EXCEPTION 'Vehicle and initial driver assignment were not saved atomically: %', result;
   END IF;
@@ -74,7 +74,7 @@ BEGIN
   denied := false;
   BEGIN
     PERFORM public.s2t_save_vehicle_with_assignments(
-      vehicle_rollback, company_a, 'AD-72-AD', 'Honda', 'Civic', 2021, null, 'Ativo', ARRAY[driver_other]
+      null, company_a, vehicle_rollback_plate, 'Honda', 'Civic', 2021, null, 'Ativo', ARRAY[driver_other]
     );
   EXCEPTION WHEN unique_violation THEN
     denied := true;
@@ -82,7 +82,7 @@ BEGIN
   IF NOT denied THEN
     RAISE EXCEPTION 'Vehicle creation accepted an already assigned driver';
   END IF;
-  IF EXISTS (SELECT 1 FROM public.vehicles WHERE id = vehicle_rollback) THEN
+  IF EXISTS (SELECT 1 FROM public.vehicles WHERE plate = vehicle_rollback_plate) THEN
     RAISE EXCEPTION 'Failed vehicle creation left a partial row';
   END IF;
 
@@ -91,9 +91,13 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000001', true);
 
   result := public.s2t_save_vehicle_with_assignments(
-    vehicle_member, company_a, 'AE-74-AE', 'Renault', 'Clio', 2020, null, 'Ativo', '{}'::uuid[]
+    null, company_a, 'AE-74-AE', 'Renault', 'Clio', 2020, null, 'Ativo', '{}'::uuid[]
   );
-  IF result->>'vehicle_id' <> vehicle_member::text THEN
+  IF result->>'created' <> 'true'
+     OR NOT EXISTS (
+       SELECT 1 FROM public.vehicles
+       WHERE id = (result->>'vehicle_id')::uuid AND company_id = company_a
+     ) THEN
     RAISE EXCEPTION 'Company administrator could not create a vehicle in its own company';
   END IF;
 

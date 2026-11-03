@@ -30,7 +30,7 @@ This is a source-review checklist only. It does not authorize migration, deploym
 
 ## Current assessment
 
-- Ownership transfer with assignment history: guarded in PR #37; disposable PostgreSQL behavior and concurrency tests are being added.
+- Ownership transfer with assignment history: guarded in PR #37; disposable PostgreSQL behavior and concurrency tests **PASS** at commit `f30e0707b744bde87c79cbf2e76ee08e5ed663b2`.
 - Static review remains **BLOCKED** on actual schema nullability, full tenant coverage, company-admin provisioning, and any production API transaction proof.
 - Hosted Supabase migration test: **NOT RUN**. Repository CI uses a disposable PostgreSQL database only.
 - Production mutation/deployment: **NOT PERFORMED**.

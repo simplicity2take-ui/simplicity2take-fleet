@@ -137,3 +137,24 @@ Deno.test("Bolt v2 HTTP 200 responses with provider error codes are rejected", a
   }
   if (!rejected) throw new Error("Expected a Bolt error envelope to be rejected");
 });
+
+Deno.test("Bolt v2 pagination rejects repeated full pages even when total_rows matches", async () => {
+  const offsets: number[] = [];
+  const fakeFetch: typeof fetch = async (_input, init) => {
+    const request = JSON.parse(String(init?.body));
+    offsets.push(request.offset);
+    return new Response(JSON.stringify({
+      code: 0,
+      data: { drivers: [{ uuid: "driver-1" }, { uuid: "driver-2" }], total_rows: 4 },
+    }), { status: 200 });
+  };
+
+  let rejected = false;
+  try {
+    await getBoltCollection(fakeFetch, "https://bolt.example", "/drivers", "token", 1, "drivers", 2);
+  } catch (error) {
+    rejected = error instanceof Error && error.message.includes("repetiu uma página");
+  }
+  if (!rejected) throw new Error("Expected repeated Bolt pages to be rejected");
+  assertEquals(offsets, [0, 2]);
+});

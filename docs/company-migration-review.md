@@ -18,9 +18,11 @@ Transfers with history remain intentionally fail-closed. A future controlled tra
 
 The current `s2t_guard_assignment_company()` trigger rejects a NULL `driver_id` or `vehicle_id` with SQLSTATE `23502`. This is an improvement over the earlier draft behavior, but a trigger is not a substitute for verifying schema constraints and foreign keys.
 
+PR #37 adds `20261103000500_assignment_reference_not_null.sql`. It checks for legacy NULL references before applying `NOT NULL` to both columns, and disposable PostgreSQL CI confirms the catalog constraints and rejects NULL inserts. The target database remains unverified; the migration must not be applied there without reviewing its precondition and the existing data.
+
 Required before testing/release:
 - Verify the actual nullability and foreign keys in the isolated test schema.
-- Prefer reviewed `NOT NULL` constraints as well as foreign keys, after checking existing data and the application’s legitimate assignment lifecycle.
+- Confirm the target data has no NULL references, then apply the reviewed `NOT NULL` constraints as well as the existing foreign keys. The PR migration aborts if it finds legacy NULL rows.
 - Test NULL driver and NULL vehicle attempts and confirm they fail without leaving partial changes.
 
 ### Blocker 3 — membership is not a complete authorization model

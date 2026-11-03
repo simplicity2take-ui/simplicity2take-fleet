@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { arrayFrom, boltApiEnvelopeError, boltAssignmentAction, clean, first, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "../bolt-sync-utils.ts";
+import { boltAssignmentAction, clean, first, isActiveAssignmentStatusConflict, normalizeActiveVehicle, normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal } from "../bolt-sync-utils.ts";
+import { getBoltCollection, requestBolt, resolveBoltCompanyId } from "../bolt-api-client.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -10,7 +11,7 @@ const corsHeaders = {
 };
 
 const BOLT_TOKEN_URL = "https://oidc.bolt.eu/token";
-const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
+const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway-v2";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders });
@@ -27,27 +28,6 @@ async function getBoltToken() {
   if (!response.ok || !data.access_token) throw new Error("A Bolt recusou a autenticação API. Verifique as credenciais e o acesso Fleet Integration.");
   return data.access_token as string;
 }
-async function boltPost(path: string, token: string) {
-  const attempts = [{ pager: { offset: 0, limit: 1000 } }, { page: { offset: 0, limit: 1000 } }, {}];
-  let lastError = "Pedido Bolt recusado.";
-  for (const payload of attempts) {
-    const response = await fetch(BOLT_API_BASE + path, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const text = await response.text();
-    let data: any = {};
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    if (response.ok) {
-      const envelopeError = boltApiEnvelopeError(data);
-      if (envelopeError) throw new Error(envelopeError);
-      return data;
-    }
-    lastError = clean(data?.message || data?.error || text || lastError);
-  }
-  throw new Error(lastError);
-}
 async function upsertVehicle(admin: any, vehicle: any, now: string, companyId: string) {
   const boltId = normalizeVehicleId(vehicle);
   const plate = normalizePlate(vehicle);
@@ -55,6 +35,7 @@ async function upsertVehicle(admin: any, vehicle: any, now: string, companyId: s
   const yearValue = first(vehicle, ["year", "vehicle_year"]);
   const year = Number.isFinite(Number(yearValue)) && Number(yearValue) > 1900 ? Number(yearValue) : null;
   const vin = clean(first(vehicle, ["vin", "VIN"]));
+  const brand = clean(first(vehicle, ["make", "brand", "vehicle_make"]));
   const state = first(vehicle, ["state", "status"]);
   let existing: any = null;
   if (boltId) existing = (await admin.from("vehicles").select("*").eq("bolt_vehicle_uuid", boltId).eq("company_id", companyId).maybeSingle()).data;
@@ -76,6 +57,7 @@ async function upsertVehicle(admin: any, vehicle: any, now: string, companyId: s
   }
   const payload: any = {
     plate: plate || existing?.plate || "",
+    brand: brand || existing?.brand || "",
     model: model || existing?.model || "",
     vehicle_year: year || existing?.vehicle_year || null,
     vin: vin || existing?.vin || null,
@@ -85,20 +67,27 @@ async function upsertVehicle(admin: any, vehicle: any, now: string, companyId: s
   };
   if (existing) {
     const result = await admin.from("vehicles").update(payload).eq("id", existing.id).select("*").single();
-    if (result.error) throw result.error;
-    return { row: result.data, created: false };
+    if (!result.error) return { row: result.data, created: false, statusConflict: false };
+    if (payload.status === "Inativo" && existing.status !== "Inativo" &&
+        isActiveAssignmentStatusConflict(result.error, "vehicle")) {
+      const retryPayload = { ...payload, status: existing.status };
+      const retry = await admin.from("vehicles").update(retryPayload).eq("id", existing.id).select("*").single();
+      if (retry.error) throw retry.error;
+      return { row: retry.data, created: false, statusConflict: true };
+    }
+    throw result.error;
   }
   payload.company_id = companyId;
   const result = await admin.from("vehicles").insert(payload).select("*").single();
   if (result.error) throw result.error;
-  return { row: result.data, created: true };
+  return { row: result.data, created: true, statusConflict: false };
 }
 async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string, any>, vehicleByPlate: Map<string, any>, now: string, companyId: string) {
   const boltId = normalizeDriverId(driver);
   const partnerUuid = clean(first(driver, ["partner_uuid", "partnerUuid"]));
   const firstName = clean(first(driver, ["first_name", "firstName"]));
   const lastName = clean(first(driver, ["last_name", "lastName"]));
-  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim() || clean(first(driver, ["display_name", "name"]));
   const email = clean(first(driver, ["email"]));
   const phone = clean(first(driver, ["phone", "phone_number"]));
   const state = first(driver, ["state", "status"]);
@@ -126,21 +115,31 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     bolt_partner_uuid: partnerUuid || existing?.bolt_partner_uuid || null,
     bolt_last_synced_at: now
   };
-  let row: any, created = false;
+  let row: any, created = false, statusConflict = false;
   if (existing) {
     const result = await admin.from("drivers").update(payload).eq("id", existing.id).select("*").single();
-    if (result.error) throw result.error;
-    row = result.data;
+    if (!result.error) {
+      row = result.data;
+    } else if (payload.status === "Inativo" && existing.status !== "Inativo" &&
+        isActiveAssignmentStatusConflict(result.error, "driver")) {
+      const retryPayload = { ...payload, status: existing.status };
+      const retry = await admin.from("drivers").update(retryPayload).eq("id", existing.id).select("*").single();
+      if (retry.error) throw retry.error;
+      row = retry.data;
+      statusConflict = true;
+    } else {
+      throw result.error;
+    }
   } else {
     payload.company_id = companyId;
     const result = await admin.from("drivers").insert(payload).select("*").single();
     if (result.error) throw result.error;
-    row = result.data; created = true;
+    row = result.data;
   }
   let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
   if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
-  let assignmentAction: "none" | "unchanged" | "created" | "conflict" = "none";
-  if (assignedVehicle?.id) {
+  let assignmentAction: "none" | "unchanged" | "created" | "conflict" = statusConflict || assignedVehicle?.boltStatusConflict ? "conflict" : "none";
+  if (!statusConflict && !assignedVehicle?.boltStatusConflict && assignedVehicle?.id) {
     const assignmentResult = await admin.rpc("s2t_bolt_assign_vehicle", {
       p_driver_id: row.id,
       p_vehicle_id: assignedVehicle.id
@@ -150,7 +149,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     }
     assignmentAction = boltAssignmentAction(assignmentResult.data);
   }
-  return { row, created, assignedVehicleId: assignedVehicle?.id || null, assignmentAction };
+  return { row, created, statusConflict, assignedVehicleId: assignedVehicle?.id || null, assignmentAction };
 }
 
 Deno.serve(async (req: Request) => {
@@ -190,30 +189,40 @@ Deno.serve(async (req: Request) => {
     const companyId = String(company.id);
 
     const token = await getBoltToken();
-    const [driversPayload, vehiclesPayload] = await Promise.all([
-      boltPost("/fleetIntegration/v1/getDrivers", token),
-      boltPost("/fleetIntegration/v1/getVehicles", token)
+    const accessibleCompanies = await requestBolt(
+      fetch,
+      BOLT_API_BASE,
+      "/fleetIntegration/v2/getCompanies",
+      token,
+    );
+    const boltCompanyId = resolveBoltCompanyId(Deno.env.get("BOLT_COMPANY_ID"), accessibleCompanies);
+    const [boltDrivers, boltVehicles] = await Promise.all([
+      getBoltCollection(fetch, BOLT_API_BASE, "/fleetIntegration/v2/getDrivers", token, boltCompanyId, "drivers"),
+      getBoltCollection(fetch, BOLT_API_BASE, "/fleetIntegration/v2/getVehicles", token, boltCompanyId, "vehicles"),
     ]);
-    const boltDrivers = arrayFrom(driversPayload, ["drivers", "fleet_drivers", "items"]);
-    const boltVehicles = arrayFrom(vehiclesPayload, ["vehicles", "fleet_vehicles", "items"]);
-    if (!boltDrivers.length && !boltVehicles.length) return json({ ok: false, error: "A Bolt respondeu sem motoristas nem viaturas. Confirme no Swagger os parâmetros de paginação da tua conta." }, 502);
+    if (!boltDrivers.length && !boltVehicles.length) {
+      return json({ ok: false, error: "A Bolt não devolveu motoristas nem viaturas para a empresa configurada." }, 502);
+    }
 
     const now = new Date().toISOString();
     const vehicleByBoltId = new Map<string, any>();
     const vehicleByPlate = new Map<string, any>();
-    let vehiclesCreated = 0;
+    let vehiclesCreated = 0, vehicleStatusConflicts = 0;
     for (const vehicle of boltVehicles) {
       const result = await upsertVehicle(admin, vehicle, now, companyId);
       if (result.created) vehiclesCreated++;
+      if (result.statusConflict) vehicleStatusConflicts++;
+      const mappedVehicle = { ...result.row, boltStatusConflict: result.statusConflict };
       const boltId = normalizeVehicleId(vehicle);
       const plate = normalizePlate(vehicle);
-      if (boltId) vehicleByBoltId.set(boltId, result.row);
-      if (plate) vehicleByPlate.set(plate, result.row);
+      if (boltId) vehicleByBoltId.set(boltId, mappedVehicle);
+      if (plate) vehicleByPlate.set(plate, mappedVehicle);
     }
-    let driversCreated = 0, assignmentsCreated = 0, assignmentsConflicts = 0;
+    let driversCreated = 0, assignmentsCreated = 0, assignmentsConflicts = 0, driverStatusConflicts = 0;
     for (const driver of boltDrivers) {
       const result = await upsertDriver(admin, driver, vehicleByBoltId, vehicleByPlate, now, companyId);
       if (result.created) driversCreated++;
+      if (result.statusConflict) driverStatusConflicts++;
       if (result.assignmentAction === "created") assignmentsCreated++;
       if (result.assignmentAction === "conflict") assignmentsConflicts++;
     }
@@ -221,7 +230,8 @@ Deno.serve(async (req: Request) => {
       ok: true, source: "bolt", syncedAt: now,
       drivers: { received: boltDrivers.length, created: driversCreated, updated: boltDrivers.length - driversCreated },
       vehicles: { received: boltVehicles.length, created: vehiclesCreated, updated: boltVehicles.length - vehiclesCreated },
-      assignments: { created: assignmentsCreated, conflictsRequiringReview: assignmentsConflicts }
+      assignments: { created: assignmentsCreated, conflictsRequiringReview: assignmentsConflicts },
+      statusConflictsRequiringReview: { drivers: driverStatusConflicts, vehicles: vehicleStatusConflicts }
     });
   } catch (error) {
     console.error("bolt-sync error", error);

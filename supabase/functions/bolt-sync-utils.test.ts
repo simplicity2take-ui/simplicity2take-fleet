@@ -1,5 +1,5 @@
 import {
-  arrayFrom, boltApiEnvelopeError, boltAssignmentAction, clean, first, normalizeActiveVehicle,
+  arrayFrom, boltApiEnvelopeError, boltAssignmentAction, clean, first, isActiveAssignmentStatusConflict, normalizeActiveVehicle,
   normalizeDriverId, normalizePlate, normalizeVehicleId, statusToPortal
 } from "./bolt-sync-utils.ts";
 
@@ -53,11 +53,12 @@ Deno.test("Bolt supports selected active vehicles without guessing other assignm
 });
 
 Deno.test("Bolt API envelope rejects provider errors on HTTP success", () => {
-  assertEquals(boltApiEnvelopeError([{ id: 1 }]), null);
+  assertEquals(boltApiEnvelopeError([{ id: 1 }]), "A Bolt devolveu uma resposta inválida.");
   assertEquals(boltApiEnvelopeError({ code: 0, data: {} }), null);
   assertEquals(boltApiEnvelopeError({ code: "0", data: {} }), null);
   assertEquals(boltApiEnvelopeError({ code: 17, message: "failed" }), "A API Bolt devolveu um código de erro.");
   assertEquals(boltApiEnvelopeError(null), "A Bolt devolveu uma resposta inválida.");
+  assertEquals(boltApiEnvelopeError({ data: { drivers: [] } }), "A API Bolt devolveu um código de erro.");
 });
 
 
@@ -71,4 +72,17 @@ Deno.test("Bolt assignment RPC accepts only transaction decisions", () => {
     try { boltAssignmentAction(invalid); } catch { threw = true; }
     if (!threw) throw new Error("Expected an invalid Bolt assignment response to be rejected");
   }
+});
+
+Deno.test("Bolt sync preserves active status when fleet history prevents deactivation", () => {
+  assertEquals(isActiveAssignmentStatusConflict({
+    code: "23514",
+    message: "Não é possível desativar o motorista enquanto existirem associações ativas ou futuras",
+  }, "driver"), true);
+  assertEquals(isActiveAssignmentStatusConflict({
+    code: "23514",
+    message: "Não é possível arquivar a viatura enquanto existirem associações ativas ou futuras",
+  }, "vehicle"), true);
+  assertEquals(isActiveAssignmentStatusConflict({ code: "23505", message: "conflict" }, "driver"), false);
+  assertEquals(isActiveAssignmentStatusConflict({ code: "23514", message: "validation failed" }, "vehicle"), false);
 });

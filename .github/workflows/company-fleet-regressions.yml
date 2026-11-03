@@ -14,6 +14,9 @@ on:
       - "supabase/functions/bolt-sync/**"
       - "supabase/functions/bolt-sync-utils.ts"
       - "supabase/functions/bolt-sync-utils.test.ts"
+      - "supabase/functions/bolt-api-client.ts"
+      - "supabase/functions/bolt-api-client.test.ts"
+      - "docs/bolt-api-v2.md"
       - "supabase/functions/uber-report-import/**"
       - "supabase/functions/uber-report-import/uber-report-utils.ts"
       - "supabase/functions/uber-report-import/uber-report-utils.test.ts"
@@ -55,7 +58,7 @@ jobs:
       - name: Type-check fleet creation and provider integrations without credentials
         run: deno check supabase/functions/admin-create-driver/index.ts supabase/functions/bolt-sync/index.ts supabase/functions/uber-report-import/index.ts
       - name: Run provider-independent Bolt and Uber regressions
-        run: deno test supabase/functions/bolt-sync-utils.test.ts supabase/functions/uber-report-import/uber-report-utils.test.ts
+        run: deno test supabase/functions/bolt-sync-utils.test.ts supabase/functions/bolt-api-client.test.ts supabase/functions/uber-report-import/uber-report-utils.test.ts
 
   postgres:
     name: PostgreSQL company, vehicle and driver regressions

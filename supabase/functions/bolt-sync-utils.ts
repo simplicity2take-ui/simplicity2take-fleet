@@ -63,15 +63,27 @@ export function normalizeActiveVehicle(driver: any): Record<string, unknown> | n
 }
 
 export function boltApiEnvelopeError(payload: unknown): string | null {
-  if (Array.isArray(payload)) return null;
-  if (!payload || typeof payload !== "object") return "A Bolt devolveu uma resposta inválida.";
-  const code = (payload as Record<string, unknown>).code;
-  if (code !== undefined && code !== null && code !== 0 && code !== "0") {
-    return "A API Bolt devolveu um código de erro.";
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return "A Bolt devolveu uma resposta inválida.";
   }
+  const code = (payload as Record<string, unknown>).code;
+  if (code !== 0 && code !== "0") return "A API Bolt devolveu um código de erro.";
   return null;
 }
 
+
+/** Identify the fleet trigger response that blocks deactivation while assignment history is still open. */
+export function isActiveAssignmentStatusConflict(
+  error: unknown,
+  entity: "driver" | "vehicle",
+): boolean {
+  if (!error || typeof error !== "object" || Array.isArray(error)) return false;
+  const record = error as Record<string, unknown>;
+  if (record.code !== "23514" || typeof record.message !== "string") return false;
+  const message = record.message.toLowerCase();
+  const entityMessage = entity === "driver" ? "desativar o motorista" : "arquivar a viatura";
+  return message.includes(entityMessage) && message.includes("associações ativas ou futuras");
+}
 
 export type BoltAssignmentAction = "unchanged" | "created" | "conflict";
 

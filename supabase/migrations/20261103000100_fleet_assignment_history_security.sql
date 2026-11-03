@@ -201,7 +201,7 @@ begin
   end if;
   if not public.s2t_is_admin()
      and not public.s2t_is_company_admin(v_company_id) then
-    raise exception 'Sem permissões para gerir as atribuições desta viatura' using errcode = '42501';
+    raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
   end if;
 
   select v.company_id, v.status
@@ -215,7 +215,7 @@ begin
   end if;
   if not public.s2t_is_admin()
      and not public.s2t_is_company_admin(v_company_id) then
-    raise exception 'Sem permissões para gerir as atribuições desta viatura' using errcode = '42501';
+    raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
   end if;
   if coalesce(v_vehicle_status, 'Ativo') <> 'Ativo' then
     raise exception 'Não é possível atribuir motoristas a uma viatura inativa ou arquivada' using errcode = '23514';
@@ -387,7 +387,7 @@ begin
   end if;
   if not public.s2t_is_admin()
      and not public.s2t_is_company_admin(v_company_id) then
-    raise exception 'Sem permissões para desativar este motorista' using errcode = '42501';
+    raise exception 'Motorista não encontrado ou sem empresa associada' using errcode = 'P0002';
   end if;
 
   -- Lock vehicles in stable order, then lock and recheck the driver.
@@ -411,7 +411,7 @@ begin
   end if;
   if not public.s2t_is_admin()
      and not public.s2t_is_company_admin(v_company_id) then
-    raise exception 'Sem permissões para desativar este motorista' using errcode = '42501';
+    raise exception 'Motorista não encontrado ou sem empresa associada' using errcode = 'P0002';
   end if;
   if coalesce(v_driver_status, 'Ativo') <> 'Ativo' then
     raise exception 'O motorista já está inativo' using errcode = '23514';
@@ -495,7 +495,7 @@ begin
   end if;
   if not public.s2t_is_admin()
      and not public.s2t_is_company_admin(v_company_id) then
-    raise exception 'Sem permissões para arquivar esta viatura' using errcode = '42501';
+    raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
   end if;
 
   select v.company_id, v.status
@@ -509,7 +509,7 @@ begin
   end if;
   if not public.s2t_is_admin()
      and not public.s2t_is_company_admin(v_company_id) then
-    raise exception 'Sem permissões para arquivar esta viatura' using errcode = '42501';
+    raise exception 'Viatura não encontrada ou sem empresa associada' using errcode = 'P0002';
   end if;
   if coalesce(v_vehicle_status, 'Ativo') = 'Inativo' then
     raise exception 'A viatura já está inativa ou arquivada' using errcode = '23514';

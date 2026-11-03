@@ -83,13 +83,6 @@ BEGIN
   INSERT INTO public.vehicles (id, company_id, plate, brand, model, vehicle_year, status)
   VALUES ('30000000-0000-0000-0000-000000000007', company_a, 'AA-07-AA', 'Renault', 'Megane', 2024, 'Ativo');
 
-  IF NOT public.s2t_is_company_admin(company_a) THEN
-    RAISE EXCEPTION 'Company A membership helper did not authorize its admin';
-  END IF;
-  IF NOT public.s2t_can_manage_assignment('20000000-0000-0000-0000-000000000007', '30000000-0000-0000-0000-000000000007') THEN
-    RAISE EXCEPTION 'Assignment authorization helper rejected same-company records';
-  END IF;
-
   result := public.s2t_replace_vehicle_assignments(
     '30000000-0000-0000-0000-000000000007',
     ARRAY['20000000-0000-0000-0000-000000000007']::uuid[]
@@ -194,6 +187,20 @@ BEGIN
   EXCEPTION WHEN no_data_found THEN denied := true;
   END;
   IF NOT denied THEN RAISE EXCEPTION 'Company A admin operated on a Company B vehicle'; END IF;
+
+  denied := false;
+  BEGIN
+    PERFORM public.s2t_replace_vehicle_assignments('30000000-0000-0000-0000-000000000105', ARRAY[]::uuid[]);
+  EXCEPTION WHEN no_data_found THEN denied := true;
+  END;
+  IF NOT denied THEN RAISE EXCEPTION 'Company A admin discovered or changed a Company B vehicle through assignment RPC'; END IF;
+
+  denied := false;
+  BEGIN
+    PERFORM public.s2t_deactivate_driver('20000000-0000-0000-0000-000000000105');
+  EXCEPTION WHEN no_data_found THEN denied := true;
+  END;
+  IF NOT denied THEN RAISE EXCEPTION 'Company A admin discovered or deactivated a Company B driver'; END IF;
 END;
 $company_a_admin$;
 

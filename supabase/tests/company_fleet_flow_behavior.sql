@@ -252,6 +252,11 @@ BEGIN
     WHERE id='20000000-0000-0000-0000-000000000001'
       AND profile_id='10000000-0000-0000-0000-000000000003'
   ) THEN RAISE EXCEPTION 'Global admin could not correct driver profile linkage'; END IF;
+  -- Restore the fixture relationship so later isolated behavior checks do not
+  -- inherit this identity change.
+  UPDATE public.drivers
+  SET profile_id='10000000-0000-0000-0000-000000000004'
+  WHERE id='20000000-0000-0000-0000-000000000001';
 
   -- An active assignment must not be reclassified by changing its driver's owner.
   denied := false;

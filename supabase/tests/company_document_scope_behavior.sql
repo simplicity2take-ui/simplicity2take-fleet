@@ -2,6 +2,12 @@
 
 BEGIN;
 
+INSERT INTO public.profiles (id, full_name, email, role)
+VALUES ('10000000-0000-0000-0000-000000000006', 'Membro isolado A', 'member-isolated-a@example.test', 'user');
+INSERT INTO public.company_memberships (company_id, profile_id, role, status)
+VALUES ((SELECT id FROM public.companies WHERE slug='simplicity2take'),
+        '10000000-0000-0000-0000-000000000006', 'member', 'Ativo');
+
 INSERT INTO public.documents (id, company_id, name, driver_id) VALUES
   ('50000000-0000-0000-0000-000000000001',
    (SELECT id FROM public.companies WHERE slug='simplicity2take'),
@@ -41,7 +47,7 @@ BEGIN
 END;
 $company_a_admin$;
 
-SELECT set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000003', false);
+SELECT set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000006', false);
 DO $company_a_member$
 BEGIN
   IF (SELECT count(*) FROM public.documents) <> 2

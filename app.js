@@ -1006,8 +1006,6 @@ function renderDashboard() {
       ${metric("Sem validade", missingExpiry.length)}
     </section>
 
-    ${companyPanel}
-    ${membershipPanel}
     <section class="content-grid">
       <article class="panel">
         <div class="panel-heading">
@@ -1821,6 +1819,8 @@ function renderSettings() {
   selectors.content.innerHTML = `
     ${heading("Configurações", "Segurança, palavras-passe e integrações.", "")}
     <section class="content-grid">
+      ${companyPanel}
+      ${membershipPanel}
       <article class="panel">
         <div class="panel-heading"><h2>Segurança</h2><span class="tag active">Ativo</span></div>
         <div class="settings-list">

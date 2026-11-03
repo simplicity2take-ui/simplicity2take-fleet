@@ -108,3 +108,21 @@ test("failed company switch restores role and visible fleet data", async () => {
   assert.equal(app.elements.get("#appShell").inert, false);
   assert.equal(switcher.disabled, false);
 });
+
+
+test("global administrator can open dashboard and company management settings", () => {
+  const app = createApp();
+  vm.runInContext(
+    "state.profile={id:'admin',role:'admin',full_name:'Admin'};" +
+    "state.sessionUserId='admin'; state.currentCompanyId='a';" +
+    "state.companies=[{id:'a',slug:'simplicity2take',legal_name:'Empresa A',display_name:'Empresa A',status:'Ativa'}];" +
+    "state.drivers=[]; state.vehicles=[]; state.documents=[]; state.tripRecords=[];" +
+    "state.companyMemberships=[]; state.companyProfiles=[]; state.companyMembershipLoadError='';" +
+    "state.activeView='dashboard'; renderApp();",
+    app.context
+  );
+  assert.match(app.elements.get("#content").innerHTML, /Resumo documental/);
+  vm.runInContext("state.activeView='settings'; renderApp();", app.context);
+  assert.match(app.elements.get("#content").innerHTML, /Acessos à empresa/);
+  assert.match(app.elements.get("#content").innerHTML, /Adicionar empresa/);
+});

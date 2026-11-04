@@ -449,7 +449,9 @@ Deno.serve(async (req: Request) => {
     // Reject contradictory provider batches before writing any driver or vehicle.
     if (hasDuplicateBoltIdentities(boltVehicles, (v: any) => normalizeVehicleId(v)) ||
         hasDuplicateBoltIdentities(boltVehicles, (v: any) => normalizePlate(v).toUpperCase()) ||
-        hasDuplicateBoltIdentities(boltDrivers, (d: any) => normalizeDriverId(d))) {
+        hasDuplicateBoltIdentities(boltDrivers, (d: any) => normalizeDriverId(d)) ||
+        hasDuplicateBoltIdentities(boltDrivers, (d: any) => normalizeBoltEmail(first(d, ["email"]))) ||
+        hasDuplicateBoltIdentities(boltDrivers, (d: any) => normalizeBoltPhone(first(d, ["phone", "phone_number"])))) {
       return json({
         ok: false,
         error: "A Bolt devolveu identificadores duplicados; sincronização interrompida antes de alterar dados.",

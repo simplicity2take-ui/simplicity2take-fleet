@@ -96,3 +96,19 @@ export function boltPageCountIsValid(received: number, totalRows: unknown): tota
     typeof totalRows === "number" && Number.isInteger(totalRows) &&
     totalRows >= received && totalRows <= 5000;
 }
+
+/** Reject duplicate provider identities before any database write. Empty identifiers are ignored. */
+export function hasDuplicateBoltIdentities(
+  records: unknown[],
+  identity: (record: unknown) => unknown,
+): boolean {
+  const seen = new Set<string>();
+  for (const record of records) {
+    const raw = identity(record);
+    const key = typeof raw === "string" ? raw.trim() : "";
+    if (!key) continue;
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
+}

@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid } from "../bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid, hasDuplicateBoltIdentities } from "../bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -445,6 +445,17 @@ Deno.serve(async (req: Request) => {
       ok: false, error: "A Bolt devolveu zero viaturas; sincronização interrompida para evitar atribuições incompletas.",
       source: "bolt", syncedAt: null
     }, 502);
+
+    // Reject contradictory provider batches before writing any driver or vehicle.
+    if (hasDuplicateBoltIdentities(boltVehicles, (v: any) => normalizeVehicleId(v)) ||
+        hasDuplicateBoltIdentities(boltVehicles, (v: any) => normalizePlate(v).toUpperCase()) ||
+        hasDuplicateBoltIdentities(boltDrivers, (d: any) => normalizeDriverId(d))) {
+      return json({
+        ok: false,
+        error: "A Bolt devolveu identificadores duplicados; sincronização interrompida antes de alterar dados.",
+        source: "bolt", syncedAt: null
+      }, 502);
+    }
 
     const now = new Date().toISOString();
     const vehicleByBoltId = new Map<string, any>();

@@ -143,3 +143,13 @@ Deno.test("Bolt pre-write guard detects repeated provider identities", () => {
   assertEquals(hasDuplicateBoltIdentities([{ id: "" }, { id: null }], (r: any) => r.id), false);
   assertEquals(hasDuplicateBoltIdentities([{ id: " one " }, { id: "one" }], (r: any) => r.id), true);
 });
+
+Deno.test("Bolt duplicate guard detects normalized email and phone collisions", () => {
+  const drivers = [
+    { email: " Driver@Example.com ", phone: "+351 912 345 678" },
+    { email: "driver@example.com", phone: "+351912345678" },
+  ];
+  assertEquals(hasDuplicateBoltIdentities(drivers, (d: any) => normalizeBoltEmail(d.email)), true);
+  assertEquals(hasDuplicateBoltIdentities(drivers, (d: any) => normalizeBoltPhone(d.phone)), true);
+  assertEquals(hasDuplicateBoltIdentities([{ email: "" }, { email: null }], (d: any) => normalizeBoltEmail(d.email)), false);
+});

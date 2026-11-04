@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid } from "./bolt-sync-utils.ts";
+import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid, hasDuplicateBoltIdentities } from "./bolt-sync-utils.ts";
 
 Deno.test("Bolt identity guard allows missing identifiers", () => {
   assertEquals(hasBoltIdentityConflict(null, "bolt-1"), false);
@@ -135,4 +135,11 @@ Deno.test("Bolt selected vehicle normalization supports v1 and v2 without guessi
   assertEquals(normalizeBoltActiveVehicle({ vehicles: null }), null);
   assertEquals(normalizeBoltActiveVehicle(null), null);
   assertEquals(normalizeBoltActiveVehicle({ active_vehicle: "invalid" }), null);
+});
+
+Deno.test("Bolt pre-write guard detects repeated provider identities", () => {
+  assertEquals(hasDuplicateBoltIdentities([{ id: "one" }, { id: "one" }], (r: any) => r.id), true);
+  assertEquals(hasDuplicateBoltIdentities([{ id: "one" }, { id: "two" }], (r: any) => r.id), false);
+  assertEquals(hasDuplicateBoltIdentities([{ id: "" }, { id: null }], (r: any) => r.id), false);
+  assertEquals(hasDuplicateBoltIdentities([{ id: " one " }, { id: "one" }], (r: any) => r.id), true);
 });

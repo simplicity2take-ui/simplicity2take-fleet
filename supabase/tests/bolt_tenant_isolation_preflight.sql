@@ -50,3 +50,34 @@ order by p.proname;
 -- Before multi-company enablement: require explicit tenant scoping for provider
 -- identity lookups, event/trip uniqueness, writes and SELECT policies. Do not
 -- apply schema changes based only on this report.
+
+-- 6. Discover potential company and membership tables before designing tenant keys.
+select c.table_name, c.column_name, c.data_type
+from information_schema.columns c
+where c.table_schema = 'public'
+  and (c.table_name ilike '%compan%'
+       or c.table_name ilike '%tenant%'
+       or c.table_name ilike '%member%'
+       or c.column_name ilike '%company_id%'
+       or c.column_name ilike '%tenant_id%')
+order by c.table_name, c.ordinal_position;
+
+-- 7. Inspect existing foreign-key ownership chains without reading personal data.
+select con.conrelid::regclass as source_table,
+       con.conname as constraint_name,
+       con.confrelid::regclass as referenced_table,
+       pg_get_constraintdef(con.oid) as definition
+from pg_constraint con
+join pg_namespace n on n.oid = con.connamespace
+where n.nspname = 'public' and con.contype = 'f'
+  and (con.conrelid::regclass::text ~* '(drivers|vehicles|assignments|platform_|compan|tenant|member)'
+       or con.confrelid::regclass::text ~* '(compan|tenant|member)')
+order by source_table::text, constraint_name;
+
+-- 8. Inventory company/tenant policies, including permissive policies.
+select tablename, policyname, permissive, roles, cmd, qual, with_check
+from pg_policies
+where schemaname = 'public'
+  and (tablename ilike '%compan%' or tablename ilike '%tenant%'
+       or tablename ilike '%member%')
+order by tablename, policyname;

@@ -292,7 +292,7 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
     throw new Error("A viatura resolvida não corresponde ao UUID ativo Bolt; perfil e atribuição não foram alterados.");
   }
   if (nextStatus === "Ativo" && assignedVehicle?.plate && activePlate &&
-      assignedVehicle.plate.toUpperCase() !== activePlate.toUpperCase() && !activeVehicleId) {
+      assignedVehicle.plate.toUpperCase() !== activePlate.toUpperCase()) {
     throw new Error("A matrícula resolvida não corresponde à viatura ativa Bolt; perfil e atribuição não foram alterados.");
   }
 

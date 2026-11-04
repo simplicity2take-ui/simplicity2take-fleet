@@ -211,10 +211,13 @@ async function upsertVehicle(admin: any, vehicle: any, now: string) {
     if (lookup.error) throw new Error("Falha ao consultar viatura existente por UUID Bolt.");
     existing = lookup.data;
   }
-  if (!existing && plate) {
+  if (plate) {
     const lookup = await admin.from("vehicles").select("*").eq("plate", plate).maybeSingle();
     if (lookup.error) throw new Error("Falha ao consultar viatura existente por matrícula.");
-    existing = lookup.data;
+    if (existing && lookup.data && existing.id !== lookup.data.id) {
+      throw new Error("O UUID Bolt e a matrícula correspondem a viaturas diferentes; atualização bloqueada.");
+    }
+    existing ??= lookup.data;
   }
   if (hasBoltIdentityConflict(existing?.bolt_vehicle_uuid, boltId)) {
     throw new Error("A matrícula corresponde a uma viatura com outro UUID Bolt; atualização bloqueada.");

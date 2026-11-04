@@ -280,15 +280,14 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
 
   let assignedVehicle = activeVehicleId ? vehicleByBoltId.get(activeVehicleId) : null;
   if (!assignedVehicle && activePlate) assignedVehicle = vehicleByPlate.get(activePlate) || null;
-  const hasExplicitActiveVehicle = Boolean(activeVehicleId || activePlate);
   const nextStatus = boltStatusToPortal(state, existing?.status || "Ativo");
 
   // Validate all assignment preconditions before changing the driver profile.
-  if (nextStatus === "Ativo" && hasExplicitActiveVehicle && !assignedVehicle) {
+  if (nextStatus === "Ativo" && activeVehicle && !assignedVehicle?.id) {
     throw new Error("Não foi possível resolver a viatura ativa Bolt; perfil e atribuição não foram alterados.");
   }
-  if (nextStatus === "Ativo" && assignedVehicle?.bolt_vehicle_uuid && activeVehicleId &&
-      assignedVehicle.bolt_vehicle_uuid !== activeVehicleId) {
+  if (nextStatus === "Ativo" && activeVehicleId &&
+      assignedVehicle?.bolt_vehicle_uuid !== activeVehicleId) {
     throw new Error("A viatura resolvida não corresponde ao UUID ativo Bolt; perfil e atribuição não foram alterados.");
   }
   if (nextStatus === "Ativo" && assignedVehicle?.plate && activePlate &&

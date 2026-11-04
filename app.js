@@ -1354,7 +1354,6 @@ async function syncBolt() {
     const drivers = data?.drivers || {};
     const vehicles = data?.vehicles || {};
     const assignments = Number(data?.assignmentsUpdated || 0);
-    const receivedVehicles = Number(vehicles.received || 0);
     const failedVehicles = Number(vehicles.failed || 0);
     const assignmentFailures = Number(data?.assignmentFailures || 0);
     const criticalReviews = Array.isArray(data?.assignmentErrors)
@@ -1365,14 +1364,15 @@ async function syncBolt() {
       if (data?.partial) {
         await loadBackendData();
         renderApp();
-        if (receivedVehicles > 0 && failedVehicles > 0 && assignmentFailures === 0) {
-          showToast(`Bolt parcialmente sincronizada: ${vehicles.created || 0} criadas, ${vehicles.updated || 0} atualizadas e ${failedVehicles} falharam. Motoristas não foram sincronizados.`);
-        } else {
-          const reviewNotice = criticalReviews > 0
-            ? ` ${criticalReviews} falha(s) crítica(s) exigem revisão manual.`
-            : "";
-          showToast(`Bolt parcialmente sincronizada: ${drivers.created || 0} motoristas criados, ${drivers.updated || 0} atualizados; ${assignments} associações concluídas e ${assignmentFailures} falhas.${reviewNotice}`);
-        }
+      }
+      if (failedVehicles > 0 && assignmentFailures === 0) {
+        const prefix = data?.partial ? "Bolt parcialmente sincronizada" : "Sincronização Bolt interrompida";
+        showToast(`${prefix}: ${vehicles.created || 0} viaturas criadas, ${vehicles.updated || 0} atualizadas e ${failedVehicles} falharam. Motoristas não foram sincronizados.`);
+      } else if (data?.partial) {
+        const reviewNotice = criticalReviews > 0
+          ? ` ${criticalReviews} falha(s) crítica(s) exigem revisão manual.`
+          : "";
+        showToast(`Bolt parcialmente sincronizada: ${drivers.created || 0} motoristas criados, ${drivers.updated || 0} atualizados; ${assignments} associações concluídas e ${assignmentFailures} falhas.${reviewNotice}`);
       } else {
         throw new Error(data?.error || "A sincronização Bolt falhou.");
       }
@@ -1381,7 +1381,7 @@ async function syncBolt() {
 
     await loadBackendData();
     renderApp();
-    showToast(`Bolt sincronizada: ${drivers.active ?? drivers.received ?? 0} motoristas ativos, ${vehicles.active ?? vehicles.received ?? receivedVehicles} viaturas ativas e ${assignments} associações.`);
+    showToast(`Bolt sincronizada: ${drivers.received ?? 0} motoristas e ${vehicles.received ?? 0} viaturas recebidos; ${assignments} associações concluídas.`);
   } catch (error) {
     console.error("Bolt sync error", error);
     showToast(error?.message || "Não foi possível sincronizar a Bolt.");

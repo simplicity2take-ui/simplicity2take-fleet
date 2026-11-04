@@ -1341,7 +1341,15 @@ async function syncBolt() {
   if (button) { button.disabled = true; button.textContent = "A sincronizar Bolt…"; }
   try {
     const { data, error } = await supabaseClient.functions.invoke("bolt-sync", { body: {} });
-    if (error) throw error;
+    if (error) {
+      const details = error.context instanceof Response
+        ? await error.context.json().catch(() => null)
+        : null;
+      if (typeof details?.error === "string" && details.error.trim()) {
+        throw new Error(details.error);
+      }
+      throw error;
+    }
 
     const drivers = data?.drivers || {};
     const vehicles = data?.vehicles || {};

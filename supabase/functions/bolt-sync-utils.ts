@@ -37,9 +37,11 @@ export function normalizeBoltActiveVehicle(driver: unknown): Record<string, unkn
       ? (value.vehicles as Record<string, unknown>).selected
       : null
   );
-  return selected && typeof selected === "object" && !Array.isArray(selected)
-    ? selected as Record<string, unknown>
-    : null;
+  if (selected === null || selected === undefined) return null;
+  if (typeof selected !== "object" || Array.isArray(selected)) {
+    throw new Error("A Bolt devolveu uma viatura selecionada num formato inválido.");
+  }
+  return selected as Record<string, unknown>;
 }
 
 export function boltStatusToPortal(value: unknown, current = "Ativo"): string {

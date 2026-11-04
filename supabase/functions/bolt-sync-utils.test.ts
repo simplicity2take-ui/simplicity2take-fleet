@@ -134,7 +134,12 @@ Deno.test("Bolt selected vehicle normalization supports v1 and v2 without guessi
   assertEquals(normalizeBoltActiveVehicle({ vehicles: { other_assigned: [v1] } }), null);
   assertEquals(normalizeBoltActiveVehicle({ vehicles: null }), null);
   assertEquals(normalizeBoltActiveVehicle(null), null);
-  assertEquals(normalizeBoltActiveVehicle({ active_vehicle: "invalid" }), null);
+});
+
+Deno.test("Bolt selected vehicle rejects invalid values from both API versions", () => {
+  assertThrows(() => normalizeBoltActiveVehicle({ active_vehicle: "invalid" }), Error, "formato inválido");
+  assertThrows(() => normalizeBoltActiveVehicle({ vehicles: { selected: [] } }), Error, "formato inválido");
+  assertThrows(() => normalizeBoltActiveVehicle({ vehicles: { selected: false } }), Error, "formato inválido");
 });
 
 Deno.test("Bolt pre-write guard detects repeated provider identities", () => {

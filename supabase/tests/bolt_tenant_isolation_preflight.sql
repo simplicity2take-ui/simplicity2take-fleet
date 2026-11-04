@@ -72,7 +72,7 @@ join pg_namespace n on n.oid = con.connamespace
 where n.nspname = 'public' and con.contype = 'f'
   and (con.conrelid::regclass::text ~* '(drivers|vehicles|assignments|platform_|compan|tenant|member)'
        or con.confrelid::regclass::text ~* '(compan|tenant|member)')
-order by source_table::text, constraint_name;
+order by 1, 2;
 
 -- 8. Inventory company/tenant policies, including permissive policies.
 select tablename, policyname, permissive, roles, cmd, qual, with_check

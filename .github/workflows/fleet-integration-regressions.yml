@@ -70,7 +70,11 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/bolt_assignment_ci_fixture.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261102000200_reconcile_bolt_assignment_atomically.sql
       - name: Validate read-only Bolt tenant preflight on disposable database
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/bolt_tenant_isolation_preflight.sql > /dev/null
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "BEGIN TRANSACTION READ ONLY" \
+            -f supabase/tests/bolt_tenant_isolation_preflight.sql \
+            -c "ROLLBACK" > /dev/null
       - name: Run catalog and privilege regressions
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/bolt_assignment_rpc_regression.sql

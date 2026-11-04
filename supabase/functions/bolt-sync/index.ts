@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid, hasDuplicateBoltIdentities } from "../bolt-sync-utils.ts";
+import { resolveBoltDriverMatch, hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid, hasDuplicateBoltIdentities } from "../bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -250,22 +250,27 @@ async function upsertDriver(admin: any, driver: any, vehicleByBoltId: Map<string
   const activeVehicleId = normalizeVehicleId(activeVehicle);
   const activePlate = normalizePlate(activeVehicle);
 
-  let existing: any = null;
+  let byBoltId = null;
+  let byEmail = null;
+  let byPhone = null;
   if (boltId) {
     const lookup = await admin.from("drivers").select("*").eq("bolt_driver_uuid", boltId).maybeSingle();
     if (lookup.error) throw new Error("Falha ao consultar motorista existente por UUID Bolt.");
-    existing = lookup.data;
+    byBoltId = lookup.data;
   }
-  if (!existing && email) {
-    const lookup = await admin.from("drivers").select("*").ilike("email", email).maybeSingle();
+  if (email) {
+    // Match the entire address literally, including pattern characters in the local part.
+    const emailPattern = "^" + email.replace(/[.*+?^${}()|[\]\\]/g, "\$&") + "$";
+    const lookup = await admin.from("drivers").select("*").filter("email", "imatch", emailPattern).maybeSingle();
     if (lookup.error) throw new Error("Falha ao consultar motorista existente por email.");
-    existing = lookup.data;
+    byEmail = lookup.data;
   }
-  if (!existing && phone) {
+  if (phone) {
     const lookup = await admin.from("drivers").select("*").eq("phone", phone).maybeSingle();
     if (lookup.error) throw new Error("Falha ao consultar motorista existente por telefone.");
-    existing = lookup.data;
+    byPhone = lookup.data;
   }
+  const existing = resolveBoltDriverMatch<any>(byBoltId, byEmail, byPhone);
   if (hasBoltIdentityConflict(existing?.bolt_driver_uuid, boltId)) {
     throw new Error("O email/telefone corresponde a um motorista com outro UUID Bolt; atualização bloqueada.");
   }

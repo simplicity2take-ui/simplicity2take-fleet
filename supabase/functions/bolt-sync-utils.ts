@@ -5,6 +5,18 @@ export function hasBoltIdentityConflict(existingBoltId: unknown, incomingBoltId:
     existingBoltId !== incomingBoltId;
 }
 
+export function resolveBoltDriverMatch<T extends { id: string }>(
+  byBoltId: T | null,
+  byEmail: T | null,
+  byPhone: T | null,
+): T | null {
+  const match = byBoltId ?? byEmail ?? byPhone;
+  if (match && [byEmail, byPhone].some((contact) => contact && contact.id !== match.id)) {
+    throw new Error("O UUID Bolt, email ou telefone correspondem a motoristas diferentes; atualização bloqueada.");
+  }
+  return match;
+}
+
 // Keep normalization identical to the existing Bolt sync behavior.
 export function normalizeBoltEmail(value: unknown): string {
   return value === undefined || value === null ? "" : String(value).trim().toLowerCase();

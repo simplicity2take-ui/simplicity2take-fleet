@@ -1,5 +1,5 @@
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid, hasDuplicateBoltIdentities } from "./bolt-sync-utils.ts";
+import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { resolveBoltDriverMatch, hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid, hasDuplicateBoltIdentities } from "./bolt-sync-utils.ts";
 
 Deno.test("Bolt identity guard allows missing identifiers", () => {
   assertEquals(hasBoltIdentityConflict(null, "bolt-1"), false);
@@ -152,4 +152,19 @@ Deno.test("Bolt duplicate guard detects normalized email and phone collisions", 
   assertEquals(hasDuplicateBoltIdentities(drivers, (d: any) => normalizeBoltEmail(d.email)), true);
   assertEquals(hasDuplicateBoltIdentities(drivers, (d: any) => normalizeBoltPhone(d.phone)), true);
   assertEquals(hasDuplicateBoltIdentities([{ email: "" }, { email: null }], (d: any) => normalizeBoltEmail(d.email)), false);
+});
+
+Deno.test("Bolt driver match accepts contacts belonging to the same driver", () => {
+  const driver = { id: "driver-1" };
+  assertEquals(resolveBoltDriverMatch(driver, { ...driver }, driver), driver);
+  assertEquals(resolveBoltDriverMatch(null, null, driver), driver);
+  assertEquals(resolveBoltDriverMatch(null, null, null), null);
+});
+
+Deno.test("Bolt driver match rejects contacts pointing to different drivers", () => {
+  const first = { id: "driver-1" };
+  const second = { id: "driver-2" };
+  assertThrows(() => resolveBoltDriverMatch(null, first, second), Error, "motoristas diferentes");
+  assertThrows(() => resolveBoltDriverMatch(first, second, null), Error, "motoristas diferentes");
+  assertThrows(() => resolveBoltDriverMatch(first, first, second), Error, "motoristas diferentes");
 });

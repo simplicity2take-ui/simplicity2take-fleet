@@ -398,6 +398,11 @@ Deno.serve(async (req: Request) => {
       return json({ ok: false, error: "Modo Bolt inválido." }, 400);
     }
 
+    const checkOnly = Deno.env.get("BOLT_CHECK_ONLY");
+    if (checkOnly !== undefined && checkOnly !== "false" && mode !== "check") {
+      return json({ ok: false, error: "Este ambiente Bolt só permite verificar a ligação." }, 403);
+    }
+
     const token = await getBoltToken();
     // Require an explicit opt-in value; never infer v2 from partial configuration.
     const configuredApiVersion = (Deno.env.get("BOLT_API_VERSION") || "1").trim();

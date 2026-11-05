@@ -20,6 +20,22 @@ Status: **not implemented**. This document records a security boundary before an
 5. Review every existing RLS policy and service-role / SECURITY DEFINER caller. Add tests with two companies that reuse a phone, email, plate, provider trip ID and event key; assert that no cross-company reads or writes occur.
 6. Test migrations on disposable PostgreSQL and staging with rollback/recovery plan, then obtain explicit approval before any production migration or sync.
 
+## Live Bolt connection check
+
+Use an isolated Supabase environment with the Fleet test branch deployed. Configure
+`BOLT_CHECK_ONLY=true` and the Bolt credentials in that environment's function
+secrets. Use the same `BOLT_API_VERSION` as the credentials.
+
+1. With an administrator session from the test environment, POST to its
+   `/functions/v1/bolt-sync?mode=check` endpoint.
+2. Expect `ok: true`, `mode: "check"`, `syncedAt: null`, and the received driver
+   and vehicle counts. The check performs no reads or writes on Fleet tables.
+3. POST without `mode=check` and expect HTTP 403 while the environment is in
+   check-only mode. Confirm the Fleet records were preserved.
+
+Use the endpoint only after verifying that the test environment runs a build
+that supports check-only mode.
+
 ## Release gates
 
 - CI Deno and PostgreSQL jobs green **after** tenant-aware changes.

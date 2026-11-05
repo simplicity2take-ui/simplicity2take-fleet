@@ -126,3 +126,8 @@ export function hasDuplicateBoltIdentities(
   }
   return false;
 }
+
+// An unexpected setting must never enable writes on a test deployment.
+export function isBoltSyncBlocked(mode: string | null, checkOnly: string | undefined): boolean {
+  return mode !== "check" && checkOnly !== undefined && checkOnly !== "false";
+}

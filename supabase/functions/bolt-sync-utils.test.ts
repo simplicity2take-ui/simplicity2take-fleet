@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { resolveBoltDriverMatch, hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid, hasDuplicateBoltIdentities } from "./bolt-sync-utils.ts";
+import { isBoltSyncBlocked, resolveBoltDriverMatch, hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid, hasDuplicateBoltIdentities } from "./bolt-sync-utils.ts";
 
 Deno.test("Bolt identity guard allows missing identifiers", () => {
   assertEquals(hasBoltIdentityConflict(null, "bolt-1"), false);
@@ -172,4 +172,13 @@ Deno.test("Bolt driver match rejects contacts pointing to different drivers", ()
   assertThrows(() => resolveBoltDriverMatch(null, first, second), Error, "motoristas diferentes");
   assertThrows(() => resolveBoltDriverMatch(first, second, null), Error, "motoristas diferentes");
   assertThrows(() => resolveBoltDriverMatch(first, first, second), Error, "motoristas diferentes");
+});
+
+Deno.test("Bolt check-only configuration blocks sync and allows a connection check", () => {
+  for (const setting of ["true", "", "FALSE", "invalid"]) {
+    assertEquals(isBoltSyncBlocked(null, setting), true);
+    assertEquals(isBoltSyncBlocked("check", setting), false);
+  }
+  assertEquals(isBoltSyncBlocked(null, undefined), false);
+  assertEquals(isBoltSyncBlocked(null, "false"), false);
 });

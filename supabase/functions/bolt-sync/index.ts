@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { resolveBoltDriverMatch, hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid, hasDuplicateBoltIdentities } from "../bolt-sync-utils.ts";
+import { isBoltSyncBlocked, resolveBoltDriverMatch, hasBoltIdentityConflict, normalizeBoltEmail, normalizeBoltPhone, normalizeBoltActiveVehicle, boltStatusToPortal, boltCompensationDiagnostic, isBoltCompensationCritical, boltApiEnvelopeError, extractBoltCompanies, resolveSingleBoltCompanyId, boltPageCountIsValid, hasDuplicateBoltIdentities } from "../bolt-sync-utils.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -398,8 +398,7 @@ Deno.serve(async (req: Request) => {
       return json({ ok: false, error: "Modo Bolt inválido." }, 400);
     }
 
-    const checkOnly = Deno.env.get("BOLT_CHECK_ONLY");
-    if (checkOnly !== undefined && checkOnly !== "false" && mode !== "check") {
+    if (isBoltSyncBlocked(mode, Deno.env.get("BOLT_CHECK_ONLY"))) {
       return json({ ok: false, error: "Este ambiente Bolt só permite verificar a ligação." }, 403);
     }
 

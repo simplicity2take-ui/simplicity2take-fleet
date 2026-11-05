@@ -393,6 +393,11 @@ Deno.serve(async (req: Request) => {
     const callerEmail = (authData.user.email || "").toLowerCase();
     if (callerEmail !== "simplicity2take@gmail.com") return json({ ok: false, error: "Apenas o administrador pode sincronizar a Bolt." }, 403);
 
+    const mode = new URL(req.url).searchParams.get("mode");
+    if (mode !== null && mode !== "check") {
+      return json({ ok: false, error: "Modo Bolt inválido." }, 400);
+    }
+
     const token = await getBoltToken();
     // Require an explicit opt-in value; never infer v2 from partial configuration.
     const configuredApiVersion = (Deno.env.get("BOLT_API_VERSION") || "1").trim();
@@ -464,6 +469,19 @@ Deno.serve(async (req: Request) => {
         error: "A Bolt devolveu identificadores duplicados; sincronização interrompida antes de alterar dados.",
         source: "bolt", syncedAt: null
       }, 502);
+    }
+
+    // Connection checks stop before any Fleet database operation.
+    if (mode === "check") {
+      return json({
+        ok: true,
+        mode,
+        source: "bolt",
+        apiVersion,
+        syncedAt: null,
+        drivers: { received: boltDrivers.length },
+        vehicles: { received: boltVehicles.length },
+      });
     }
 
     const now = new Date().toISOString();

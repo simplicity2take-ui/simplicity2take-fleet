@@ -368,6 +368,7 @@ function isVehicleQrMode() {
 }
 
 async function openRequestedVehicle() {
+  state.requestedVehicleId = null;
   const token = requestedVehicleToken();
   if (!token) return;
   const vehicle = state.vehicles.find(item =>
@@ -880,6 +881,10 @@ function renderVehicles() {
   selectors.pageTitle.textContent = admin ? "Veículos" : "Meus Veículos";
 
   if (!admin) {
+    if (requested && isVehicleQrMode()) {
+      selectors.content.innerHTML = vehicleAccessPanel(requested);
+      return;
+    }
     selectors.content.innerHTML = `
       ${heading("Os meus veículos", "Aqui podes consultar os dados e todos os documentos das viaturas que te estão atribuídas.", "")}
       <section class="cards-grid">
@@ -908,7 +913,7 @@ function renderVehicles() {
 
   selectors.content.innerHTML = `
     ${heading("Gestão de veículos", "Criar, editar e eliminar veículos.", `<button class="primary-button" type="button" data-open="vehicle">Criar veículo</button>`)}
-    ${requested ? vehicleAccessPanel(requested, admin) : ""}
+    ${requested ? vehicleAccessPanel(requested) : ""}
     <div class="table-wrap">
       <table>
         <thead><tr><th>Matrícula</th><th>Marca / Modelo</th><th>Ano</th><th>VIN</th><th>Estado</th><th>Motoristas</th><th>Documentos</th><th>Ações</th></tr></thead>
@@ -917,8 +922,7 @@ function renderVehicles() {
     </div>
   `;
 }
-function vehicleAccessPanel(vehicle, admin) {
-  const docs = state.documents.filter(doc => doc.vehicleId === vehicle.id && (admin || driverDocuments().some(item => item.id === doc.id)));
+function vehicleAccessPanel(vehicle) {
   return `
     <article class="panel vehicle-access-panel">
       <div class="panel-heading"><div><span class="eyebrow">QR da viatura</span><h2>${escapeHtml(vehicle.plate)}</h2><p class="section-copy">${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)} · VIN ${escapeHtml(vehicle.vin || "—")}</p></div><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></div>

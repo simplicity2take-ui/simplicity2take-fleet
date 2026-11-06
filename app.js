@@ -2222,10 +2222,11 @@ function fileToBase64(file) {
 }
 
 async function fetchDocumentBlob(documentId) {
-  const doc = state.documents.find(item => item.id === documentId);
-  if (!doc) throw new Error("Documento não encontrado.");
+  const doc = visibleDocuments().find(item => item.id === documentId);
+  if (!doc) throw new Error("Documento não encontrado ou sem autorização.");
 
-  const cached = documentBlobCache.get(documentId);
+  const cacheAllowed = currentUser().role === "admin";
+  const cached = cacheAllowed ? documentBlobCache.get(documentId) : null;
   if (cached) return { doc, data: cached };
 
   const { data, error } = await supabaseClient.functions.invoke("document-access", {
@@ -2235,7 +2236,7 @@ async function fetchDocumentBlob(documentId) {
   if (error) throw error;
   if (!(data instanceof Blob)) throw new Error("Não foi possível obter o documento.");
 
-  documentBlobCache.set(documentId, data);
+  if (cacheAllowed) documentBlobCache.set(documentId, data);
   return { doc, data };
 }
 
@@ -2311,6 +2312,7 @@ async function openDocument(documentId) {
 }
 
 async function downloadDocument(documentId) {
+  if (currentUser().role !== "admin") throw new Error("Apenas o administrador pode descarregar documentos.");
   const { doc, data } = await fetchDocumentBlob(documentId);
   const url = URL.createObjectURL(data);
   const link = document.createElement("a");

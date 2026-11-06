@@ -1,4 +1,5 @@
 const documentBlobCache = new Map();
+let closeDocumentPreview = null;
 
 const state = {
   sessionUserId: null,
@@ -2249,23 +2250,36 @@ async function openDocument(documentId) {
     throw new Error("Visualizador de documentos indisponível.");
   }
 
-  const doc = state.documents.find(item => item.id === documentId);
+  closeDocumentPreview?.();
+  let objectUrl = null;
+  let pdfTask = null;
+  const isCurrent = () => closeDocumentPreview === cleanup && modal.open;
+  const onClose = () => { if (!modal.open) cleanup(); };
+  const cleanup = () => {
+    modal.removeEventListener("close", onClose);
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    if (pdfTask) void pdfTask.destroy().catch(console.error);
+    if (closeDocumentPreview === cleanup) {
+      closeDocumentPreview = null;
+      content.replaceChildren();
+    }
+  };
+  closeDocumentPreview = cleanup;
+  modal.addEventListener("close", onClose);
+
+  const doc = visibleDocuments().find(item => item.id === documentId);
   title.textContent = doc?.fileName || doc?.name || "Documento";
   content.innerHTML = '<div class="document-viewer-loading">A abrir documento…</div>';
-  modal.showModal();
-
-  let objectUrl = null;
-  let objectUrlHandledByClose = false;
 
   try {
+    if (!modal.open) modal.showModal();
     const result = await fetchDocumentBlob(documentId);
+    if (!isCurrent()) return;
     const data = result.data;
     title.textContent = result.doc.fileName || result.doc.name || "Documento";
     content.replaceChildren();
 
-    objectUrl = URL.createObjectURL(data);
     const mimeType = data.type || result.doc.fileType || "";
-
     if (mimeType === "application/pdf") {
       if (!window.pdfjsLib) {
         throw new Error("Visualizador PDF ainda não está disponível. Atualiza a página e tenta novamente.");
@@ -2275,13 +2289,17 @@ async function openDocument(documentId) {
       loading.className = "document-viewer-loading";
       loading.textContent = "A preparar documento…";
       content.appendChild(loading);
-      modal.showModal();
 
-      const pdf = await window.pdfjsLib.getDocument({ data: await data.arrayBuffer() }).promise;
+      const bytes = await data.arrayBuffer();
+      if (!isCurrent()) return;
+      pdfTask = window.pdfjsLib.getDocument({ data: bytes });
+      const pdf = await pdfTask.promise;
+      if (!isCurrent()) return;
       content.replaceChildren();
 
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
         const page = await pdf.getPage(pageNumber);
+        if (!isCurrent()) return;
         const viewport = page.getViewport({ scale: 1.35 });
         const canvas = document.createElement("canvas");
         canvas.className = "document-viewer-page";
@@ -2292,22 +2310,21 @@ async function openDocument(documentId) {
         await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
       }
     } else if (mimeType.startsWith("image/")) {
+      objectUrl = URL.createObjectURL(data);
       const image = document.createElement("img");
       image.src = objectUrl;
-      image.alt = doc.fileName || doc.name || "Documento";
+      image.alt = title.textContent;
       image.className = "document-viewer-image";
       content.appendChild(image);
-      modal.showModal();
     } else {
       throw new Error("Este tipo de documento não pode ser visualizado diretamente.");
     }
-
-    modal.addEventListener("close", () => URL.revokeObjectURL(objectUrl), { once: true });
-    objectUrlHandledByClose = true;
   } catch (error) {
-    if (objectUrl && !objectUrlHandledByClose) URL.revokeObjectURL(objectUrl);
-    if (modal.open) modal.close();
-    throw error;
+    if (closeDocumentPreview !== cleanup) return;
+    const wasOpen = modal.open;
+    cleanup();
+    if (wasOpen) modal.close();
+    if (wasOpen) throw error;
   }
 }
 
@@ -2542,6 +2559,8 @@ function bindPortalEvents() {
 
   supabaseClient.auth.onAuthStateChange((event) => {
     if (event === "SIGNED_OUT") {
+      closeDocumentPreview?.();
+      document.querySelector("#documentViewerModal")?.close();
       documentBlobCache.clear();
       state.sessionUserId = null;
       state.profile = null;

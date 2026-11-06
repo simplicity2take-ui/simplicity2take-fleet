@@ -836,9 +836,7 @@ function bar(label, value, max) {
   return `<div class="bar-row"><span>${escapeHtml(label)}</span><div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div><strong>${safeValue}</strong></div>`;
 }
 
-function vehicleDocumentSlot(vehicle, type, label) {
-  const docs = state.documents.filter(doc => doc.vehicleId === vehicle.id);
-  const doc = docs.find(item => item.type === type) || (type === "Seguro" ? docs.find(item => item.type === "Carta Verde") : null);
+function vehicleDocumentSlot(vehicle, type, label, doc) {
   if (!doc) {
     return `<div class="vehicle-document-slot missing">
       <div><strong>${escapeHtml(label)}</strong><small>Não carregado</small></div>
@@ -864,13 +862,24 @@ function vehicleDocumentsPanel(vehicle, compact = false) {
     ["Licença TVDE", "Licença TVDE"],
     ["Outros", "Outros"]
   ];
+  const groups = new Map(slots.map(([type]) => [type, []]));
+  for (const doc of visibleDocuments()) {
+    if (doc.vehicleId !== vehicle.id) continue;
+    const type = doc.type === "Carta Verde" ? "Seguro" : doc.type;
+    (groups.get(type) ?? groups.get("Outros")).push(doc);
+  }
   return `<div class="vehicle-documents-panel ${compact ? "compact" : ""}">
     <div class="panel-heading">
       <div><h3>Documentos da viatura</h3><p class="section-copy">Tudo fica associado a esta viatura.</p></div>
       ${currentUser().role === "admin" ? `<button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}">+ Documento</button>` : ""}
     </div>
     <div class="vehicle-document-slots">
-      ${slots.map(([type, label]) => vehicleDocumentSlot(vehicle, type, label)).join("")}
+      ${slots.map(([type, label]) => {
+        const docs = groups.get(type);
+        return docs.length
+          ? docs.map(doc => vehicleDocumentSlot(vehicle, type, label, doc)).join("")
+          : vehicleDocumentSlot(vehicle, type, label);
+      }).join("")}
     </div>
   </div>`;
 }

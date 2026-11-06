@@ -2333,7 +2333,11 @@ async function openDocument(documentId) {
     const wasOpen = modal.open;
     cleanup();
     if (wasOpen) modal.close();
-    if (wasOpen) throw error;
+    if (!wasOpen) return;
+    if (error?.name === "InvalidPDFException") {
+      throw new Error("Não foi possível abrir este PDF. O ficheiro pode estar danificado.", { cause: error });
+    }
+    throw error;
   }
 }
 

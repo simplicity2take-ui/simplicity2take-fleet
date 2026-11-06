@@ -689,7 +689,7 @@ async function startAuthenticatedSession(user) {
     throw error || new Error("Perfil não encontrado.");
   }
   if (isVehicleQrMode() && profile.role !== "driver") {
-    await supabaseClient.auth.signOut();
+    await supabaseClient.auth.signOut({ scope: "local" });
     throw new Error("Este QR é exclusivo para acesso de motorista.");
   }
   if (profile.status !== "Ativo") {
@@ -2580,7 +2580,7 @@ function bindPortalEvents() {
 
   supabaseClient.auth.getSession().then(async ({ data }) => {
     if (isVehicleQrMode()) {
-      if (data.session?.user) await supabaseClient.auth.signOut();
+      if (data.session?.user) await supabaseClient.auth.signOut({ scope: "local" });
       selectors.loginOptions.innerHTML = '<div class="smartdocs-box"><strong>Acesso de motorista</strong><p>Entre com a conta do motorista autorizado para esta viatura.</p></div>';
       selectors.loginIdentifier.placeholder = "Email ou telemóvel do motorista";
       return;

@@ -2235,9 +2235,8 @@ async function openDocument(documentId) {
 
     const mimeType = data.type || result.doc.fileType || "";
     if (mimeType === "application/pdf") {
-      if (!window.pdfjsLib) {
-        throw new Error("Visualizador PDF ainda não está disponível. Atualiza a página e tenta novamente.");
-      }
+      await window.FleetDocumentReader.ensurePdfReader();
+      if (!isCurrent()) return;
 
       const loading = document.createElement("div");
       loading.className = "document-viewer-loading";

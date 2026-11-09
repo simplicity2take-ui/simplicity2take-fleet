@@ -7,11 +7,19 @@
     if (!scripts.has(url)) scripts.set(url, new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.src = url;
-      script.onload = () => ready() ? resolve() : reject(new Error("Biblioteca indisponível."));
+      script.onload = () => {
+        if (ready()) resolve();
+        else { scripts.delete(url); reject(new Error("Biblioteca indisponível.")); }
+      };
       script.onerror = () => { scripts.delete(url); reject(new Error("Não foi possível carregar o leitor.")); };
       document.head.appendChild(script);
     }));
     return scripts.get(url);
+  }
+  async function ensurePdfReader() {
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js", () => root.pdfjsLib);
+    root.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    return root.pdfjsLib;
   }
   function validDate(day, month, year) {
     const date = new Date(Date.UTC(+year, +month - 1, +day));
@@ -152,8 +160,7 @@
       let pagesRead = 1;
       let totalPages = 1;
       if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)) {
-        await loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js", () => root.pdfjsLib);
-        root.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        await ensurePdfReader();
         task = root.pdfjsLib.getDocument({ data: await file.arrayBuffer() });
         pdf = await task.promise;
         totalPages = pdf.numPages;
@@ -188,5 +195,5 @@
       else if (task) await task.destroy();
     }
   }
-  root.FleetDocumentReader = { extract, read, assessExpiry };
+  root.FleetDocumentReader = { extract, read, assessExpiry, ensurePdfReader };
 })(typeof window === "undefined" ? globalThis : window);

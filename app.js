@@ -1,4 +1,5 @@
 const documentBlobCache = new Map();
+let closeDocumentPreview = null;
 
 const state = {
   sessionUserId: null,
@@ -368,6 +369,7 @@ function isVehicleQrMode() {
 }
 
 async function openRequestedVehicle() {
+  state.requestedVehicleId = null;
   const token = requestedVehicleToken();
   if (!token) return;
   const vehicle = state.vehicles.find(item =>
@@ -687,7 +689,7 @@ async function startAuthenticatedSession(user) {
     throw error || new Error("Perfil não encontrado.");
   }
   if (isVehicleQrMode() && profile.role !== "driver") {
-    await supabaseClient.auth.signOut();
+    await supabaseClient.auth.signOut({ scope: "local" });
     throw new Error("Este QR é exclusivo para acesso de motorista.");
   }
   if (profile.status !== "Ativo") {
@@ -834,9 +836,7 @@ function bar(label, value, max) {
   return `<div class="bar-row"><span>${escapeHtml(label)}</span><div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div><strong>${safeValue}</strong></div>`;
 }
 
-function vehicleDocumentSlot(vehicle, type, label) {
-  const docs = state.documents.filter(doc => doc.vehicleId === vehicle.id);
-  const doc = docs.find(item => item.type === type) || (type === "Seguro" ? docs.find(item => item.type === "Carta Verde") : null);
+function vehicleDocumentSlot(vehicle, type, label, doc) {
   if (!doc) {
     return `<div class="vehicle-document-slot missing">
       <div><strong>${escapeHtml(label)}</strong><small>Não carregado</small></div>
@@ -862,13 +862,24 @@ function vehicleDocumentsPanel(vehicle, compact = false) {
     ["Licença TVDE", "Licença TVDE"],
     ["Outros", "Outros"]
   ];
+  const groups = new Map(slots.map(([type]) => [type, []]));
+  for (const doc of visibleDocuments()) {
+    if (doc.vehicleId !== vehicle.id) continue;
+    const type = doc.type === "Carta Verde" ? "Seguro" : doc.type;
+    (groups.get(type) ?? groups.get("Outros")).push(doc);
+  }
   return `<div class="vehicle-documents-panel ${compact ? "compact" : ""}">
     <div class="panel-heading">
       <div><h3>Documentos da viatura</h3><p class="section-copy">Tudo fica associado a esta viatura.</p></div>
       ${currentUser().role === "admin" ? `<button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}">+ Documento</button>` : ""}
     </div>
     <div class="vehicle-document-slots">
-      ${slots.map(([type, label]) => vehicleDocumentSlot(vehicle, type, label)).join("")}
+      ${slots.map(([type, label]) => {
+        const docs = groups.get(type);
+        return docs.length
+          ? docs.map(doc => vehicleDocumentSlot(vehicle, type, label, doc)).join("")
+          : vehicleDocumentSlot(vehicle, type, label);
+      }).join("")}
     </div>
   </div>`;
 }
@@ -880,6 +891,10 @@ function renderVehicles() {
   selectors.pageTitle.textContent = admin ? "Veículos" : "Meus Veículos";
 
   if (!admin) {
+    if (requested && isVehicleQrMode()) {
+      selectors.content.innerHTML = vehicleAccessPanel(requested);
+      return;
+    }
     selectors.content.innerHTML = `
       ${heading("Os meus veículos", "Aqui podes consultar os dados e todos os documentos das viaturas que te estão atribuídas.", "")}
       <section class="cards-grid">
@@ -908,7 +923,7 @@ function renderVehicles() {
 
   selectors.content.innerHTML = `
     ${heading("Gestão de veículos", "Criar, editar e eliminar veículos.", `<button class="primary-button" type="button" data-open="vehicle">Criar veículo</button>`)}
-    ${requested ? vehicleAccessPanel(requested, admin) : ""}
+    ${requested ? vehicleAccessPanel(requested) : ""}
     <div class="table-wrap">
       <table>
         <thead><tr><th>Matrícula</th><th>Marca / Modelo</th><th>Ano</th><th>VIN</th><th>Estado</th><th>Motoristas</th><th>Documentos</th><th>Ações</th></tr></thead>
@@ -917,8 +932,7 @@ function renderVehicles() {
     </div>
   `;
 }
-function vehicleAccessPanel(vehicle, admin) {
-  const docs = state.documents.filter(doc => doc.vehicleId === vehicle.id && (admin || driverDocuments().some(item => item.id === doc.id)));
+function vehicleAccessPanel(vehicle) {
   return `
     <article class="panel vehicle-access-panel">
       <div class="panel-heading"><div><span class="eyebrow">QR da viatura</span><h2>${escapeHtml(vehicle.plate)}</h2><p class="section-copy">${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)} · VIN ${escapeHtml(vehicle.vin || "—")}</p></div><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></div>
@@ -2185,10 +2199,11 @@ function fileToBase64(file) {
 }
 
 async function fetchDocumentBlob(documentId) {
-  const doc = state.documents.find(item => item.id === documentId);
-  if (!doc) throw new Error("Documento não encontrado.");
+  const doc = visibleDocuments().find(item => item.id === documentId);
+  if (!doc) throw new Error("Documento não encontrado ou sem autorização.");
 
-  const cached = documentBlobCache.get(documentId);
+  const cacheAllowed = currentUser().role === "admin";
+  const cached = cacheAllowed ? documentBlobCache.get(documentId) : null;
   if (cached) return { doc, data: cached };
 
   const { data, error } = await supabaseClient.functions.invoke("document-access", {
@@ -2198,7 +2213,7 @@ async function fetchDocumentBlob(documentId) {
   if (error) throw error;
   if (!(data instanceof Blob)) throw new Error("Não foi possível obter o documento.");
 
-  documentBlobCache.set(documentId, data);
+  if (cacheAllowed) documentBlobCache.set(documentId, data);
   return { doc, data };
 }
 
@@ -2211,23 +2226,36 @@ async function openDocument(documentId) {
     throw new Error("Visualizador de documentos indisponível.");
   }
 
-  const doc = state.documents.find(item => item.id === documentId);
+  closeDocumentPreview?.();
+  let objectUrl = null;
+  let pdfTask = null;
+  const isCurrent = () => closeDocumentPreview === cleanup && modal.open;
+  const onClose = () => { if (!modal.open) cleanup(); };
+  const cleanup = () => {
+    modal.removeEventListener("close", onClose);
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    if (pdfTask) void pdfTask.destroy().catch(console.error);
+    if (closeDocumentPreview === cleanup) {
+      closeDocumentPreview = null;
+      content.replaceChildren();
+    }
+  };
+  closeDocumentPreview = cleanup;
+  modal.addEventListener("close", onClose);
+
+  const doc = visibleDocuments().find(item => item.id === documentId);
   title.textContent = doc?.fileName || doc?.name || "Documento";
   content.innerHTML = '<div class="document-viewer-loading">A abrir documento…</div>';
-  modal.showModal();
-
-  let objectUrl = null;
-  let objectUrlHandledByClose = false;
 
   try {
+    if (!modal.open) modal.showModal();
     const result = await fetchDocumentBlob(documentId);
+    if (!isCurrent()) return;
     const data = result.data;
     title.textContent = result.doc.fileName || result.doc.name || "Documento";
     content.replaceChildren();
 
-    objectUrl = URL.createObjectURL(data);
     const mimeType = data.type || result.doc.fileType || "";
-
     if (mimeType === "application/pdf") {
       if (!window.pdfjsLib) {
         throw new Error("Visualizador PDF ainda não está disponível. Atualiza a página e tenta novamente.");
@@ -2237,13 +2265,17 @@ async function openDocument(documentId) {
       loading.className = "document-viewer-loading";
       loading.textContent = "A preparar documento…";
       content.appendChild(loading);
-      modal.showModal();
 
-      const pdf = await window.pdfjsLib.getDocument({ data: await data.arrayBuffer() }).promise;
+      const bytes = await data.arrayBuffer();
+      if (!isCurrent()) return;
+      pdfTask = window.pdfjsLib.getDocument({ data: bytes });
+      const pdf = await pdfTask.promise;
+      if (!isCurrent()) return;
       content.replaceChildren();
 
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
         const page = await pdf.getPage(pageNumber);
+        if (!isCurrent()) return;
         const viewport = page.getViewport({ scale: 1.35 });
         const canvas = document.createElement("canvas");
         canvas.className = "document-viewer-page";
@@ -2254,26 +2286,30 @@ async function openDocument(documentId) {
         await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
       }
     } else if (mimeType.startsWith("image/")) {
+      objectUrl = URL.createObjectURL(data);
       const image = document.createElement("img");
       image.src = objectUrl;
-      image.alt = doc.fileName || doc.name || "Documento";
+      image.alt = title.textContent;
       image.className = "document-viewer-image";
       content.appendChild(image);
-      modal.showModal();
     } else {
       throw new Error("Este tipo de documento não pode ser visualizado diretamente.");
     }
-
-    modal.addEventListener("close", () => URL.revokeObjectURL(objectUrl), { once: true });
-    objectUrlHandledByClose = true;
   } catch (error) {
-    if (objectUrl && !objectUrlHandledByClose) URL.revokeObjectURL(objectUrl);
-    if (modal.open) modal.close();
+    if (closeDocumentPreview !== cleanup) return;
+    const wasOpen = modal.open;
+    cleanup();
+    if (wasOpen) modal.close();
+    if (!wasOpen) return;
+    if (error?.name === "InvalidPDFException") {
+      throw new Error("Não foi possível abrir este PDF. O ficheiro pode estar danificado.", { cause: error });
+    }
     throw error;
   }
 }
 
 async function downloadDocument(documentId) {
+  if (currentUser().role !== "admin") throw new Error("Apenas o administrador pode descarregar documentos.");
   const { doc, data } = await fetchDocumentBlob(documentId);
   const url = URL.createObjectURL(data);
   const link = document.createElement("a");
@@ -2503,6 +2539,8 @@ function bindPortalEvents() {
 
   supabaseClient.auth.onAuthStateChange((event) => {
     if (event === "SIGNED_OUT") {
+      closeDocumentPreview?.();
+      document.querySelector("#documentViewerModal")?.close();
       documentBlobCache.clear();
       state.sessionUserId = null;
       state.profile = null;
@@ -2513,7 +2551,7 @@ function bindPortalEvents() {
 
   supabaseClient.auth.getSession().then(async ({ data }) => {
     if (isVehicleQrMode()) {
-      if (data.session?.user) await supabaseClient.auth.signOut();
+      if (data.session?.user) await supabaseClient.auth.signOut({ scope: "local" });
       selectors.loginOptions.innerHTML = '<div class="smartdocs-box"><strong>Acesso de motorista</strong><p>Entre com a conta do motorista autorizado para esta viatura.</p></div>';
       selectors.loginIdentifier.placeholder = "Email ou telemóvel do motorista";
       return;

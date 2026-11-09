@@ -17,3 +17,11 @@ assert.equal(extract('CARTA VERDE. VÁLIDO DE A 23 09 2026 31 02 2027', 'vehicle
 assert.equal(extract('CARTA VERDE. VÁLIDO DE A 23 09 2026 05 11 2025', 'vehicle').expiryDate, '');
 assert.equal(extract('CARTA VERDE. VÁLIDO DE A 23 09 2026 05 11 2026. Validade até 06/11/2026', 'vehicle').expiryDate, '');
 console.log('PASS: Green Card six-cell validity table, end date rather than start, impossible/reversed/conflicting ranges.');
+const assess = globalThis.FleetDocumentReader.assessExpiry;
+const testToday = new Date(2026, 10, 9, 12);
+assert.equal(assess('2026-11-05', testToday), 'Fora de validade');
+assert.equal(assess('2026-11-09', testToday), 'Válido até hoje');
+assert.equal(assess('2026-11-10', testToday), 'Dentro da validade');
+assert.equal(assess('', testToday), 'Por confirmar');
+assert.equal(assess('2026-02-31', testToday), 'Por confirmar');
+console.log('PASS: expiry status before, on and after expiry day; missing and invalid dates.');

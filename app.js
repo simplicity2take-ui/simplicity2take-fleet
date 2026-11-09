@@ -2196,20 +2196,30 @@ function fileToBase64(file) {
 }
 
 async function fetchDocumentBlob(documentId) {
-  const doc = state.documents.find(item => item.id === documentId);
-  if (!doc) throw new Error("Documento não encontrado.");
-
-  const cached = documentBlobCache.get(documentId);
+  const doc = visibleDocuments().find(item => item.id === documentId);
+  if (!doc) throw new Error("Documento não encontrado ou sem autorização.");
+  const cacheAllowed = currentUser().role === "admin";
+  const cached = cacheAllowed ? documentBlobCache.get(documentId) : null;
   if (cached) return { doc, data: cached };
 
-  const { data, error } = await supabaseClient.functions.invoke("document-access", {
-    body: { document_id: documentId }
+  const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+  if (sessionError) throw sessionError;
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error("Sessão terminada. Entre novamente para abrir o documento.");
+  // Read raw bytes: functions.invoke treats image/jpeg and image/png as text.
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/document-access`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_PUBLISHABLE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ document_id: documentId }),
+    cache: "no-store"
   });
-
-  if (error) throw error;
-  if (!(data instanceof Blob)) throw new Error("Não foi possível obter o documento.");
-
-  documentBlobCache.set(documentId, data);
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}));
+    throw new Error(result.error || "Não foi possível obter o documento.");
+  }
+  const data = await response.blob();
+  if (!data.size) throw new Error("O ficheiro recebido está vazio.");
+  if (cacheAllowed) documentBlobCache.set(documentId, data);
   return { doc, data };
 }
 

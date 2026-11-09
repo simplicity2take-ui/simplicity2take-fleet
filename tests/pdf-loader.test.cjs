@@ -1,0 +1,24 @@
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+(async () => {
+  const scripts = [];
+  const window = {};
+  const context = { window, document: { createElement: () => ({}), head: { appendChild: script => scripts.push(script) } } };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname, '../smartdocs-reader.js'), 'utf8'), context);
+  const loader = window.FleetDocumentReader.ensurePdfReader;
+  const failed = loader();
+  scripts[0].onerror();
+  await assert.rejects(failed);
+  const first = loader(), concurrent = loader();
+  assert.equal(scripts.length, 2);
+  window.pdfjsLib = { GlobalWorkerOptions: {} };
+  scripts[1].onload();
+  assert.equal(await first, window.pdfjsLib);
+  assert.equal(await concurrent, window.pdfjsLib);
+  assert.match(window.pdfjsLib.GlobalWorkerOptions.workerSrc, /3\.11\.174\/pdf\.worker\.min\.js$/);
+  assert.equal(await loader(), window.pdfjsLib);
+  assert.equal(scripts.length, 2);
+  console.log('PASS: lazy PDF load, shared concurrent load, retry after failure, existing library reuse.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

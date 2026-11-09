@@ -719,6 +719,21 @@ function renderApp() {
   selectors.sessionRole.textContent = user.role === "admin" ? "Administrador" : "Motorista";
   selectors.sessionName.textContent = user.name;
   renderNav();
+  const vehicleSearch = user.role === "admin" && state.activeView === "vehicles";
+  const search = document.querySelector("#globalSearch");
+  const action = document.querySelector("#headerAction");
+  if (search) {
+    search.placeholder = "Pesquisar";
+    search.setAttribute("aria-label", search.placeholder);
+    search.value = vehicleSearch ? state.vehicleSearch || "" : "";
+    search.hidden = !vehicleSearch;
+    search.parentElement.hidden = !vehicleSearch;
+  }
+  if (action) {
+    action.textContent = vehicleSearch ? "Procurar" : "Alterar palavra-passe";
+    if (vehicleSearch) { delete action.dataset.open; action.dataset.searchVehicles = "true"; }
+    else { delete action.dataset.searchVehicles; action.dataset.open = "password"; }
+  }
   renderContent();
 }
 
@@ -873,9 +888,19 @@ function vehicleDocumentsPanel(vehicle, compact = false) {
   </div>`;
 }
 
+function normalizePlateSearch(value) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function searchVehicles() {
+  if (currentUser().role !== "admin" || state.activeView !== "vehicles") return;
+  state.vehicleSearch = document.querySelector("#globalSearch")?.value || "";
+  renderContent();
+}
+
 function renderVehicles() {
   const admin = currentUser().role === "admin";
-  const vehicles = admin ? state.vehicles : driverVehicles();
+  const vehicles = admin ? state.vehicles.filter(vehicle => normalizePlateSearch(vehicle.plate).includes(normalizePlateSearch(state.vehicleSearch))) : driverVehicles();
   const requested = vehicles.find(vehicle => vehicle.id === state.requestedVehicleId);
   selectors.pageTitle.textContent = admin ? "Veículos" : "Meus Veículos";
 
@@ -911,8 +936,8 @@ function renderVehicles() {
     ${requested ? vehicleAccessPanel(requested, admin) : ""}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Matrícula</th><th>Marca / Modelo</th><th>Ano</th><th>VIN</th><th>Estado</th><th>Motoristas</th><th>Documentos</th><th>Ações</th></tr></thead>
-        <tbody>${vehicles.map(vehicle => vehicleRow(vehicle, admin)).join("") || emptyRow("Sem veículos para apresentar.")}</tbody>
+        <thead><tr><th>Matrícula</th><th>Marca / Modelo</th><th>Ano</th><th>VIN</th><th>Motoristas</th><th>Documentos</th><th>Ações</th></tr></thead>
+        <tbody>${vehicles.map(vehicle => vehicleRow(vehicle, admin)).join("") || '<tr><td colspan="7">Sem veículos para apresentar.</td></tr>'}</tbody>
       </table>
     </div>
   `;
@@ -921,7 +946,7 @@ function vehicleAccessPanel(vehicle, admin) {
   const docs = state.documents.filter(doc => doc.vehicleId === vehicle.id && (admin || driverDocuments().some(item => item.id === doc.id)));
   return `
     <article class="panel vehicle-access-panel">
-      <div class="panel-heading"><div><span class="eyebrow">QR da viatura</span><h2>${escapeHtml(vehicle.plate)}</h2><p class="section-copy">${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)} · VIN ${escapeHtml(vehicle.vin || "—")}</p></div><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></div>
+      <div class="panel-heading"><div><span class="eyebrow">Documentos da viatura</span><h2>${escapeHtml(vehicle.plate)}</h2><p class="section-copy">${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)} · VIN ${escapeHtml(vehicle.vin || "—")}</p></div><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></div>
       ${vehicleDocumentsPanel(vehicle)}
     </article>
   `;
@@ -948,10 +973,9 @@ function vehicleRow(vehicle, admin) {
       <td>${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)}</td>
       <td>${escapeHtml(vehicle.year)}</td>
       <td>${escapeHtml(vehicle.vin)}</td>
-      <td><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></td>
       <td>${escapeHtml(vehicle.driverIds.map(driverName).join(", ") || "Sem motorista")}</td>
-      <td><div class="vehicle-document-links">${documentSummary}</div></td>
-      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${escapeHtml(vehicle.id)}">QR</button><button class="mini-button" type="button" data-edit-vehicle="${escapeHtml(vehicle.id)}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${escapeHtml(vehicle.id)}">Eliminar</button></div>` : "Consulta"}</td>
+      <td><button class="mini-button" type="button" data-view-vehicle-docs="${escapeHtml(vehicle.id)}">Ver documentos</button><div class="vehicle-document-links">${documentSummary}</div></td>
+      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${escapeHtml(vehicle.id)}">QR</button><button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}">+ Documento</button><button class="mini-button" type="button" data-edit-vehicle="${escapeHtml(vehicle.id)}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${escapeHtml(vehicle.id)}">Eliminar</button></div>` : "Consulta"}</td>
     </tr>
   `;
 }
@@ -2401,6 +2425,10 @@ function printQr() {
 }
 
 function bindPortalEvents() {
+  document.querySelector("#globalSearch")?.addEventListener("input", searchVehicles);
+  document.querySelector("#globalSearch")?.addEventListener("keydown", event => {
+    if (event.key === "Enter") { event.preventDefault(); searchVehicles(); }
+  });
   selectors.loginForm?.addEventListener("submit", event => {
     event.preventDefault();
     login(selectors.loginIdentifier.value, selectors.loginPassword.value);
@@ -2412,6 +2440,13 @@ function bindPortalEvents() {
 
     const view = target.dataset.view;
     if (view) return setView(view);
+    if (target.dataset.viewVehicleDocs && currentUser().role === "admin") {
+      state.requestedVehicleId = target.dataset.viewVehicleDocs;
+      renderContent();
+      document.querySelector(".vehicle-access-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (target.dataset.searchVehicles) return searchVehicles();
     if (target.dataset.open) return openModal(target.dataset.open);
     if (target.dataset.openVehicleDoc) return openVehicleDocumentModal(target.dataset.openVehicleDoc, target.dataset.docType || "");
     if (target.dataset.docDriver) return openDriverDocumentModal(target.dataset.docDriver);

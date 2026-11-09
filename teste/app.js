@@ -138,7 +138,7 @@ const documentTypes = [
   "Contrato",
   "Outros"
 ];
-const vehicleDocumentTypes = ["DUA", "Seguro", "Carta Verde", "IPO", "Licença TVDE"];
+const vehicleDocumentTypes = ["DUA", "Seguro", "Carta Verde", "IPO"];
 
 const navByRole = {
   admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["activity", "Utilização", "UT"], ["documents", "Documentos da Empresa", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
@@ -853,8 +853,8 @@ function vehicleDocumentSlot(vehicle, type, label, doc) {
 }
 
 function vehicleDocumentsPanel(vehicle, compact = false) {
-  const slots = [["DUA", "DUA"], ["Carta Verde", "Carta Verde"], ["Seguro", "Condições particulares"], ["IPO", "INSP"], ["Licença TVDE", "Licença TVDE"]];
-  const docs = visibleDocuments().filter(doc => doc.vehicleId === vehicle.id);
+  const slots = [["DUA", "DUA"], ["Carta Verde", "Carta Verde"], ["Seguro", "Condições particulares"], ["IPO", "INSP"]];
+  const docs = visibleDocuments().filter(doc => doc.vehicleId === vehicle.id && doc.type !== "Licença TVDE");
   const legacy = docs.filter(doc => !slots.some(([type]) => type === doc.type));
   return `<div class="vehicle-documents-panel ${compact ? "compact" : ""}">
     <div class="panel-heading"><div><h3>Documentos da viatura</h3><p class="section-copy">Tudo fica associado a esta viatura.</p></div>
@@ -924,7 +924,7 @@ function vehicleAccessPanel(vehicle) {
 }
 
 function vehicleRow(vehicle, admin) {
-  const vehicleDocs = state.documents.filter(doc => doc.vehicleId === vehicle.id);
+  const vehicleDocs = state.documents.filter(doc => doc.vehicleId === vehicle.id && doc.type !== "Licença TVDE");
   const documentSummary = vehicleDocs.length
     ? vehicleDocs.map(doc => {
         const label = doc.type === "Seguro" ? "Condições particulares" : doc.type === "IPO" ? "INSP" : doc.type || "Documento";

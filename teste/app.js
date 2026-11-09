@@ -138,6 +138,8 @@ const documentTypes = [
   "Contrato",
   "Outros"
 ];
+const vehicleDocumentTypes = ["DUA", "Seguro", "Carta Verde", "IPO", "Licença TVDE"];
+
 const navByRole = {
   admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["activity", "Utilização", "UT"], ["documents", "Documentos da Empresa", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
   driver: [["vehicles", "Meus Veículos", "VE"], ["documents", "Meus Documentos", "DO"], ["account", "Minha Conta", "EU"]]
@@ -1815,7 +1817,7 @@ function modalFields(type, id) {
     ${field("file", "Ficheiro original", "", "file", true, 'accept=".pdf,.jpg,.jpeg,.png"')}
     <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
     ${field("name", "Nome do documento", doc.name)}
-    ${selectField("type", "Tipo", documentTypes, doc.type || "Outros")}
+    ${selectField("type", "Tipo", vehicleDocumentTypes, doc.type || "DUA")}
     ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
     ${selectField("vehicleId", "Veículo associado", state.vehicles.map(vehicle => [vehicle.id, vehicle.plate + " — " + vehicle.brand + " " + vehicle.model]), selectedVehicle)}
     ${checkList("viewerDriverIds", "Visualização adicional (apenas documentos sem motorista)", state.drivers, doc.viewerDriverIds || [])}
@@ -1922,7 +1924,7 @@ function analyseFileName(fileName) {
 function applySmartPreview(preview) {
   const setValue = (name, value) => {
     const input = selectors.modalFields.querySelector(`[name="${name}"]`);
-    if (input && value) input.value = value;
+    if (input && value && (input.tagName !== "SELECT" || Array.from(input.options).some(option => option.value === value))) input.value = value;
   };
   setValue("type", preview.type);
   setValue("name", preview.name);

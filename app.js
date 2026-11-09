@@ -719,6 +719,21 @@ function renderApp() {
   selectors.sessionRole.textContent = user.role === "admin" ? "Administrador" : "Motorista";
   selectors.sessionName.textContent = user.name;
   renderNav();
+  const vehicleSearch = user.role === "admin" && state.activeView === "vehicles";
+  const search = document.querySelector("#globalSearch");
+  const action = document.querySelector("#headerAction");
+  if (search) {
+    search.placeholder = vehicleSearch ? "Pesquisar matrícula" : "Pesquisar";
+    search.setAttribute("aria-label", search.placeholder);
+    search.value = vehicleSearch ? state.vehicleSearch || "" : "";
+    search.hidden = !vehicleSearch;
+    search.parentElement.hidden = !vehicleSearch;
+  }
+  if (action) {
+    action.textContent = vehicleSearch ? "Pesquisar" : "Alterar palavra-passe";
+    if (vehicleSearch) { delete action.dataset.open; action.dataset.searchVehicles = "true"; }
+    else { delete action.dataset.searchVehicles; action.dataset.open = "password"; }
+  }
   renderContent();
 }
 
@@ -873,9 +888,19 @@ function vehicleDocumentsPanel(vehicle, compact = false) {
   </div>`;
 }
 
+function normalizePlateSearch(value) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function searchVehicles() {
+  if (currentUser().role !== "admin" || state.activeView !== "vehicles") return;
+  state.vehicleSearch = document.querySelector("#globalSearch")?.value || "";
+  renderContent();
+}
+
 function renderVehicles() {
   const admin = currentUser().role === "admin";
-  const vehicles = admin ? state.vehicles : driverVehicles();
+  const vehicles = admin ? state.vehicles.filter(vehicle => normalizePlateSearch(vehicle.plate).includes(normalizePlateSearch(state.vehicleSearch))) : driverVehicles();
   const requested = vehicles.find(vehicle => vehicle.id === state.requestedVehicleId);
   selectors.pageTitle.textContent = admin ? "Veículos" : "Meus Veículos";
 
@@ -951,7 +976,7 @@ function vehicleRow(vehicle, admin) {
       <td><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></td>
       <td>${escapeHtml(vehicle.driverIds.map(driverName).join(", ") || "Sem motorista")}</td>
       <td><div class="vehicle-document-links">${documentSummary}</div></td>
-      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${escapeHtml(vehicle.id)}">QR</button><button class="mini-button" type="button" data-edit-vehicle="${escapeHtml(vehicle.id)}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${escapeHtml(vehicle.id)}">Eliminar</button></div>` : "Consulta"}</td>
+      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${escapeHtml(vehicle.id)}">QR</button><button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}">Documentos</button><button class="mini-button" type="button" data-edit-vehicle="${escapeHtml(vehicle.id)}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${escapeHtml(vehicle.id)}">Eliminar</button></div>` : "Consulta"}</td>
     </tr>
   `;
 }
@@ -2401,6 +2426,10 @@ function printQr() {
 }
 
 function bindPortalEvents() {
+  document.querySelector("#globalSearch")?.addEventListener("input", searchVehicles);
+  document.querySelector("#globalSearch")?.addEventListener("keydown", event => {
+    if (event.key === "Enter") { event.preventDefault(); searchVehicles(); }
+  });
   selectors.loginForm?.addEventListener("submit", event => {
     event.preventDefault();
     login(selectors.loginIdentifier.value, selectors.loginPassword.value);
@@ -2412,6 +2441,7 @@ function bindPortalEvents() {
 
     const view = target.dataset.view;
     if (view) return setView(view);
+    if (target.dataset.searchVehicles) return searchVehicles();
     if (target.dataset.open) return openModal(target.dataset.open);
     if (target.dataset.openVehicleDoc) return openVehicleDocumentModal(target.dataset.openVehicleDoc, target.dataset.docType || "");
     if (target.dataset.docDriver) return openDriverDocumentModal(target.dataset.docDriver);

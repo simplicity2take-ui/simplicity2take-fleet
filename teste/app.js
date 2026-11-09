@@ -857,8 +857,8 @@ function vehicleDocumentSlot(vehicle, type, label, doc) {
 function vehicleDocumentsPanel(vehicle, compact = false) {
   const slots = [
     ["DUA", "DUA"],
-    ["Seguro", "Seguro / Carta Verde"],
-    ["IPO", "Inspeção (IPO)"],
+    ["Seguro", "Condições particulares"],
+    ["IPO", "INSP"],
     ["Licença TVDE", "Licença TVDE"],
     ["Outros", "Outros"]
   ];
@@ -945,7 +945,7 @@ function vehicleRow(vehicle, admin) {
   const vehicleDocs = state.documents.filter(doc => doc.vehicleId === vehicle.id);
   const documentSummary = vehicleDocs.length
     ? vehicleDocs.map(doc => {
-        const label = doc.type || "Documento";
+        const label = doc.type === "Seguro" ? "Condições particulares" : doc.type === "IPO" ? "INSP" : doc.type || "Documento";
         const level = alertLevel(doc);
         const cls = level === "Expirado" ? "inactive" : level === "OK" ? "active" : level === "Sem validade" ? "" : "expiring";
         return `
@@ -1829,7 +1829,7 @@ function field(name, label, value = "", type = "text", span = false, extra = "",
 
 function selectField(name, label, options, value, required = true) {
   const normalized = options.map(option => Array.isArray(option) ? option : [option, option]);
-  return `<label>${label}<select name="${name}" ${required ? "required" : ""}>${normalized.map(([optionValue, optionLabel]) => `<option value="${escapeHtml(optionValue)}" ${optionValue === value ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`).join("")}</select></label>`;
+  return `<label>${label}<select name="${name}" ${required ? "required" : ""}>${normalized.map(([optionValue, optionLabel]) => `<option value="${escapeHtml(optionValue)}" ${optionValue === value ? "selected" : ""}>${escapeHtml(name === "type" && optionValue === "Seguro" ? "Condições particulares" : name === "type" && optionValue === "IPO" ? "INSP" : optionLabel)}</option>`).join("")}</select></label>`;
 }
 
 function checkList(name, label, items, selected) {

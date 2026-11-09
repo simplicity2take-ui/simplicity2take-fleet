@@ -1922,14 +1922,25 @@ function applySmartPreview(preview) {
       <dt>Motorista:</dt><dd>${escapeHtml(driverLabel)}</dd>
       <dt>Viatura:</dt><dd>${escapeHtml(vehicleLabel)}</dd>
       <dt>Validade:</dt><dd>${escapeHtml(preview.expiryDate || "não encontrada")}</dd>
+      <dt>Estado:</dt><dd><span id="smartValidityStatus" role="status"></span></dd>
       <dt>Acesso:</dt><dd>${escapeHtml(scopeLabel)}</dd>
     </dl>
     <small>${escapeHtml(preview.dateReview || "Confirme os dados antes de guardar.")} ${preview.totalPages > preview.pagesRead ? `Foram lidas ${preview.pagesRead} de ${preview.totalPages} páginas.` : ""}</small>
   `;
 }
 
+function updateSmartValidityStatus() {
+  const status = document.querySelector("#smartValidityStatus");
+  if (!status) return;
+  const expiry = selectors.modalFields.querySelector('[name="expiryDate"]')?.value || "";
+  const result = window.FleetDocumentReader.assessExpiry(expiry);
+  status.textContent = result;
+  status.className = `tag ${result === "Fora de validade" ? "inactive" : result === "Dentro da validade" ? "active" : "expiring"}`;
+}
+
 let documentAnalysisRun = 0;
 function wireSmartDocsUpload() {
+  selectors.modalFields.querySelector('[name="expiryDate"]')?.addEventListener("input", updateSmartValidityStatus);
   const fileInput = selectors.modalFields.querySelector('input[name="file"]');
   fileInput?.addEventListener("change", async () => {
     const run = ++documentAnalysisRun;
@@ -1966,6 +1977,7 @@ function wireSmartDocsUpload() {
       const edited = fields.filter(field => field.value !== initial.get(field)).map(field => [field, field.value]);
       applySmartPreview(preview);
       for (const [field, value] of edited) field.value = value;
+      updateSmartValidityStatus();
     } catch (error) {
       if (!active()) return;
       preview.contentRead = false;

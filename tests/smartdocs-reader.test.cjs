@@ -11,3 +11,9 @@ assert.equal(extract('Validade 01/01/2027. Termo 02/02/2027', 'vehicle').expiryD
 assert.equal(extract('Carta de condução. Validade 01/01/2027', 'driver').type, 'Carta de Condução');
 assert.equal(extract('RNAVT. Validade 01/01/2027', 'company').type, 'RNAVT');
 console.log('PASS: document categories, expiry labels, ranges, past expiry, invalid/ambiguous dates, ignored birth/issue dates.');
+assert.equal(extract('INTERNATIONAL MOTOR INSURANCE CARD. VÁLIDO DE A Dia Mês Ano Dia Mês Ano 23 09 2026 05 11 2026', 'vehicle').expiryDate, '2026-11-05');
+assert.equal(extract('CARTA VERDE. VÁLIDO DE A 23 | 09 | 2026 | 05 | 11 | 2026', 'vehicle').expiryDate, '2026-11-05');
+assert.equal(extract('CARTA VERDE. VÁLIDO DE A 23 09 2026 31 02 2027', 'vehicle').expiryDate, '');
+assert.equal(extract('CARTA VERDE. VÁLIDO DE A 23 09 2026 05 11 2025', 'vehicle').expiryDate, '');
+assert.equal(extract('CARTA VERDE. VÁLIDO DE A 23 09 2026 05 11 2026. Validade até 06/11/2026', 'vehicle').expiryDate, '');
+console.log('PASS: Green Card six-cell validity table, end date rather than start, impossible/reversed/conflicting ranges.');

@@ -41,6 +41,17 @@
     }
     // Only dates next to an explicit expiry/end label qualify. Conflicts stay manual.
     const dates = [];
+    if (type === "Carta Verde") {
+      const table = t.match(/\bvalid[oa]\b([\s\S]{0,450})/);
+      if (table) {
+        const cells = /\b(\d{1,2})[\s|/.-]+(\d{1,2})[\s|/.-]+((?:19|20)\d{2})[\s|/.-]+(\d{1,2})[\s|/.-]+(\d{1,2})[\s|/.-]+((?:19|20)\d{2})\b/g;
+        for (const m of table[1].matchAll(cells)) {
+          const start = validDate(m[1], m[2], m[3]);
+          const end = validDate(m[4], m[5], m[6]);
+          if (start && end && start <= end) dates.push(end);
+        }
+      }
+    }
     const rangePattern = /(?:validade|vigencia)[^\d]{0,30}(\d{1,2})[\/.\-](\d{1,2})[\/.\-]((?:19|20)\d{2})\s*(?:a|ate|[-–])\s*(\d{1,2})[\/.\-](\d{1,2})[\/.\-]((?:19|20)\d{2})/g;
     const dateText = t.replace(rangePattern, (...m) => {
       const end = validDate(m[4], m[5], m[6]);
@@ -54,6 +65,61 @@
     }
     const unique = [...new Set(dates)];
     return { type, expiryDate: unique.length === 1 ? unique[0] : "", dateReview: unique.length > 1 ? "Foram encontradas validades diferentes. Confirme a data no documento." : unique.length ? "Confirme a validade proposta antes de guardar." : "Não foi encontrada uma validade inequívoca. Preencha-a após consultar o documento." };
+  }
+  async function readGreenCardCells(image, data, worker) {
+    if (!/carta verde|international motor insurance|certificado internacional de seguro/.test(normalize(data.text))) return "";
+    const words = data.words || [];
+    const anchors = words.filter(word => /^val[i1l]?d[oa][.:]?$/i.test(normalize(word.text)));
+    for (const anchor of anchors) {
+      const height = Math.max(8, anchor.bbox.y1 - anchor.bbox.y0);
+      const years = words.filter(word => /^(?:19|20)\d{2}[.,|]?$/.test(word.text) && word.bbox.y0 > anchor.bbox.y1 && word.bbox.y0 < anchor.bbox.y1 + height * 9);
+      for (let i = 0; i < years.length; i++) for (let j = i + 1; j < years.length; j++) {
+        const pair = [years[i], years[j]].sort((a, b) => a.bbox.x0 - b.bbox.x0);
+        const [first, last] = pair;
+        const firstX = (first.bbox.x0 + first.bbox.x1) / 2;
+        const lastX = (last.bbox.x0 + last.bbox.x1) / 2;
+        const cellWidth = (lastX - firstX) / 3;
+        if (cellWidth < height * 2 || cellWidth > height * 10 || Math.abs(first.bbox.y0 - last.bbox.y0) > height) continue;
+        if (firstX > anchor.bbox.x1 || lastX < anchor.bbox.x0) continue;
+        const digitHeight = Math.max(first.bbox.y1 - first.bbox.y0, last.bbox.y1 - last.bbox.y0);
+        const top = Math.max(0, Math.min(first.bbox.y0, last.bbox.y0) - digitHeight * 0.1);
+        const bottom = Math.max(first.bbox.y1, last.bbox.y1) + digitHeight * 0.1;
+        const source = await createImageBitmap(image);
+        try {
+          await worker.setParameters({ tessedit_char_whitelist: "0123456789", tessedit_pageseg_mode: "7" });
+          const originalCell = center => words.find(word => /^\d{1,4}$/.test(word.text) && Math.abs((word.bbox.x0 + word.bbox.x1) / 2 - center) < cellWidth * 0.3 && Math.abs(word.bbox.y0 - first.bbox.y0) < digitHeight * 0.5)?.text || "";
+          const values = [originalCell(firstX - 2 * cellWidth), originalCell(firstX - cellWidth), String(parseInt(first.text))];
+          if (!validDate(values[0], values[1], values[2])) continue;
+          for (const center of [lastX - 2 * cellWidth, lastX - cellWidth, lastX]) {
+            const left = Math.max(0, Math.round(center - cellWidth * 0.35));
+            const width = Math.round(cellWidth * 0.7);
+            const cropHeight = Math.ceil(bottom - top);
+            const canvas = document.createElement("canvas");
+            canvas.width = width * 4 + 24; canvas.height = cropHeight * 4 + 24;
+            const context = canvas.getContext("2d");
+            context.fillStyle = "white"; context.fillRect(0, 0, canvas.width, canvas.height);
+            context.drawImage(source, left, Math.floor(top), width, cropHeight, 12, 12, width * 4, cropHeight * 4);
+            let result;
+            try { result = await worker.recognize(canvas); }
+            finally { canvas.width = 0; canvas.height = 0; }
+            const value = result.data.text.trim();
+            if (!/^\d{1,4}$/.test(value) || result.data.confidence < 50) { values.length = 0; break; }
+            values.push(value);
+          }
+          if (values.length === 6) {
+            const start = validDate(values[0], values[1], values[2]);
+            const end = validDate(values[3], values[4], values[5]);
+            if (start && end && start <= end && +values[2] === parseInt(first.text) && +values[5] === parseInt(last.text)) {
+              return `\nValidade até ${values[3]}/${values[4]}/${values[5]}`;
+            }
+          }
+        } finally {
+          source.close();
+          await worker.setParameters({ tessedit_char_whitelist: "", tessedit_pageseg_mode: "3" });
+        }
+      }
+    }
+    return "";
   }
   async function read(file, scope, progress = () => {}) {
     let worker;
@@ -69,7 +135,10 @@
         });
       }
       const result = await worker.recognize(image);
-      return result.data.text || "";
+      let cells = "";
+      try { cells = await readGreenCardCells(image, result.data, worker); }
+      catch (error) { console.warn("SmartDocs: quadro de validade requer confirmação manual.", error); }
+      return (result.data.text || "") + cells;
     };
     try {
       let text = "";

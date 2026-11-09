@@ -1,0 +1,13 @@
+const assert = require('node:assert/strict');
+require('../smartdocs-reader.js');
+const extract = globalThis.FleetDocumentReader.extract;
+assert.equal(extract('Condições particulares. Emissão 01/01/2025. Validade até 31/12/2026', 'vehicle').expiryDate, '2026-12-31');
+assert.equal(extract('Carta Verde. Validade de 01/01/2026 a 31/12/2026', 'vehicle').expiryDate, '2026-12-31');
+assert.equal(extract('Carta Verde. Válida até 01/02/2025', 'vehicle').expiryDate, '2025-02-01');
+assert.equal(extract('Próxima inspeção: 02/03/2027', 'vehicle').type, 'IPO');
+assert.equal(extract('Validade 31/02/2027', 'vehicle').expiryDate, '');
+assert.equal(extract('Nascimento: 10/10/1990 Emissão 01/02/2026', 'driver').expiryDate, '');
+assert.equal(extract('Validade 01/01/2027. Termo 02/02/2027', 'vehicle').expiryDate, '');
+assert.equal(extract('Carta de condução. Validade 01/01/2027', 'driver').type, 'Carta de Condução');
+assert.equal(extract('RNAVT. Validade 01/01/2027', 'company').type, 'RNAVT');
+console.log('PASS: document categories, expiry labels, ranges, past expiry, invalid/ambiguous dates, ignored birth/issue dates.');

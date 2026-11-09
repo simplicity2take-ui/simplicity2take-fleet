@@ -851,43 +851,32 @@ function bar(label, value, max) {
   return `<div class="bar-row"><span>${escapeHtml(label)}</span><div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div><strong>${safeValue}</strong></div>`;
 }
 
-function vehicleDocumentSlot(vehicle, type, label) {
-  const docs = state.documents.filter(doc => doc.vehicleId === vehicle.id);
-  const doc = docs.find(item => item.type === type) || (type === "Seguro" ? docs.find(item => item.type === "Carta Verde") : null);
-  if (!doc) {
-    return `<div class="vehicle-document-slot missing">
-      <div><strong>${escapeHtml(label)}</strong><small>Não carregado</small></div>
-      ${currentUser().role === "admin" ? `<button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}" data-doc-type="${escapeHtml(type)}">+ Documento</button>` : ""}
-    </div>`;
-  }
+function vehicleDocumentSlot(vehicle, type, label, doc) {
+  const admin = currentUser().role === "admin";
+  const upload = admin ? `<button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}" data-doc-type="${escapeHtml(type)}">+ Documento</button>` : "";
+  if (!doc) return `<div class="vehicle-document-slot missing"><div><strong>${escapeHtml(label)}</strong><small>Não carregado</small></div>${upload}</div>`;
   const level = alertLevel(doc);
   const cls = level === "Expirado" ? "inactive" : level === "OK" ? "active" : level === "Sem validade" ? "" : "expiring";
   return `<div class="vehicle-document-slot">
-    <div><strong>${escapeHtml(label)}</strong><small>${escapeHtml(doc.name)}</small></div>
-    <div class="vehicle-document-slot-actions">
-      <span class="tag ${cls}">${escapeHtml(level)}</span>
+    <div><strong>${escapeHtml(label)}</strong><small>${escapeHtml(doc.name)}</small><small>Validade: ${escapeHtml(doc.expiryDate || "Não indicada")}</small></div>
+    <div class="vehicle-document-slot-actions"><span class="tag ${cls}">${escapeHtml(level)}</span>
       <button class="mini-button" type="button" data-open-doc="${escapeHtml(doc.id)}">Ver</button>
-    </div>
-  </div>`;
+      ${admin ? `<button class="danger-button" type="button" data-delete-document="${escapeHtml(doc.id)}">Eliminar</button>${upload}` : ""}
+    </div></div>`;
 }
 
 function vehicleDocumentsPanel(vehicle, compact = false) {
-  const slots = [
-    ["DUA", "DUA"],
-    ["Seguro", "Condições particulares"],
-    ["IPO", "INSP"],
-    ["Licença TVDE", "Licença TVDE"],
-    ["Outros", "Outros"]
-  ];
+  const slots = [["DUA", "DUA"], ["Carta Verde", "Carta Verde"], ["Seguro", "Condições particulares"], ["IPO", "INSP"], ["Licença TVDE", "Licença TVDE"]];
+  const docs = visibleDocuments().filter(doc => doc.vehicleId === vehicle.id);
+  const legacy = docs.filter(doc => !slots.some(([type]) => type === doc.type));
   return `<div class="vehicle-documents-panel ${compact ? "compact" : ""}">
-    <div class="panel-heading">
-      <div><h3>Documentos da viatura</h3><p class="section-copy">Tudo fica associado a esta viatura.</p></div>
-      ${currentUser().role === "admin" ? `<button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}">+ Documento</button>` : ""}
-    </div>
-    <div class="vehicle-document-slots">
-      ${slots.map(([type, label]) => vehicleDocumentSlot(vehicle, type, label)).join("")}
-    </div>
-  </div>`;
+    <div class="panel-heading"><div><h3>Documentos da viatura</h3><p class="section-copy">Tudo fica associado a esta viatura.</p></div>
+    ${currentUser().role === "admin" ? `<button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}">+ Documento</button>` : ""}</div>
+    <div class="vehicle-document-slots">${slots.map(([type, label]) => {
+      const matches = docs.filter(doc => doc.type === type);
+      return matches.length ? matches.map(doc => vehicleDocumentSlot(vehicle, type, label, doc)).join("") : vehicleDocumentSlot(vehicle, type, label);
+    }).join("")}
+    ${legacy.map(doc => vehicleDocumentSlot(vehicle, doc.type, doc.type || "Documento anterior", doc)).join("")}</div></div>`;
 }
 
 function normalizePlateSearch(value) {
@@ -1738,6 +1727,7 @@ function openModal(type, id = "", options = {}) {
   const action = type === "admin-password" ? "Definir" : id && type !== "document" ? "Editar" : type === "document" ? "Carregar" : "Criar";
   selectors.modalTitle.textContent = `${action} ${title}`;
   selectors.modalFields.innerHTML = modalFields(type, id);
+  selectors.form.querySelector('button[type="submit"]').disabled = false;
   selectors.modal.showModal();
   if (type === "document") wireSmartDocsUpload();
 }
@@ -1814,7 +1804,7 @@ function modalFields(type, id) {
       <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
       ${field("name", "Nome do documento", doc.name)}
       ${selectField("type", "Tipo", documentTypes, doc.type || "Carta de Condução")}
-      ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
+      ${field("expiryDate", "Data de validade (se aplicável)", doc.expiryDate, "date", false, "", false)}
       ${selectField("driverId", "Motorista associado (privado)", state.drivers.map(driver => [driver.id, driver.name]), selectedDriver)}
     `;
   }
@@ -1828,7 +1818,7 @@ function modalFields(type, id) {
     <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
     ${field("name", "Nome do documento", doc.name)}
     ${selectField("type", "Tipo", vehicleDocumentTypes, doc.type || "DUA")}
-    ${field("expiryDate", "Data de validade", doc.expiryDate, "date")}
+    ${field("expiryDate", "Data de validade (se aplicável)", doc.expiryDate, "date", false, "", false)}
     ${selectField("vehicleId", "Veículo associado", state.vehicles.map(vehicle => [vehicle.id, vehicle.plate + " — " + vehicle.brand + " " + vehicle.model]), selectedVehicle)}
     ${checkList("viewerDriverIds", "Visualização adicional (apenas documentos sem motorista)", state.drivers, doc.viewerDriverIds || [])}
   `;
@@ -1945,82 +1935,65 @@ function applySmartPreview(preview) {
   const driverLabel = preview.driver ? preview.driver.name : "não identificado";
   const scopeLabel = preview.scope === "driver" ? "Privado do motorista" : preview.scope === "vehicle" ? "Documento da viatura" : "Sem associação automática";
   $("#smartPreview").innerHTML = `
-    <strong>S2T SmartDocs — classificação automática pelo nome do ficheiro</strong>
+    <strong>S2T SmartDocs — leitura do documento</strong>
     <dl>
-      <dt>Tipo:</dt><dd>${escapeHtml(preview.type)}</dd>
+      <dt>Tipo:</dt><dd>${escapeHtml(preview.type === "Seguro" ? "Condições particulares" : preview.type === "IPO" ? "INSP" : preview.type)}</dd>
       <dt>Motorista:</dt><dd>${escapeHtml(driverLabel)}</dd>
       <dt>Viatura:</dt><dd>${escapeHtml(vehicleLabel)}</dd>
       <dt>Validade:</dt><dd>${escapeHtml(preview.expiryDate || "não encontrada")}</dd>
       <dt>Acesso:</dt><dd>${escapeHtml(scopeLabel)}</dd>
     </dl>
-    <small>O sistema usa o nome do ficheiro para sugerir o tipo e a validade quando consegue identificar esses dados. Confirma sempre antes de guardar.</small>
+    <small>${escapeHtml(preview.dateReview || "Confirme os dados antes de guardar.")} ${preview.totalPages > preview.pagesRead ? `Foram lidas ${preview.pagesRead} de ${preview.totalPages} páginas.` : ""}</small>
   `;
 }
 
-async function analysePdfContent(file, preview) {
-  if (file.type !== "application/pdf" || !window.pdfjsLib) return preview;
-
-  try {
-    const buffer = await file.arrayBuffer();
-    const pdf = await window.pdfjsLib.getDocument({ data: buffer }).promise;
-    let text = "";
-
-    const pagesToRead = Math.min(pdf.numPages, 10);
-    for (let pageNumber = 1; pageNumber <= pagesToRead; pageNumber += 1) {
-      const page = await pdf.getPage(pageNumber);
-      const content = await page.getTextContent();
-      text += " " + content.items.map(item => item.str || "").join(" ");
-    }
-
-    const normalized = normalizeText(text);
-    const dates = [
-      ...[...text.matchAll(/(?:validade|válida até|valido ate|valid until|expiry|expires|expira)[^0-9]{0,40}(\d{1,2})[\/.\-](\d{1,2})[\/.\-](20\d{2})/gi)].map(m => [m[3], m[2], m[1]]),
-      ...[...text.matchAll(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](20\d{2})/g)].map(m => [m[3], m[2], m[1]])
-    ];
-
-    if (!preview.expiryDate && dates.length) {
-      const candidate = dates.find(parts => {
-        const year = Number(parts[0]);
-        const month = Number(parts[1]);
-        const day = Number(parts[2]);
-        return year >= new Date().getFullYear() && month >= 1 && month <= 12 && day >= 1 && day <= 31;
-      });
-      if (candidate) preview.expiryDate = candidate.join("-");
-    }
-
-    if (preview.type === "Outros" || preview.type === "Certidão Permanente") {
-      if (normalized.includes("certidao permanente") || normalized.includes("certidao permanente")) {
-        preview.type = "Certidão Permanente";
-      } else if (normalized.includes("rnavt")) {
-        preview.type = "RNAVT";
-      } else if (normalized.includes("seguro da empresa") || normalized.includes("seguro")) {
-        preview.type = "Seguro da Empresa";
-      } else if (normalized.includes("licenca") || normalized.includes("alvara")) {
-        preview.type = "Licença / Alvará";
-      }
-    }
-
-    preview.contentRead = true;
-    return preview;
-  } catch (error) {
-    console.warn("SmartDocs: não foi possível ler o conteúdo do PDF.", error);
-    return preview;
-  }
-}
-
+let documentAnalysisRun = 0;
 function wireSmartDocsUpload() {
   const fileInput = selectors.modalFields.querySelector('input[name="file"]');
   fileInput?.addEventListener("change", async () => {
+    const run = ++documentAnalysisRun;
     const file = fileInput.files[0];
-    if (!file) return;
-
-    state.smartPreview = analyseFileName(file.name);
-    applySmartPreview(state.smartPreview);
-
-    if (file.type === "application/pdf") {
-      const preview = await analysePdfContent(file, state.smartPreview);
+    if (!file) { selectors.form.querySelector('button[type="submit"]').disabled = false; return; }
+    const scope = state.documentContext || "company";
+    const preview = analyseFileName(file.name);
+    // Keep the vehicle/driver deliberately selected by the administrator.
+    preview.vehicleId = selectors.modalFields.querySelector('[name="vehicleId"]')?.value || preview.vehicleId;
+    preview.driverId = selectors.modalFields.querySelector('[name="driverId"]')?.value || preview.driverId;
+    preview.expiryDate = "";
+    preview.scope = scope === "company" ? "unassigned" : scope;
+    preview.vehicle = state.vehicles.find(vehicle => vehicle.id === preview.vehicleId);
+    preview.driver = state.drivers.find(driver => driver.id === preview.driverId);
+    const expiryInput = selectors.modalFields.querySelector('[name="expiryDate"]');
+    if (expiryInput) expiryInput.value = "";
+    const nameInput = selectors.modalFields.querySelector('[name="name"]');
+    if (nameInput) nameInput.value = preview.name;
+    state.smartPreview = preview;
+    const active = () => run === documentAnalysisRun && fileInput.isConnected && selectors.modal.open && fileInput.files[0] === file;
+    const submit = selectors.form.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    const fields = ["type", "name", "expiryDate", "vehicleId", "driverId"].map(name => selectors.modalFields.querySelector(`[name="${name}"]`)).filter(Boolean);
+    const initial = new Map(fields.map(field => [field, field.value]));
+    const status = message => {
+      if (active()) $("#smartPreview").textContent = message;
+    };
+    status("A analisar o conteúdo do documento…");
+    try {
+      const read = await window.FleetDocumentReader.read(file, scope, status);
+      if (!active()) return;
+      Object.assign(preview, read, { type: read.type || preview.type });
       state.smartPreview = preview;
+      const edited = fields.filter(field => field.value !== initial.get(field)).map(field => [field, field.value]);
       applySmartPreview(preview);
+      for (const [field, value] of edited) field.value = value;
+    } catch (error) {
+      if (!active()) return;
+      preview.contentRead = false;
+      preview.dateReview = "Não foi possível ler o conteúdo. Preencha e confirme os dados manualmente.";
+      state.smartPreview = preview;
+      status(preview.dateReview);
+      console.warn("SmartDocs: leitura indisponível", error);
+    } finally {
+      if (active()) submit.disabled = false;
     }
   });
 }
@@ -2341,6 +2314,7 @@ async function saveAdminPassword(driverId, password, confirmation) {
   showToast("Palavra-passe do motorista alterada.");
 }
 async function handleAdminAction(action) {
+  if (currentUser().role !== "admin") return;
   try {
     if (action.type === "delete-document") {
       if (!confirm("Eliminar este documento do portal?")) return;

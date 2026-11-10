@@ -721,6 +721,7 @@ async function logout() {
   documentBlobCache.clear();
   state.sessionUserId = null;
   state.profile = null;
+  state.boltOnlineRead = null;
   state.cartrackIgnitionHistory = null;
   state.cartrackIgnitionPlate = "";
   state.cartrackIgnitionDay = "";
@@ -1278,6 +1279,32 @@ function cartrackTimestampIsStale(iso, now = Date.now()) {
   return !Number.isFinite(time) || time > now || now - time > 30 * 60 * 1000;
 }
 
+function renderBoltOnlineRead() {
+  const result = state.boltOnlineRead;
+  const date = value => value ? new Date(value).toLocaleString("pt-PT",{timeZone:"Europe/Lisbon"}) : "Sem data";
+  const label = value => ({waiting:"Online, a aguardar",on_ride:"Em viagem",on_break:"Em pausa"}[value] || "Estado não indicado");
+  return `<article class="panel"><div class="panel-heading"><h2>Bolt: motorista e viatura selecionada</h2><button class="secondary-button" type="button" data-bolt-online-read ${result?.loading ? "disabled" : ""}>${result?.loading ? "A consultar…" : "Consultar online Bolt"}</button></div>
+    <p class="section-copy">Consulta pontual da viatura selecionada pelo motorista online na Bolt. Estar online não prova circulação. Esta consulta não reconstitui trocas anteriores; a data de mudança do estado não indica quando a viatura foi trocada.</p>
+    ${result?.error ? `<p role="alert">${escapeHtml(result.error)}${result.code != null ? " Código Bolt: "+escapeHtml(result.code) : ""}</p>` : ""}
+    ${result?.drivers ? `<p class="section-copy">Consulta efetuada em ${date(result.observedAt)} (Lisboa).</p><div class="table-wrap"><table><thead><tr><th>Motorista</th><th>Viatura selecionada na consulta</th><th>Estado Bolt</th><th>Estado desde (Bolt)</th></tr></thead><tbody>${result.drivers.map(row=>`<tr><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.plate || "Sem matrícula devolvida")}</td><td>${label(row.state)}</td><td>${date(row.stateChangedAt)}</td></tr>`).join("") || '<tr><td colspan="4">A Bolt não devolveu motoristas online nesta consulta.</td></tr>'}</tbody></table></div>` : '<p class="section-copy">Consulta apenas de leitura. Os dados recebidos são apresentados aqui.</p>'}
+  </article>`;
+}
+
+async function loadBoltOnlineRead() {
+  if (state.profile?.role !== "admin" || state.boltOnlineRead?.loading) return;
+  const request = {loading:true}, userId = state.sessionUserId;
+  state.boltOnlineRead = request; renderActivity();
+  const current = () => state.boltOnlineRead === request && state.sessionUserId === userId && state.profile?.role === "admin";
+  try {
+    const {data,error} = await supabaseClient.functions.invoke("bolt-online-read",{body:{}});
+    if (!current()) return;
+    if (error) throw new Error("Não foi possível efetuar a consulta Bolt.");
+    if (!data?.ok || !Array.isArray(data.drivers)) state.boltOnlineRead = {error:data?.error || "A Bolt não devolveu uma resposta válida.",code:data?.code??null};
+    else state.boltOnlineRead = {drivers:data.drivers,observedAt:data.observedAt};
+  } catch(error) { if (current()) state.boltOnlineRead = {error:error.message}; }
+  if (state.activeView === "activity" && state.sessionUserId === userId && state.profile?.role === "admin") renderActivity();
+}
+
 function renderCartrackIgnitionHistory() {
   const history = state.cartrackIgnitionHistory;
   const plate = state.cartrackIgnitionPlate || "";
@@ -1436,6 +1463,7 @@ function renderActivity() {
         <div class="table-wrap"><table><thead><tr><th>Dia</th><th>Viatura</th><th>Primeira leitura</th><th>Última leitura</th><th>Leituras</th><th>Km observados</th></tr></thead>
         <tbody>${cartrackDistance.rows.map(row=>`<tr><td>${escapeHtml(row.day)}</td><td><strong>${escapeHtml(row.registration)}</strong></td><td>${new Date(row.firstAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.firstOdometer.toFixed(1)} km</td><td>${new Date(row.lastAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.lastOdometer.toFixed(1)} km</td><td>${row.count}</td><td>${row.distance === null ? `<span class="tag expiring">${row.invalid ? "Rever odómetro" : "Leituras insuficientes"}</span>` : row.distance.toFixed(1)+" km"}</td></tr>`).join("") || '<tr><td colspan="6">Sem leituras Cartrack neste período.</td></tr>'}</tbody></table></div>
       </article>
+      ${renderBoltOnlineRead()}
       ${renderCartrackIgnitionHistory()}
     </section>
   `;
@@ -2646,6 +2674,7 @@ function bindPortalEvents() {
       if ([1, 7, 30].includes(days)) { state.cartrackIgnitionHistory = null; state.cartrackIgnitionDay = ""; state.activityPeriodDays = days; state.activityWeek = null; renderActivity(); }
       return;
     }
+    if (target.dataset.boltOnlineRead !== undefined) return loadBoltOnlineRead();
     if (target.dataset.boltActivitySync !== undefined) return syncBoltActivity();
     if (target.dataset.cartrackHistory !== undefined) return loadCartrackIgnitionHistory();
     if (target.dataset.cartrackSync !== undefined) return syncCartrack();
@@ -2709,6 +2738,7 @@ function bindPortalEvents() {
       documentBlobCache.clear();
       state.sessionUserId = null;
       state.profile = null;
+  state.boltOnlineRead = null;
   state.cartrackIgnitionHistory = null;
   state.cartrackIgnitionPlate = "";
   state.cartrackIgnitionDay = "";

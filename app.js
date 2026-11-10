@@ -421,14 +421,20 @@ function driverVehicles() {
   return state.vehicles.filter(vehicle => vehicle.driverIds.includes(driverId));
 }
 
-function daysUntil(date) {
-  const oneDay = 1000 * 60 * 60 * 24;
-  return Math.ceil((new Date(date) - new Date()) / oneDay);
+function daysUntil(date, now = new Date()) {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date || "");
+  if (!parts) return NaN;
+  const year = Number(parts[1]), month = Number(parts[2]), day = Number(parts[3]);
+  const expiry = new Date(Date.UTC(year, month - 1, day));
+  if (expiry.getUTCFullYear() !== year || expiry.getUTCMonth() !== month - 1 || expiry.getUTCDate() !== day) return NaN;
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return (expiry.getTime() - today) / 86400000;
 }
 
 function alertLevel(doc) {
   if (!doc.expiryDate) return "Sem validade";
   const days = daysUntil(doc.expiryDate);
+  if (!Number.isFinite(days)) return "Sem validade";
   if (days < 0) return "Expirado";
   if (days <= 3) return "3 dias";
   if (days <= 7) return "7 dias";

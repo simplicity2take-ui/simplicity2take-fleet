@@ -722,6 +722,9 @@ async function logout() {
   state.sessionUserId = null;
   state.profile = null;
   state.boltOnlineRead = null;
+  state.boltRideHistory = null;
+  state.boltRideDay = null;
+  state.boltRideFilter = null;
   state.boltConfigCheck = null;
   state.boltConfigSuffix = "";
   state.cartrackIgnitionHistory = null;
@@ -1281,6 +1284,37 @@ function cartrackTimestampIsStale(iso, now = Date.now()) {
   return !Number.isFinite(time) || time > now || now - time > 30 * 60 * 1000;
 }
 
+
+function renderBoltRideHistory() {
+  const h=state.boltRideHistory,filter=state.boltRideFilter||"";
+  const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
+  const rows=(h?.rides||[]).filter(r=>norm(r.name+" "+(r.plate||"")).includes(norm(filter)));
+  const date=v=>v?new Date(v).toLocaleString("pt-PT",{timeZone:"Europe/Lisbon"}):"—";
+  return `<article class="panel"><h2>Histórico de viagens Bolt</h2><p class="section-copy">Motorista e matrícula registados em cada viagem. Não indica os períodos online sem viagem nem a hora exata de troca da viatura.</p><div class="row-actions"><label>Dia das viagens <input id="boltRideDay" type="date" value="${escapeHtml(state.boltRideDay||localDay(Date.now()))}" max="${localDay(Date.now())}"></label><label>Motorista ou matrícula <input id="boltRideFilter" type="search" value="${escapeHtml(filter)}" placeholder="Ex.: Álvaro ou 82-ZH-99"></label><button type="button" class="secondary-button" data-bolt-rides ${h?.loading?"disabled":""}>${h?.loading?"A consultar…":"Consultar viagens Bolt"}</button></div>${h?.error?`<p role="alert">${escapeHtml(h.error)}</p>`:""}${h?.rides?`<p class="section-copy">${h.rides.length} de ${h.total} registos recebidos; ${rows.length} apresentados. ${h.nextOffset!==null?"Resultado parcial: existem mais páginas.":"Todas as páginas recebidas."} Pesquisa aplicada às páginas recebidas.</p><div class="table-wrap"><table><thead><tr><th>Motorista</th><th>Matrícula na viagem</th><th>Estado</th><th>Pedido</th><th>Aceitação</th><th>Recolha</th><th>Fim</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.plate||"Não indicada")}</td><td>${escapeHtml(({finished:"Concluída",rider_cancelled:"Cancelada pelo passageiro",driver_did_not_respond:"Sem resposta",driver_rejected:"Recusada",rider_did_not_show:"Passageiro ausente",driver_cancelled_after_accept:"Cancelada pelo motorista"})[r.status]||r.status||"Não indicado")}</td><td>${date(r.requestedAt)}</td><td>${date(r.acceptedAt)}</td><td>${date(r.pickupAt)}</td><td>${date(r.finishedAt)}</td></tr>`).join("")||'<tr><td colspan="7">Sem viagens nas páginas recebidas para esta pesquisa. Isto não prova que o motorista esteve offline.</td></tr>'}</tbody></table></div>${h.nextOffset!==null?`<button type="button" class="secondary-button" data-bolt-rides-next ${h.loading?"disabled":""}>Carregar mais viagens</button>`:""}`:""}</article>`;
+}
+
+async function loadBoltRideHistory(next=false) {
+  if(state.profile?.role!=="admin"||state.boltRideHistory?.loading) return;
+  const old=state.boltRideHistory;
+  const day=next?state.boltRideDay:document.querySelector("#boltRideDay")?.value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day||"")){showToast("Escolhe o dia das viagens.");return;}
+  state.boltRideDay=day;
+  state.boltRideFilter=document.querySelector("#boltRideFilter")?.value.trim()||"";
+  const start=next?old.range.start:reportMidnight(day),end=next?old.range.end:reportMidnight(reportDayShift(day,1));
+  const offset=next?old.nextOffset:0;
+  if(next&&offset===null)return;
+  const request={...(next?old:{}),loading:true},userId=state.sessionUserId;
+  state.boltRideHistory=request;renderActivity();
+  const current=()=>state.boltRideHistory===request&&state.sessionUserId===userId&&state.profile?.role==="admin";
+  try{
+    const {data,error}=await supabaseClient.functions.invoke("bolt-online-read",{body:{mode:"rides",start:new Date(start).toISOString(),end:new Date(end).toISOString(),offset}});
+    if(!current())return;
+    if(error||!data?.ok||!Array.isArray(data.rides))throw new Error(data?.error||"Não foi possível consultar o histórico Bolt.");
+    state.boltRideHistory={...data,rides:[...(next?old.rides:[]),...data.rides]};
+  }catch(error){if(current())state.boltRideHistory={...(next?old:{}),error:error.message};}
+  if(state.activeView==="activity"&&state.sessionUserId===userId&&state.profile?.role==="admin")renderActivity();
+}
+
 function renderBoltOnlineRead() {
   const config=state.boltConfigCheck;
   const settings=config?.configuration;
@@ -1485,7 +1519,7 @@ function renderActivity() {
         <div class="table-wrap"><table><thead><tr><th>Dia</th><th>Viatura</th><th>Primeira leitura</th><th>Última leitura</th><th>Leituras</th><th>Km observados</th></tr></thead>
         <tbody>${cartrackDistance.rows.map(row=>`<tr><td>${escapeHtml(row.day)}</td><td><strong>${escapeHtml(row.registration)}</strong></td><td>${new Date(row.firstAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.firstOdometer.toFixed(1)} km</td><td>${new Date(row.lastAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.lastOdometer.toFixed(1)} km</td><td>${row.count}</td><td>${row.distance === null ? `<span class="tag expiring">${row.invalid ? "Rever odómetro" : "Leituras insuficientes"}</span>` : row.distance.toFixed(1)+" km"}</td></tr>`).join("") || '<tr><td colspan="6">Sem leituras Cartrack neste período.</td></tr>'}</tbody></table></div>
       </article>
-      ${renderBoltOnlineRead()}
+      ${renderBoltOnlineRead()}${renderBoltRideHistory()}
       ${renderCartrackIgnitionHistory()}
     </section>
   `;
@@ -2696,6 +2730,8 @@ function bindPortalEvents() {
       if ([1, 7, 30].includes(days)) { state.cartrackIgnitionHistory = null; state.cartrackIgnitionDay = ""; state.activityPeriodDays = days; state.activityWeek = null; renderActivity(); }
       return;
     }
+    if (target.dataset.boltRides !== undefined) return loadBoltRideHistory();
+    if (target.dataset.boltRidesNext !== undefined) return loadBoltRideHistory(true);
     if (target.dataset.boltConfigCheck !== undefined) return checkBoltConfiguration();
     if (target.dataset.boltOnlineRead !== undefined) return loadBoltOnlineRead();
     if (target.dataset.boltActivitySync !== undefined) return syncBoltActivity();
@@ -2762,6 +2798,9 @@ function bindPortalEvents() {
       state.sessionUserId = null;
       state.profile = null;
   state.boltOnlineRead = null;
+  state.boltRideHistory = null;
+  state.boltRideDay = null;
+  state.boltRideFilter = null;
   state.boltConfigCheck = null;
   state.boltConfigSuffix = "";
   state.cartrackIgnitionHistory = null;

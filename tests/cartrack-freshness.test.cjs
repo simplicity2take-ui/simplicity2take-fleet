@@ -7,5 +7,8 @@ for(const file of ['app.js','teste/app.js']){
  assert.equal(c.cartrackTimestampIsStale(new Date(now-30*60000).toISOString(),now),false);assert.equal(c.cartrackTimestampIsStale(new Date(now-30*60000-1).toISOString(),now),true);for(const v of ['',null,'bad-date',new Date(now+60000).toISOString()])assert.equal(c.cartrackTimestampIsStale(v,now),true);
  c.renderActivity();let html=c.selectors.content.innerHTML;assert(html.includes('Leituras Cartrack antigas:1'));assert(html.includes('Leitura antiga ou sem data'));assert(html.includes('>Recente</span>'));assert(html.includes('Há dados antigos'));
  car.eventTs=new Date(now-60000).toISOString();car.lastSyncedAt=new Date(now-2*3600000).toISOString();c.renderActivity();html=c.selectors.content.innerHTML;assert(html.includes('Leituras Cartrack antigas:0'));assert(!html.includes('Leitura antiga ou sem data'));assert(html.includes('>Desatualizada</span>'));
- console.log(file+': PASS reading age independent of sync age, boundary, missing/invalid/future timestamps and displayed indicators.');
+ c.state.cartrackVehicles.push({registration:'EXTRA',eventTs:new Date(now-60000).toISOString(),lastSyncedAt:new Date(now-60000).toISOString()});
+ c.renderActivity();html=c.selectors.content.innerHTML;assert(html.includes('Viaturas Cartrack:2'));assert(html.includes('Cartrack sem registo no Fleet:1'));assert(html.includes('Sem registo no Fleet'));assert.equal((html.match(/<strong>EXTRA<\/strong>/g)||[]).length,1);
+ c.state.vehicles.push({id:'extra',plate:'EXTRA',brand:'Brand',model:'Model'});c.renderActivity();html=c.selectors.content.innerHTML;assert(html.includes('Cartrack sem registo no Fleet:0'));assert.equal((html.match(/<strong>EXTRA<\/strong>/g)||[]).length,1);assert(!html.includes('>Sem registo no Fleet</span>'));
+ console.log(file+': PASS reading age independent of sync age, boundary, missing/invalid/future timestamps displayed indicators and unmatched vehicle coverage.');
 }

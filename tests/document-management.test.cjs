@@ -13,7 +13,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
       return { delete: () => ({ eq: async () => ({ error:null }) }) };
     }};
 
-    vm.createContext(context);
+    context.validateDocumentFile=()=>{};vm.createContext(context);
     for(const [a,b] of [['function documentCard(','\n\nfunction renderApplications('],['function driverDocumentsPanel(','\nfunction driverRow('],['async function downloadDocument(','\nasync function savePassword('],['async function saveDocument(','\nfunction fileToBase64(']])vm.runInContext(s.slice(s.indexOf(a),s.indexOf(b,s.indexOf(a))),context);
     let html=context.driverDocumentsPanel({id:'driver1',name:'Um'});
     assert(html.includes('data-open-doc="d1"'));assert(!html.includes('data-open-doc="d2"'));assert(html.includes('data-edit-document="d1"'));assert(html.includes('data-delete-document="d1"'));

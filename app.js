@@ -1983,6 +1983,13 @@ function updateSmartValidityStatus() {
   status.className = `tag ${result === "Fora de validade" ? "inactive" : result === "Dentro da validade" ? "active" : "expiring"}`;
 }
 
+function validateDocumentFile(file) {
+  if (!file) return;
+  if (!file.size) throw new Error("O ficheiro está vazio. Selecione outro ficheiro.");
+  if (file.size > 10 * 1024 * 1024) throw new Error("O ficheiro ultrapassa 10 MB.");
+  if (!["application/pdf", "image/jpeg", "image/png"].includes(file.type)) throw new Error("Só são permitidos PDF, JPG e PNG.");
+}
+
 let documentAnalysisRun = 0;
 function wireSmartDocsUpload() {
   selectors.modalFields.querySelector('[name="expiryDate"]')?.addEventListener("input", updateSmartValidityStatus);
@@ -1991,6 +1998,13 @@ function wireSmartDocsUpload() {
     const run = ++documentAnalysisRun;
     const file = fileInput.files[0];
     if (!file) { selectors.form.querySelector('button[type="submit"]').disabled = false; return; }
+    try { validateDocumentFile(file); }
+    catch (error) {
+      state.smartPreview = null;
+      $("#smartPreview").textContent = error.message;
+      selectors.form.querySelector('button[type="submit"]').disabled = true;
+      return;
+    }
     const scope = state.documentContext || "company";
     const preview = analyseFileName(file.name);
     // Keep the vehicle/driver deliberately selected by the administrator.
@@ -2117,6 +2131,21 @@ async function saveDocument(values, viewerDriverIds, id) {
   const existing = state.documents.find(item => item.id === id);
   const context = state.documentContext || "company";
 
+  validateDocumentFile(file);
+  const finalVehicleId = context === "vehicle"
+    ? (values.vehicleId || null)
+    : null;
+  const finalDriverId = context === "driver"
+    ? (values.driverId || null)
+    : null;
+
+  if (context === "vehicle" && !finalVehicleId) {
+    throw new Error("Selecione a viatura.");
+  }
+  if (context === "driver" && !finalDriverId) {
+    throw new Error("Selecione o motorista.");
+  }
+
   let driveData = existing ? {
     fileId: existing.driveFileId,
     fileName: existing.fileName,
@@ -2125,8 +2154,6 @@ async function saveDocument(values, viewerDriverIds, id) {
   } : null;
 
   if (file) {
-    if (file.size > 10 * 1024 * 1024) throw new Error("O ficheiro ultrapassa 10 MB.");
-    if (!["application/pdf", "image/jpeg", "image/png"].includes(file.type)) throw new Error("Só são permitidos PDF, JPG e PNG.");
 
     const base64 = await fileToBase64(file);
     const folderType = context === "vehicle" ? "vehicles" : context === "driver" ? "drivers" : "documents";
@@ -2153,19 +2180,6 @@ async function saveDocument(values, viewerDriverIds, id) {
 
   if (!driveData) throw new Error("Selecione um ficheiro.");
 
-  const finalVehicleId = context === "vehicle"
-    ? (values.vehicleId || state.smartPreview?.vehicleId || null)
-    : null;
-  const finalDriverId = context === "driver"
-    ? (values.driverId || state.smartPreview?.driverId || null)
-    : null;
-
-  if (context === "vehicle" && !finalVehicleId) {
-    throw new Error("Selecione a viatura.");
-  }
-  if (context === "driver" && !finalDriverId) {
-    throw new Error("Selecione o motorista.");
-  }
 
   const payload = {
     name: values.name,

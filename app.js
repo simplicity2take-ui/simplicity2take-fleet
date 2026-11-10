@@ -261,7 +261,7 @@ async function loadBackendData() {
     driveUrl: valueOf(row, "drive_web_view_link", "drive_url", "web_view_link", "file_url"),
     vehicleId: valueOf(row, "vehicle_id"),
     driverId: valueOf(row, "driver_id"),
-    viewerDriverIds: viewers.filter(item => item.document_id === row.id).map(item => item.driver_id),
+    viewerDriverIds: viewers.filter(item => item.document_id === row.id && item.can_view === true).map(item => item.driver_id),
     raw: row
   }));
   state.activityEvents = (activityResult.data || []).map(row => ({
@@ -1809,13 +1809,14 @@ function modalFields(type, id) {
     return `
       <div class="smartdocs-box span-full">
         <strong>Gestão documental da empresa</strong>
-        <p>Este documento fica exclusivamente na área da empresa. Não é associado a motorista nem a viatura.</p>
+        <p>Este documento pertence à empresa. Pode partilhar a consulta com os motoristas que selecionar abaixo. Sem seleção, fica apenas disponível ao administrador.</p>
       </div>
       ${field("file", "Ficheiro original", "", "file", true, 'accept=".pdf,.jpg,.jpeg,.png"')}
       <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
       ${field("name", "Nome do documento", doc.name)}
       ${selectField("type", "Tipo", companyTypes, doc.type || "Outros")}
       ${field("expiryDate", "Data de validade (se aplicável)", doc.expiryDate, "date", false, "", false)}
+      ${checkList("viewerDriverIds", "Motoristas autorizados a consultar este documento", state.drivers, doc.viewerDriverIds || [])}
     `;
   }
 
@@ -2196,9 +2197,9 @@ async function saveDocument(values, viewerDriverIds, id) {
   const { error: viewerDeleteError } = await supabaseClient.from("document_viewers").delete().eq("document_id", documentId);
   if (viewerDeleteError) throw viewerDeleteError;
 
-  if (context === "vehicle" && viewerDriverIds.length) {
+  if (context !== "driver" && viewerDriverIds.length) {
     const { error: viewerError } = await supabaseClient.from("document_viewers").insert(
-      viewerDriverIds.map(driverId => ({ document_id: documentId, driver_id: driverId }))
+      viewerDriverIds.map(driverId => ({ document_id: documentId, driver_id: driverId, can_view: true }))
     );
     if (viewerError) throw viewerError;
   }

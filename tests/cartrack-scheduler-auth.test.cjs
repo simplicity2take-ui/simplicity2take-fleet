@@ -1,0 +1,15 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),{stripTypeScriptTypes}=require('node:module');
+(async()=>{let handler,role='admin',active=true,requests=0;
+const client={auth:{getUser:async token=>({data:{user:token==='valid'?{id:'user'}:null}})},from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>({data:{role,status:active?'Ativo':'Inativo'}})})})}),rpc:async(name,args)=>name==='verify_cartrack_sync_key'?{data:args.candidate==='synthetic-job-key'}:{data:{}}};
+const c={Request,Response,Map,Date,JSON,Number,String,btoa,console,Deno:{serve:fn=>handler=fn,env:{get:()=> 'configured'}},createClient:()=>client,fetch:async()=>{requests++;return new Response(JSON.stringify({data:[]}))}};vm.createContext(c);vm.runInContext(stripTypeScriptTypes(fs.readFileSync(require('node:path').join(__dirname,'../supabase/functions/cartrack-sync/index.ts'),'utf8').replace(/^import .*;$/mg,'')),c);
+const call=headers=>handler(new Request('https://example.test',{method:'POST',headers}));
+assert.equal((await call({})).status,401);assert.equal(requests,0);
+role='driver';assert.equal((await call({Authorization:'Bearer valid'})).status,403);assert.equal(requests,0);
+role='admin';active=false;assert.equal((await call({Authorization:'Bearer valid'})).status,403);assert.equal(requests,0);
+active=true;assert.equal((await call({Authorization:'Bearer invalid'})).status,401);assert.equal(requests,0);
+assert.equal((await call({'x-cartrack-sync-key':'wrong'})).status,403);assert.equal(requests,0);
+assert.equal((await call({'x-cartrack-sync-key':'synthetic-job-key'})).status,200);assert.equal(requests,2);
+assert.equal((await call({Authorization:'Bearer valid'})).status,200);assert.equal(requests,4);
+assert.equal((await handler(new Request('https://example.test'))).status,405);
+console.log('PASS: admin and scheduler accepted; driver/inactive/invalid/missing auth denied before upstream calls.');
+})().catch(e=>{console.error(e);process.exitCode=1});

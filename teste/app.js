@@ -117,6 +117,7 @@ const state = {
   recruiterSession: null,
   activityEvents: [],
   activityPeriodDays: 7,
+  activityWeek: "current",
   tripRecords: [],
   cartrackVehicles: [],
   cartrackSnapshots: []
@@ -1168,48 +1169,75 @@ function localDay(iso) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
 }
 
-function boltActivitySummary(days = 7) {
-  const cutoff = Date.now() - days * 86400000;
-  const events = state.activityEvents.filter(e => e.observedAt && new Date(e.observedAt).getTime() >= cutoff).sort((a,b) => new Date(a.observedAt) - new Date(b.observedAt));
+function reportDayShift(day, days) {
+  return new Date(Date.parse(day + "T12:00:00Z") + days * 86400000).toISOString().slice(0, 10);
+}
+
+function reportMidnight(day) {
+  const target = Date.parse(day + "T00:00:00Z");
+  let time = target;
+  const formatter = new Intl.DateTimeFormat("en-GB", {timeZone:"Europe/Lisbon",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"});
+  for (let i = 0; i < 3; i++) {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(time)).map(p => [p.type, p.value]));
+    time += target - Date.UTC(+parts.year,+parts.month-1,+parts.day,+parts.hour,+parts.minute,+parts.second);
+  }
+  return time;
+}
+
+function activityReportRange(days, week, now) {
+  if (week !== "current" && week !== "previous") return {start:now-days*86400000,end:now};
+  const today = localDay(now);
+  const weekday = (new Date(today+"T12:00:00Z").getUTCDay()+6)%7;
+  const monday = reportDayShift(today, -weekday);
+  return week === "previous" ? {start:reportMidnight(reportDayShift(monday,-7)),end:reportMidnight(monday)} : {start:reportMidnight(monday),end:now};
+}
+
+function boltActivitySummary(days = 7, now = Date.now(), week = null) {
+  const range = activityReportRange(days, week, now);
+  const timestamp = value => new Date(value).getTime();
+  const allEvents = state.activityEvents.filter(e => e.observedAt && timestamp(e.observedAt) <= now).sort((a,b)=>timestamp(a.observedAt)-timestamp(b.observedAt));
+  const events = allEvents.filter(e => timestamp(e.observedAt)>=range.start && timestamp(e.observedAt)<range.end);
   const trips = state.tripRecords.filter(t => {
-    if ((t.platform || "bolt") !== "bolt") return false;
-    const ts = t.finishedAt || t.acceptedAt || t.observedAt;
-    return ts && new Date(ts).getTime() >= cutoff;
+    const time = timestamp(t.finishedAt || t.acceptedAt || t.observedAt);
+    return (t.platform || "bolt") === "bolt" && time >= range.start && time < range.end;
   });
   const latestByVehicle = new Map();
-  for (const event of state.activityEvents.slice().sort((a,b) => new Date(b.observedAt) - new Date(a.observedAt))) {
-    if (event.vehicleId && !latestByVehicle.has(event.vehicleId)) latestByVehicle.set(event.vehicleId, event);
-  }
+  for (const event of allEvents) if(event.vehicleId) latestByVehicle.set(event.vehicleId,event);
   let onlineMinutes = 0, serviceMinutes = 0;
   const grouped = new Map();
+  const bucketFor = day => {
+    if(!grouped.has(day)) grouped.set(day,{onlineMinutes:0,serviceMinutes:0,trips:0,distance:0});
+    return grouped.get(day);
+  };
   const byKey = new Map();
-  for (const event of events) {
+  for(const event of allEvents) {
     const key = event.vehicleId || event.driverId || event.vehicleUuid || event.driverUuid || "unknown";
-    if (!byKey.has(key)) byKey.set(key, []);
+    if(!byKey.has(key)) byKey.set(key,[]);
     byKey.get(key).push(event);
   }
-  for (const list of byKey.values()) {
-    for (let i = 0; i < list.length; i++) {
-      const current = list[i], next = list[i + 1];
-      const start = new Date(current.observedAt).getTime();
-      const end = Math.min(next ? new Date(next.observedAt).getTime() : Date.now(), Date.now());
-      const minutes = Math.max(0, Math.min((end - start) / 60000, 24 * 60));
-      const label = activityStateLabel(current.status), day = localDay(current.observedAt);
-      if (!grouped.has(day)) grouped.set(day, { onlineMinutes: 0, serviceMinutes: 0, trips: 0, distance: 0 });
-      const bucket = grouped.get(day);
-      if (label === "Em serviço") { serviceMinutes += minutes; bucket.serviceMinutes += minutes; }
-      if (label === "Em serviço" || label === "Online sem serviço") { onlineMinutes += minutes; bucket.onlineMinutes += minutes; }
+  for(const list of byKey.values()) for(let i=0;i<list.length;i++) {
+    const event=list[i], observed=timestamp(event.observedAt);
+    let start=Math.max(observed,range.start);
+    const end=Math.min(i+1<list.length?timestamp(list[i+1].observedAt):now, range.end, observed+24*60*60000);
+    const label=activityStateLabel(event.status);
+    while(start<end) {
+      const day=localDay(start), boundary=Math.min(end,reportMidnight(reportDayShift(day,1)));
+      if(boundary<=start) break;
+      const minutes=(boundary-start)/60000, bucket=bucketFor(day);
+      if(label==="Em serviço") {serviceMinutes+=minutes;bucket.serviceMinutes+=minutes;}
+      if(label==="Em serviço" || label==="Online sem serviço") {onlineMinutes+=minutes;bucket.onlineMinutes+=minutes;}
+      start=boundary;
     }
   }
-  for (const trip of trips) {
-    const day = localDay(trip.finishedAt || trip.acceptedAt || trip.observedAt);
-    if (!grouped.has(day)) grouped.set(day, { onlineMinutes: 0, serviceMinutes: 0, trips: 0, distance: 0 });
-    const bucket = grouped.get(day), status = String(trip.status || "").toLowerCase();
-    if (!status || /(complete|finished|success|done|completed|drop)/.test(status)) bucket.trips += 1;
-    const distance = Number(trip.distance);
-    if (Number.isFinite(distance)) bucket.distance += distance;
+  for(const trip of trips) {
+    const status=String(trip.status||"").toLowerCase();
+    if(status && !/(complete|finished|success|done|completed|drop)/.test(status)) continue;
+    const bucket=bucketFor(localDay(trip.finishedAt || trip.acceptedAt || trip.observedAt));
+    bucket.trips++;
+    const distance=Number(trip.distance);
+    if(Number.isFinite(distance)) bucket.distance+=distance;
   }
-  return { events, trips, latestByVehicle, onlineMinutes, serviceMinutes, grouped };
+  return {events,trips,latestByVehicle,onlineMinutes,serviceMinutes,grouped,range};
 }
 
 function renderActivity() {
@@ -1217,8 +1245,9 @@ function renderActivity() {
 
   const periodDays = [1, 7, 30].includes(Number(state.activityPeriodDays)) ? Number(state.activityPeriodDays) : 7;
   state.activityPeriodDays = periodDays;
-  const periodLabel = periodDays === 1 ? "Últimas 24 horas" : `Últimos ${periodDays} dias`;
-  const summary = boltActivitySummary(periodDays);
+  const week = state.activityWeek;
+  const periodLabel = week === "current" ? "Semana atual · segunda a domingo" : week === "previous" ? "Semana anterior · segunda a domingo" : periodDays === 1 ? "Últimas 24 horas" : `Últimos ${periodDays} dias`;
+  const summary = boltActivitySummary(periodDays, Date.now(), week);
   const completed = trip => {
     const status = String(trip.status || "").toLowerCase();
     return !status || /(complete|finished|success|done|completed|drop)/.test(status);
@@ -1246,8 +1275,7 @@ function renderActivity() {
   });
 
   const dayRows = [...summary.grouped.entries()]
-    .sort((a,b) => b[0].localeCompare(a[0]))
-    .slice(0, periodDays);
+    .sort((a,b) => b[0].localeCompare(a[0]));
 
   const cartrackRows = rows.filter(row => row.cartrack);
   const cartrackIsStale = item => {
@@ -1264,7 +1292,7 @@ function renderActivity() {
         : "Sem estado";
 
   selectors.content.innerHTML = `
-    ${heading("Utilização da frota", "Cartrack: estado atual e quilometragem real. Bolt: atividade e viagens no período selecionado.", `<div class="row-actions"><button class="${periodDays === 1 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="1">24 horas</button><button class="${periodDays === 7 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="7">7 dias</button><button class="${periodDays === 30 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="30">30 dias</button><button class="secondary-button" type="button" data-bolt-activity-sync>Atualizar Bolt</button></div>`)}
+    ${heading("Utilização da frota", "Cartrack: estado atual e quilometragem real. Bolt: atividade e viagens no período selecionado.", `<div class="row-actions"><button class="${week === "current" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="current">Semana atual</button><button class="${week === "previous" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="previous">Semana anterior</button><button class="${!week && periodDays === 1 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="1">24 horas</button><button class="${!week && periodDays === 7 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="7">7 dias</button><button class="${!week && periodDays === 30 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="30">30 dias</button><button class="secondary-button" type="button" data-bolt-activity-sync>Atualizar Bolt</button></div>`)}
 
     <section class="status-strip">
       ${metric("Viaturas Cartrack", cartrackRows.length)}
@@ -1302,6 +1330,7 @@ function renderActivity() {
 
       <article class="panel">
         <div class="panel-heading"><h2>Atividade Bolt</h2><span class="tag">${escapeHtml(periodLabel)}</span></div>
+        <p class="section-copy">Dias e semanas em hora de Lisboa. Tempos estimados entre leituras de estado, limitados a 24 horas por intervalo; dependem da cobertura dos dados recebidos.</p>
         <div class="table-wrap"><table>
           <thead><tr><th>Dia</th><th>Online</th><th>Em serviço</th><th>Viagens</th><th>Distância</th></tr></thead>
           <tbody>
@@ -2507,9 +2536,15 @@ function bindPortalEvents() {
     if (target.dataset.deleteDocument) return handleAdminAction({type:"delete-document",id:target.dataset.deleteDocument});
     if (target.dataset.requestPassword) return copyPasswordRequest();
     if (target.dataset.boltSync !== undefined) return syncBolt();
+    if (["current", "previous"].includes(target.dataset.activityWeek)) {
+      state.activityWeek = target.dataset.activityWeek;
+      state.activityPeriodDays = 7;
+      renderActivity();
+      return;
+    }
     if (target.dataset.activityDays !== undefined) {
       const days = Number(target.dataset.activityDays);
-      if ([1, 7, 30].includes(days)) { state.activityPeriodDays = days; renderActivity(); }
+      if ([1, 7, 30].includes(days)) { state.activityPeriodDays = days; state.activityWeek = null; renderActivity(); }
       return;
     }
     if (target.dataset.boltActivitySync !== undefined) return syncBoltActivity();

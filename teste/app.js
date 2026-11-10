@@ -1282,7 +1282,10 @@ function renderActivity() {
   const dayRows = [...summary.grouped.entries()]
     .sort((a,b) => b[0].localeCompare(a[0]));
 
-  const cartrackRows = rows.filter(row => row.cartrack);
+  const matchedCartrackRows = rows.filter(row => row.cartrack);
+  const matchedRegistrations = new Set(matchedCartrackRows.map(row => String(row.cartrack.registration || "").trim().toUpperCase()));
+  const unmatchedCartrack = (state.cartrackVehicles || []).filter(item => !matchedRegistrations.has(String(item.registration || "").trim().toUpperCase()));
+  const cartrackRows = [...matchedCartrackRows, ...unmatchedCartrack.map(item => ({ vehicle: { plate: item.registration, brand: "", model: "Sem registo no Fleet" }, cartrack: item }))];
   const cartrackIsStale = item => cartrackTimestampIsStale(item?.eventTs);
   const cartrackSyncIsStale = item => cartrackTimestampIsStale(item?.lastSyncedAt);
   const staleCartrackRows = cartrackRows.filter(row => cartrackIsStale(row.cartrack));
@@ -1298,7 +1301,8 @@ function renderActivity() {
     ${heading("Utilização da frota", "Cartrack: estado atual e quilometragem real. Bolt: atividade e viagens no período selecionado.", `<div class="row-actions"><button class="${week === "current" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="current">Semana atual</button><button class="${week === "previous" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="previous">Semana anterior</button><button class="${!week && periodDays === 1 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="1">24 horas</button><button class="${!week && periodDays === 7 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="7">7 dias</button><button class="${!week && periodDays === 30 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="30">30 dias</button><button class="secondary-button" type="button" data-bolt-activity-sync>Atualizar Bolt</button></div>`)}
 
     <section class="status-strip">
-      ${metric("Viaturas Cartrack", cartrackRows.length)}
+      ${metric("Viaturas Cartrack", (state.cartrackVehicles || []).length)}
+      ${metric("Cartrack sem registo no Fleet", unmatchedCartrack.length)}
       ${metric("Leituras Cartrack antigas", staleCartrackRows.length)}
       ${metric("Eventos Bolt", summary.events.length)}
       ${metric("Viagens Bolt", completedTrips)}

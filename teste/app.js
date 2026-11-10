@@ -1240,6 +1240,28 @@ function boltActivitySummary(days = 7, now = Date.now(), week = null) {
   return {events,trips,latestByVehicle,onlineMinutes,serviceMinutes,grouped,range};
 }
 
+function cartrackDistanceSummary(range = {start:-Infinity,end:Date.now()}) {
+  const groups = new Map();
+  for (const reading of state.cartrackSnapshots || []) {
+    const time = new Date(reading.observedAt).getTime();
+    const odometer = reading.odometerKm == null || reading.odometerKm === "" ? NaN : Number(reading.odometerKm);
+    const registration = String(reading.registration || "").trim().toUpperCase();
+    if (!registration || !Number.isFinite(time) || time < range.start || time >= range.end || !Number.isFinite(odometer) || odometer < 0) continue;
+    const day = localDay(time), key = day + "|" + registration;
+    if (!groups.has(key)) groups.set(key,{day,registration,readings:new Map(),conflict:false});
+    const group = groups.get(key);
+    if (group.readings.has(time) && group.readings.get(time) !== odometer) group.conflict = true;
+    group.readings.set(time,odometer);
+  }
+  const rows = [...groups.values()].map(group => {
+    const points = [...group.readings].sort((a,b)=>a[0]-b[0]);
+    const invalid = group.conflict || points.some((point,i)=>i>0 && point[1]<points[i-1][1]);
+    return {day:group.day,registration:group.registration,count:points.length,firstAt:points[0][0],lastAt:points[points.length-1][0],firstOdometer:points[0][1],lastOdometer:points[points.length-1][1],distance:invalid || points.length<2 ? null : points[points.length-1][1]-points[0][1],invalid};
+  }).sort((a,b)=>b.day.localeCompare(a.day)||a.registration.localeCompare(b.registration));
+  const valid = rows.filter(row=>row.distance!==null);
+  return {rows,total:valid.length ? valid.reduce((sum,row)=>sum+row.distance,0) : null,coveredDays:valid.length};
+}
+
 function cartrackTimestampIsStale(iso, now = Date.now()) {
   const time = iso ? new Date(iso).getTime() : NaN;
   return !Number.isFinite(time) || time > now || now - time > 30 * 60 * 1000;
@@ -1253,6 +1275,7 @@ function renderActivity() {
   const week = state.activityWeek;
   const periodLabel = week === "current" ? "Semana atual · segunda a domingo" : week === "previous" ? "Semana anterior · segunda a domingo" : periodDays === 1 ? "Últimas 24 horas" : `Últimos ${periodDays} dias`;
   const summary = boltActivitySummary(periodDays, Date.now(), week);
+  const cartrackDistance = cartrackDistanceSummary(summary.range);
   const completed = trip => {
     const status = String(trip.status || "").toLowerCase();
     return !status || /(complete|finished|success|done|completed|drop)/.test(status);
@@ -1302,6 +1325,7 @@ function renderActivity() {
 
     <section class="status-strip">
       ${metric("Viaturas Cartrack", (state.cartrackVehicles || []).length)}
+      ${metric("Km Cartrack observados", cartrackDistance.total === null ? "—" : cartrackDistance.total.toFixed(1))}
       ${metric("Cartrack sem registo no Fleet", unmatchedCartrack.length)}
       ${metric("Leituras Cartrack antigas", staleCartrackRows.length)}
       ${metric("Eventos Bolt", summary.events.length)}
@@ -1346,6 +1370,12 @@ function renderActivity() {
             `).join("") || emptyRow("Ainda não existem dados de atividade Bolt.")}
           </tbody>
         </table></div>
+      </article>
+      <article class="panel">
+        <div class="panel-heading"><h2>Quilómetros Cartrack por dia</h2><span class="tag">${escapeHtml(periodLabel)}</span></div>
+        <p class="section-copy">Distância observada entre a primeira e a última leitura de cada viatura no dia, em hora de Lisboa. A soma do período pode ser parcial: não inclui quilómetros antes da primeira ou depois da última leitura. Uma só leitura não permite calcular distância.</p>
+        <div class="table-wrap"><table><thead><tr><th>Dia</th><th>Viatura</th><th>Primeira leitura</th><th>Última leitura</th><th>Leituras</th><th>Km observados</th></tr></thead>
+        <tbody>${cartrackDistance.rows.map(row=>`<tr><td>${escapeHtml(row.day)}</td><td><strong>${escapeHtml(row.registration)}</strong></td><td>${new Date(row.firstAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.firstOdometer.toFixed(1)} km</td><td>${new Date(row.lastAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.lastOdometer.toFixed(1)} km</td><td>${row.count}</td><td>${row.distance === null ? `<span class="tag expiring">${row.invalid ? "Rever odómetro" : "Leituras insuficientes"}</span>` : row.distance.toFixed(1)+" km"}</td></tr>`).join("") || '<tr><td colspan="6">Sem leituras Cartrack neste período.</td></tr>'}</tbody></table></div>
       </article>
     </section>
   `;

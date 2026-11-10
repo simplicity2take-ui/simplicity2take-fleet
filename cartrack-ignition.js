@@ -28,7 +28,47 @@
     }).filter(trip => trip.invalid || (trip.startMs < range.end && (trip.endMs === null || trip.endMs > range.start)))
       .sort((a,b) => (b.startMs ?? 0) - (a.startMs ?? 0));
   }
-  const api = {timestamp, duration, rows};
+  function summary(trips, range, plate, calendar) {
+    const source = rows(trips, range, plate);
+    const byVehicle = new Map();
+    let excluded = 0;
+    for (const row of source) {
+      if (row.invalid || row.endMs === null || !row.registration) { excluded++; continue; }
+      const start = Math.max(row.startMs, range.start), end = Math.min(row.endMs, range.end);
+      if (!byVehicle.has(row.registration)) byVehicle.set(row.registration, []);
+      byVehicle.get(row.registration).push([start, end]);
+    }
+    const daily = [], vehicles = [];
+    for (const [registration, intervals] of byVehicle) {
+      intervals.sort((a,b) => a[0]-b[0]);
+      const merged = [];
+      for (const interval of intervals) {
+        const previous = merged[merged.length-1];
+        if (previous && interval[0] <= previous[1]) previous[1] = Math.max(previous[1], interval[1]);
+        else merged.push([...interval]);
+      }
+      const days = new Map();
+      let total = 0;
+      for (const [start, end] of merged) {
+        if (start === end) { const day = calendar.day(start); if (!days.has(day)) days.set(day, 0); }
+        for (let time = start; time < end;) {
+          const day = calendar.day(time);
+          const next = Math.min(end, calendar.nextDayStart(day));
+          if (!Number.isFinite(next) || next <= time) throw new Error("Invalid calendar boundary");
+          const seconds = (next-time)/1000;
+          days.set(day, (days.get(day) || 0) + seconds);
+          total += seconds;
+          time = next;
+        }
+      }
+      vehicles.push({registration, seconds:total});
+      for (const [day, seconds] of days) daily.push({day, registration, seconds});
+    }
+    daily.sort((a,b) => b.day.localeCompare(a.day) || a.registration.localeCompare(b.registration));
+    vehicles.sort((a,b) => a.registration.localeCompare(b.registration));
+    return {daily, vehicles, excluded, totalSeconds:vehicles.length ? vehicles.reduce((sum,row)=>sum+row.seconds,0) : null};
+  }
+  const api = {timestamp, duration, rows, summary};
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.CartrackIgnition = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

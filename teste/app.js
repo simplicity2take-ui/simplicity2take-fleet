@@ -1240,6 +1240,11 @@ function boltActivitySummary(days = 7, now = Date.now(), week = null) {
   return {events,trips,latestByVehicle,onlineMinutes,serviceMinutes,grouped,range};
 }
 
+function cartrackTimestampIsStale(iso, now = Date.now()) {
+  const time = iso ? new Date(iso).getTime() : NaN;
+  return !Number.isFinite(time) || time > now || now - time > 30 * 60 * 1000;
+}
+
 function renderActivity() {
   selectors.pageTitle.textContent = "Utilização da Frota";
 
@@ -1278,10 +1283,8 @@ function renderActivity() {
     .sort((a,b) => b[0].localeCompare(a[0]));
 
   const cartrackRows = rows.filter(row => row.cartrack);
-  const cartrackIsStale = item => {
-    const syncedAt = item?.lastSyncedAt ? new Date(item.lastSyncedAt).getTime() : 0;
-    return !Number.isFinite(syncedAt) || syncedAt <= 0 || Date.now() - syncedAt > 30 * 60 * 1000;
-  };
+  const cartrackIsStale = item => cartrackTimestampIsStale(item?.eventTs);
+  const cartrackSyncIsStale = item => cartrackTimestampIsStale(item?.lastSyncedAt);
   const staleCartrackRows = cartrackRows.filter(row => cartrackIsStale(row.cartrack));
   const statusLabel = item => item?.idling === true
     ? "Parado"
@@ -1296,7 +1299,7 @@ function renderActivity() {
 
     <section class="status-strip">
       ${metric("Viaturas Cartrack", cartrackRows.length)}
-      ${metric("Cartrack desatualizada", staleCartrackRows.length)}
+      ${metric("Leituras Cartrack antigas", staleCartrackRows.length)}
       ${metric("Eventos Bolt", summary.events.length)}
       ${metric("Viagens Bolt", completedTrips)}
       ${metric("Distância Bolt (km)", totalDistance ? totalDistance.toFixed(1) : "0")}
@@ -1316,16 +1319,16 @@ function renderActivity() {
               return `
                 <tr>
                   <td><strong>${escapeHtml(row.vehicle.plate)}</strong><br><span class="section-copy">${escapeHtml(row.vehicle.brand)} ${escapeHtml(row.vehicle.model)}</span></td>
-                  <td><span class="tag ${cartrackIsStale(item) ? "expiring" : "active"}">${escapeHtml(statusLabel(item))}</span></td>
+                  <td><span class="tag ${cartrackIsStale(item) ? "expiring" : "active"}">${escapeHtml(statusLabel(item))}</span>${cartrackIsStale(item) ? '<br><span class="section-copy">Leitura antiga ou sem data</span>' : ""}</td>
                   <td>${item.odometerKm != null ? Number(item.odometerKm).toFixed(1) + " km" : "—"}</td>
                   <td>${item.speedKmh != null ? Number(item.speedKmh).toFixed(1) + " km/h" : "—"}</td>
                   <td>${item.eventTs ? new Date(item.eventTs).toLocaleString("pt-PT") : "—"}</td>
-                  <td><span class="tag ${cartrackIsStale(item) ? "expiring" : "active"}">${cartrackIsStale(item) ? "Desatualizada" : "Recente"}</span><br><span class="section-copy">${item.lastSyncedAt ? new Date(item.lastSyncedAt).toLocaleString("pt-PT") : "Sem sincronização"}</span></td>
+                  <td><span class="tag ${cartrackSyncIsStale(item) ? "expiring" : "active"}">${cartrackSyncIsStale(item) ? "Desatualizada" : "Recente"}</span><br><span class="section-copy">${item.lastSyncedAt ? new Date(item.lastSyncedAt).toLocaleString("pt-PT") : "Sem sincronização"}</span></td>
                 </tr>`;
             }).join("") || emptyRow("Ainda não existem dados Cartrack.")}
           </tbody>
         </table></div>
-        <p class="section-copy" style="margin-top:14px">A indicação “Recente” exige uma sincronização nos últimos 30 minutos. Se estiver desatualizada, o estado apresentado é apenas a última leitura guardada, não a situação em tempo real. O odómetro Cartrack é telemático; a distância Bolt é apresentada separadamente.</p>
+        <p class="section-copy" style="margin-top:14px">O estado da viatura usa a data da última leitura Cartrack: leituras com mais de 30 minutos, sem data válida ou com data futura são assinaladas. A coluna Sincronização indica separadamente quando o Fleet consultou a Cartrack; uma consulta recente pode trazer uma leitura antiga. O odómetro Cartrack é telemático; a distância Bolt é apresentada separadamente.</p>
       </article>
 
       <article class="panel">

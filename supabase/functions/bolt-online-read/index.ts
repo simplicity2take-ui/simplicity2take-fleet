@@ -28,6 +28,12 @@ Deno.serve(async(req:Request)=>{
   if(profile.error||profile.data?.role!=="admin"||profile.data?.status!=="Ativo") return reply({ok:false,error:"Consulta exclusiva do administrador."},403);
   try {
     const id=Deno.env.get("BOLT_CLIENT_ID"),secret=Deno.env.get("BOLT_CLIENT_SECRET");
+    const body=await req.json().catch(()=>({}));
+    if(body.mode==="configuration") {
+      const suffix=String(body.expectedClientIdSuffix||"");
+      if(!/^[A-Za-z0-9_-]{6}$/.test(suffix)) return reply({ok:false,error:"Indica os 6 caracteres finais do ID do cliente."},400);
+      return reply({ok:true,configuration:{idConfigured:Boolean(id),secretConfigured:Boolean(secret),clientIdSuffixMatches:Boolean(id?.endsWith(suffix))}});
+    }
     if(!id||!secret) return reply({ok:false,stage:"configuration",error:"As credenciais Bolt não estão configuradas."});
     const auth=await fetch("https://oidc.bolt.eu/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_id:id,client_secret:secret,grant_type:"client_credentials",scope:"fleet-integration:api"}),signal:AbortSignal.timeout(15000)});
     const credentials=await auth.json().catch(()=>({}));

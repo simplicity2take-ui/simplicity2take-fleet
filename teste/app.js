@@ -722,6 +722,8 @@ async function logout() {
   state.sessionUserId = null;
   state.profile = null;
   state.boltOnlineRead = null;
+  state.boltConfigCheck = null;
+  state.boltConfigSuffix = "";
   state.cartrackIgnitionHistory = null;
   state.cartrackIgnitionPlate = "";
   state.cartrackIgnitionDay = "";
@@ -1280,6 +1282,8 @@ function cartrackTimestampIsStale(iso, now = Date.now()) {
 }
 
 function renderBoltOnlineRead() {
+  const config=state.boltConfigCheck;
+  const settings=config?.configuration;
   const result = state.boltOnlineRead;
   const date = value => value ? new Date(value).toLocaleString("pt-PT",{timeZone:"Europe/Lisbon"}) : "Sem data";
   const label = value => ({waiting:"Online, a aguardar",on_ride:"Em viagem",on_break:"Em pausa"}[value] || "Estado não indicado");
@@ -1287,7 +1291,25 @@ function renderBoltOnlineRead() {
     <p class="section-copy">Consulta pontual da viatura selecionada pelo motorista online na Bolt. Estar online não prova circulação. Esta consulta não reconstitui trocas anteriores; a data de mudança do estado não indica quando a viatura foi trocada.</p>
     ${result?.error ? `<p role="alert">${escapeHtml(result.error)}${result.code != null ? " Código Bolt: "+escapeHtml(result.code) : ""}</p>` : ""}
     ${result?.drivers ? `<p class="section-copy">Consulta efetuada em ${date(result.observedAt)} (Lisboa).</p><div class="table-wrap"><table><thead><tr><th>Motorista</th><th>Viatura selecionada na consulta</th><th>Estado Bolt</th><th>Estado desde (Bolt)</th></tr></thead><tbody>${result.drivers.map(row=>`<tr><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.plate || "Sem matrícula devolvida")}</td><td>${label(row.state)}</td><td>${date(row.stateChangedAt)}</td></tr>`).join("") || '<tr><td colspan="4">A Bolt não devolveu motoristas online nesta consulta.</td></tr>'}</tbody></table></div>` : '<p class="section-copy">Consulta apenas de leitura. Os dados recebidos são apresentados aqui.</p>'}
+    <details ${config ? "open" : ""}><summary>Diagnóstico da ligação</summary><p class="section-copy">Compara apenas os 6 caracteres finais do ID visível no portal Bolt com o ID guardado no Fleet. Esta verificação não consulta nem valida o segredo e não faz pedidos à Bolt.</p><div class="row-actions"><label>Final do ID do cliente <input id="boltClientIdSuffix" maxlength="6" placeholder="6 caracteres finais" value="${escapeHtml(state.boltConfigSuffix||"")}" ${config?.loading ? "disabled" : ""}></label><button class="secondary-button" type="button" data-bolt-config-check ${config?.loading ? "disabled" : ""}>${config?.loading ? "A verificar…" : "Comparar chave"}</button></div>${config?.error ? `<p role="alert">${escapeHtml(config.error)}</p>` : ""}${settings ? `<p role="status">ID configurado: ${settings.idConfigured ? "Sim" : "Não"}. Segredo configurado: ${settings.secretConfigured ? "Sim" : "Não"}. ${settings.clientIdSuffixMatches ? "O final do ID corresponde ao indicado. Isto não valida o segredo." : "O final do ID guardado no Fleet é diferente do indicado."}</p>` : ""}</details>
   </article>`;
+}
+
+async function checkBoltConfiguration() {
+  if (state.profile?.role !== "admin" || state.boltConfigCheck?.loading) return;
+  const suffix=document.querySelector("#boltClientIdSuffix")?.value.trim() || "";
+  if (!/^[A-Za-z0-9_-]{6}$/.test(suffix)) { showToast("Indica os 6 caracteres finais do ID do cliente, sem o segredo."); return; }
+  state.boltConfigSuffix=suffix;
+  const request={loading:true},userId=state.sessionUserId;
+  state.boltConfigCheck=request;renderActivity();
+  const current=()=>state.boltConfigCheck===request && state.sessionUserId===userId && state.profile?.role==="admin";
+  try {
+    const {data,error}=await supabaseClient.functions.invoke("bolt-online-read",{body:{mode:"configuration",expectedClientIdSuffix:suffix}});
+    if(!current()) return;
+    if(error||!data?.ok||!data.configuration) throw new Error("Não foi possível verificar a configuração.");
+    state.boltConfigCheck={configuration:data.configuration};
+  } catch(error) { if(current()) state.boltConfigCheck={error:error.message}; }
+  if(state.activeView==="activity" && state.sessionUserId===userId && state.profile?.role==="admin") renderActivity();
 }
 
 async function loadBoltOnlineRead() {
@@ -2674,6 +2696,7 @@ function bindPortalEvents() {
       if ([1, 7, 30].includes(days)) { state.cartrackIgnitionHistory = null; state.cartrackIgnitionDay = ""; state.activityPeriodDays = days; state.activityWeek = null; renderActivity(); }
       return;
     }
+    if (target.dataset.boltConfigCheck !== undefined) return checkBoltConfiguration();
     if (target.dataset.boltOnlineRead !== undefined) return loadBoltOnlineRead();
     if (target.dataset.boltActivitySync !== undefined) return syncBoltActivity();
     if (target.dataset.cartrackHistory !== undefined) return loadCartrackIgnitionHistory();
@@ -2739,6 +2762,8 @@ function bindPortalEvents() {
       state.sessionUserId = null;
       state.profile = null;
   state.boltOnlineRead = null;
+  state.boltConfigCheck = null;
+  state.boltConfigSuffix = "";
   state.cartrackIgnitionHistory = null;
   state.cartrackIgnitionPlate = "";
   state.cartrackIgnitionDay = "";

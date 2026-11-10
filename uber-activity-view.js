@@ -45,14 +45,9 @@
   async function load() {
     const epoch = authEpoch;
     if (!canRender()) return;
-    const [drivers, vehicles, assignments] = await Promise.all([
-      client.from("drivers").select("*"),
-      client.from("vehicles").select("*"),
-      client.from("vehicle_assignments").select("*")
-    ]);
-    if (drivers.error || vehicles.error || assignments.error) throw new Error("Não foi possível carregar os estados Uber guardados.");
-    const driverRows = drivers.data || [], vehicleRows = vehicles.data || [], assignmentRows = assignments.data || [];
-    const today = new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Lisbon",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+    const drivers = await client.from("drivers").select("*");
+    if (drivers.error) throw new Error("Não foi possível carregar os estados Uber guardados.");
+    const driverRows = drivers.data || [];
 
     const current = { service:0, online:0, offline:0, unknown:0 };
     for (const driver of driverRows) {
@@ -65,16 +60,7 @@
 
     const outdated = driverRows.filter(driver => statusLabel(driver.uber_realtime_status || driver.uber_status) !== "Sem dados" && oldStatus(driver)).length;
 
-    const driverById = new Map(driverRows.map(d => [d.id, d]));
-    const activeAssignments = assignmentRows.filter(a => (!a.active_from || a.active_from <= today) && (!a.active_until || a.active_until >= today));
-    const vehicleState = vehicleRows.flatMap(v => {
-      const driverIds = [...new Set(activeAssignments.filter(a => a.vehicle_id === v.id).map(a => a.driver_id).filter(Boolean))];
-      return (driverIds.length ? driverIds : [null]).map(driverId => {
-        const driver = driverId ? driverById.get(driverId) : null;
-        const label = driver ? statusLabel(driver.uber_realtime_status || driver.uber_status) : "Sem dados";
-        return {v,driver,label,assignmentCount:driverIds.length};
-      });
-    });
+    const driverState = driverRows.map(driver => ({driver,label:statusLabel(driver.uber_realtime_status || driver.uber_status)}));
 
     const content = document.querySelector("#content");
     if (!content || !canRender() || epoch !== authEpoch || document.querySelector("#s2tUberActivityPanel")) return;
@@ -86,8 +72,8 @@
     panel.innerHTML = `
       <div class="panel-heading">
         <div>
-          <h2>Últimos estados Uber registados</h2>
-          <p class="section-copy">Estados guardados no Fleet, com a data do último registo em cada linha. Os registos antigos não indicam o estado atual. Associações atuais: uma linha por motorista associado. O histórico de ignição é por viatura; a associação não identifica quem conduziu cada intervalo. A quilometragem está no resumo Cartrack acima.</p>
+          <h2>Últimos estados Uber dos motoristas</h2>
+          <p class="section-copy">O estado Uber pertence ao motorista. Estar online não confirma circulação, serviços ou a viatura usada. Consulta a data em cada linha; registos antigos não indicam o estado atual. As associações ficam na gestão de veículos. O histórico Cartrack mostra a ignição da viatura e, por si só, não identifica quem conduziu.</p>
         </div>
         <span class="tag ${outdated ? "expiring" : ""}">${outdated ? `${outdated} estados antigos ou sem data` : "Estados guardados"}</span>
       </div>
@@ -99,14 +85,13 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Viatura</th><th>Motorista associado</th><th>Estado de serviço registado</th><th>Data do estado (Lisboa)</th></tr></thead>
+          <thead><tr><th>Motorista</th><th>Estado de serviço registado</th><th>Data do estado (Lisboa)</th></tr></thead>
           <tbody>
-            ${vehicleState.map(row => `<tr>
-              <td><strong>${esc(row.v.plate)}</strong><br><span class="section-copy">${esc(row.v.brand)} ${esc(row.v.model)}</span>${row.assignmentCount > 1 ? `<br><span class="section-copy">${row.assignmentCount} motoristas associados</span>` : ""}</td>
+            ${driverState.map(row => `<tr>
               <td>${esc(row.driver?.full_name || row.driver?.name || "Sem motorista")}</td>
               <td><span class="tag ${row.driver && oldStatus(row.driver) ? "expiring" : statusClass(row.label)}">${esc(row.label)}</span>${row.driver && row.label !== "Sem dados" && oldStatus(row.driver) ? '<br><span class="section-copy">Estado antigo ou sem data</span>' : ""}</td>
               <td>${esc(statusDate(row.driver))}</td>
-            </tr>`).join("") || "<tr><td colspan=\"4\">Sem viaturas.</td></tr>"}
+            </tr>`).join("") || "<tr><td colspan=\"3\">Sem motoristas.</td></tr>"}
           </tbody>
         </table>
       </div>

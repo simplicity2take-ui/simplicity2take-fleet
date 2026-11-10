@@ -1265,6 +1265,14 @@ function cartrackDistanceSummary(range = {start:-Infinity,end:Date.now()}) {
   return {rows,total:valid.length ? valid.reduce((sum,row)=>sum+row.distance,0) : null,coveredDays:valid.length};
 }
 
+function cartrackCurrentStateLabel(item) {
+  const ignition = item?.ignition === true ? "Ignição ligada" : item?.ignition === false ? "Ignição desligada" : "Sem dados de ignição";
+  const speed = Number(item?.speedKmh);
+  if (Number.isFinite(speed) && speed > 0) return ignition + " · Em movimento";
+  if (item?.ignition === true && item?.idling === true) return ignition + " · Parada";
+  return ignition;
+}
+
 function cartrackTimestampIsStale(iso, now = Date.now()) {
   const time = iso ? new Date(iso).getTime() : NaN;
   return !Number.isFinite(time) || time > now || now - time > 30 * 60 * 1000;
@@ -1369,16 +1377,10 @@ function renderActivity() {
   const cartrackIsStale = item => cartrackTimestampIsStale(item?.eventTs);
   const cartrackSyncIsStale = item => cartrackTimestampIsStale(item?.lastSyncedAt);
   const staleCartrackRows = cartrackRows.filter(row => cartrackIsStale(row.cartrack));
-  const statusLabel = item => item?.idling === true
-    ? "Parado"
-    : Number(item?.speedKmh) > 0
-      ? "Em movimento"
-      : item?.ignition === true
-        ? "Ligado"
-        : "Sem estado";
+  const statusLabel = cartrackCurrentStateLabel;
 
   selectors.content.innerHTML = `
-    ${heading("Utilização da frota", "Cartrack: estado atual e quilometragem real. Bolt: atividade e viagens no período selecionado.", `<div class="row-actions"><button class="${week === "current" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="current">Semana atual</button><button class="${week === "previous" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="previous">Semana anterior</button><button class="${!week && periodDays === 1 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="1">24 horas</button><button class="${!week && periodDays === 7 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="7">7 dias</button><button class="${!week && periodDays === 30 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="30">30 dias</button><button class="secondary-button" type="button" data-bolt-activity-sync>Atualizar Bolt</button></div>`)}
+    ${heading("Utilização da frota", "Cartrack: última leitura e quilometragem registada. Bolt: atividade e viagens no período selecionado.", `<div class="row-actions"><button class="${week === "current" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="current">Semana atual</button><button class="${week === "previous" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="previous">Semana anterior</button><button class="${!week && periodDays === 1 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="1">24 horas</button><button class="${!week && periodDays === 7 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="7">7 dias</button><button class="${!week && periodDays === 30 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="30">30 dias</button><button class="secondary-button" type="button" data-bolt-activity-sync>Atualizar Bolt</button></div>`)}
 
     <section class="status-strip">
       ${metric("Viaturas Cartrack", (state.cartrackVehicles || []).length)}

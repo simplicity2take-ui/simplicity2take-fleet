@@ -9,6 +9,7 @@ const state = {
   editing: null,
   smartPreview: null,
   requestedVehicleId: null,
+  requestedDriverId: null,
   documentContext: "company",
   users: [
     { id: "admin", role: "admin", name: "Administrador Simplicity2Take", email: "admin@simplicity2take.pt", phone: "210000000" },
@@ -953,9 +954,11 @@ function vehicleRow(vehicle, admin) {
 }
 
 function renderDrivers() {
+  const selected = state.drivers.find(driver => driver.id === state.requestedDriverId);
   selectors.pageTitle.textContent = "Motoristas";
   selectors.content.innerHTML = `
     ${heading("Gestão de motoristas", "Criar, editar, eliminar e definir palavras-passe. O administrador entrega a palavra-passe diretamente ao motorista.", `<button class="primary-button" type="button" data-open="driver">Criar motorista</button>`)}
+    ${selected ? driverDocumentsPanel(selected) : ""}
     <div class="table-wrap">
       <table>
         <thead><tr><th>Nome completo</th><th>Email</th><th>Telemóvel</th><th>Estado</th><th>Uber</th><th>Documentos</th><th>Ações</th></tr></thead>
@@ -963,6 +966,16 @@ function renderDrivers() {
       </table>
     </div>
   `;
+}
+
+function driverDocumentsPanel(driver) {
+  if (currentUser().role !== "admin") return "";
+  const docs = state.documents.filter(doc => doc.driverId === driver.id);
+  return `<section class="panel driver-documents-panel">
+    <div class="panel-heading"><div><span class="eyebrow">Documentos do motorista</span><h2>${escapeHtml(driver.name)}</h2></div>
+    <button class="mini-button" type="button" data-doc-driver="${escapeHtml(driver.id)}">+ Documento</button></div>
+    <div class="cards-grid">${docs.map(doc => documentCard(doc, true)).join("") || emptyCard("Este motorista ainda não tem documentos carregados.")}</div>
+  </section>`;
 }
 
 function driverRow(driver) {
@@ -976,8 +989,8 @@ function driverRow(driver) {
       <td>${driver.uberDriverUuid
         ? `<span class="tag ${activityStateClass(driver.uberRealtimeStatus || driver.uberStatus)}">${escapeHtml(activityStateLabel(driver.uberRealtimeStatus || driver.uberStatus))}</span>`
         : '<span class="tag">Sem Uber</span>'}</td>
-      <td><span class="tag">${docs.length} docs</span></td>
-      <td><div class="row-actions"><button class="mini-button" type="button" data-doc-driver="${escapeHtml(driver.id)}">Documento</button><button class="mini-button" type="button" data-edit-driver="${escapeHtml(driver.id)}">Editar</button><button class="mini-button" type="button" data-reset-password="${escapeHtml(driver.id)}">Definir passe</button><button class="danger-button" type="button" data-delete-driver="${escapeHtml(driver.id)}">Eliminar</button></div></td>
+      <td><button class="mini-button" type="button" data-view-driver-docs="${escapeHtml(driver.id)}">Ver documentos (${docs.length})</button></td>
+      <td><div class="row-actions"><button class="mini-button" type="button" data-doc-driver="${escapeHtml(driver.id)}">+ Documento</button><button class="mini-button" type="button" data-edit-driver="${escapeHtml(driver.id)}">Editar</button><button class="mini-button" type="button" data-reset-password="${escapeHtml(driver.id)}">Definir passe</button><button class="danger-button" type="button" data-delete-driver="${escapeHtml(driver.id)}">Eliminar</button></div></td>
     </tr>
   `;
 }
@@ -1010,7 +1023,7 @@ function documentCard(doc, admin) {
       </div>
       <div class="row-actions">
         <button class="mini-button" type="button" data-open-doc="${escapeHtml(doc.id)}">Abrir Documento</button>
-        <button class="mini-button" type="button" data-download-doc="${escapeHtml(doc.id)}">Download</button>
+        ${admin ? `<button class="mini-button" type="button" data-download-doc="${escapeHtml(doc.id)}">Download</button>` : ""}
         ${admin ? `<button class="mini-button" type="button" data-edit-document="${escapeHtml(doc.id)}">Editar</button><button class="danger-button" type="button" data-delete-document="${escapeHtml(doc.id)}">Eliminar</button>` : ""}
       </div>
     </article>
@@ -1705,7 +1718,7 @@ function openModal(type, id = "", options = {}) {
     state.documentContext = options.scope || (existing?.vehicleId ? "vehicle" : existing?.driverId ? "driver" : "company");
   }
   const title = { driver: "motorista", vehicle: "veículo", document: "documento", "admin-password": "palavra-passe do motorista" }[type];
-  const action = type === "admin-password" ? "Definir" : id && type !== "document" ? "Editar" : type === "document" ? "Carregar" : "Criar";
+  const action = type === "admin-password" ? "Definir" : id ? "Editar" : type === "document" ? "Carregar" : "Criar";
   selectors.modalTitle.textContent = `${action} ${title}`;
   selectors.modalFields.innerHTML = modalFields(type, id);
   selectors.form.querySelector('button[type="submit"]').disabled = false;
@@ -1771,7 +1784,7 @@ function modalFields(type, id) {
       <div class="smart-preview span-full" id="smartPreview">Pré-visualização SmartDocs ainda sem ficheiro.</div>
       ${field("name", "Nome do documento", doc.name)}
       ${selectField("type", "Tipo", companyTypes, doc.type || "Outros")}
-      ${field("expiryDate", "Data de validade", doc.expiryDate, "date", false)}
+      ${field("expiryDate", "Data de validade (se aplicável)", doc.expiryDate, "date", false, "", false)}
     `;
   }
 
@@ -2125,11 +2138,11 @@ async function saveDocument(values, viewerDriverIds, id) {
   const payload = {
     name: values.name,
     document_type: values.type,
-    document_number: null,
-    policy_number: null,
-    issue_date: null,
+    document_number: existing?.number || null,
+    policy_number: existing?.policyNumber || null,
+    issue_date: existing?.issueDate || null,
     expiry_date: values.expiryDate || null,
-    observations: null,
+    observations: existing?.observations || null,
     original_file_name: driveData.fileName,
     mime_type: driveData.mimeType,
     drive_file_id: driveData.fileId,
@@ -2147,6 +2160,8 @@ async function saveDocument(values, viewerDriverIds, id) {
   if (error) throw error;
 
   const documentId = id || saved.id;
+  documentBlobCache.delete(documentId);
+  if (context === "driver") state.requestedDriverId = finalDriverId;
   const { error: viewerDeleteError } = await supabaseClient.from("document_viewers").delete().eq("document_id", documentId);
   if (viewerDeleteError) throw viewerDeleteError;
 
@@ -2435,6 +2450,13 @@ function bindPortalEvents() {
 
     const view = target.dataset.view;
     if (view) return setView(view);
+    if (target.dataset.viewDriverDocs && currentUser().role === "admin") {
+      state.requestedDriverId = target.dataset.viewDriverDocs;
+      state.activeView = "drivers";
+      renderContent();
+      document.querySelector(".driver-documents-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
     if (target.dataset.open) return openModal(target.dataset.open);
     if (target.dataset.openVehicleDoc) return openVehicleDocumentModal(target.dataset.openVehicleDoc, target.dataset.docType || "");
     if (target.dataset.docDriver) return openDriverDocumentModal(target.dataset.docDriver);

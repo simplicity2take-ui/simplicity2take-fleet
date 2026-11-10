@@ -11,3 +11,5 @@ The admin Utilisation page fetches history on demand, up to ten pages, clearly m
 Validation: `node tests/cartrack-history-security.test.cjs` (Node 24), `node tests/cartrack-history-ui.test.cjs`, `node tests/cartrack-ignition.test.cjs`. Live authenticated test returned 154 intervals across 20 vehicles; anonymous request returned 401. The current-status scheduled sync is unchanged.
 
 Daily and per-vehicle period totals include only closed intervals clipped to the query range. Overlapping intervals are merged per registration, then split at Europe/Lisbon midnights using the same reporting calendar as the rest of the portal. Missing ends/invalid dates are excluded and totals marked partial. No returned intervals means unknown rather than zero. DST tests cover both 23-hour and 25-hour days.
+
+The optional specific-day selector queries local midnight to the next local midnight, clipped to the current second for today. Future and invalid calendar dates are rejected before calling the API. Switching a preset period clears the specific-day override. Date and registration fields are disabled during a pending query.

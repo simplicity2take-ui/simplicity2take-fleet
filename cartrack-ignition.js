@@ -68,7 +68,14 @@
     vehicles.sort((a,b) => a.registration.localeCompare(b.registration));
     return {daily, vehicles, excluded, totalSeconds:vehicles.length ? vehicles.reduce((sum,row)=>sum+row.seconds,0) : null};
   }
-  const api = {timestamp, duration, rows, summary};
+  function dayRange(day, now, calendar) {
+    if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(now)) return null;
+    const date = new Date(day + "T12:00:00Z");
+    if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0,10) !== day || day > calendar.day(now)) return null;
+    const start = calendar.startDay(day), end = Math.min(calendar.nextDayStart(day), Math.floor(now/1000)*1000);
+    return Number.isFinite(start) && Number.isFinite(end) && end > start ? {start,end} : null;
+  }
+  const api = {timestamp, duration, rows, summary, dayRange};
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.CartrackIgnition = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

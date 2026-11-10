@@ -14,7 +14,10 @@ function json(body: unknown, status = 200) {
 }
 
 function normalizePhone(value: string) {
-  return String(value || "").replace(/[^0-9+]/g, "").replace(/^00/, "+");
+  const phone = String(value || "").replace(/[^0-9+]/g, "").replace(/^00/, "+");
+  if (/^9\d{8}$/.test(phone)) return "+351" + phone;
+  if (/^3519\d{8}$/.test(phone)) return "+" + phone;
+  return phone;
 }
 
 Deno.serve(async (request) => {
@@ -43,7 +46,8 @@ Deno.serve(async (request) => {
 
     if (driverError) return json({ ok: false, error: "Não foi possível validar o acesso." }, 500);
 
-    const driver = (drivers || []).find((item: any) => normalizePhone(item.phone) === phone);
+    const matches = (drivers || []).filter((item: any) => normalizePhone(item.phone) === phone);
+    const driver = matches.length === 1 ? matches[0] : null;
     if (!driver?.email) return json({ ok: false, error: "Credenciais inválidas." }, 401);
 
     const response = await fetch(`${url}/auth/v1/token?grant_type=password`, {

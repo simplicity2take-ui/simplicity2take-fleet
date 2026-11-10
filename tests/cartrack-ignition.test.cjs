@@ -1,0 +1,17 @@
+const assert = require("node:assert/strict");
+const api = require("../cartrack-ignition.js");
+assert.equal(api.timestamp("2026-11-09 09:32:27+00"), Date.parse("2026-11-09T09:32:27Z"));
+assert.equal(api.timestamp("2026-07-09 10:32:27+01:00"), Date.parse("2026-07-09T09:32:27Z"));
+assert.equal(api.timestamp("2026-11-09 09:32:27"), null);
+assert.equal(api.timestamp(null), null);
+assert.equal(api.duration(16305), "04:31:45");
+assert.equal(api.duration(null), "—");
+assert.equal(api.duration(90061), "25:01:01");
+const range = {start:Date.parse("2026-11-10T00:00:00Z"),end:Date.parse("2026-11-11T00:00:00Z")};
+const trip = {id:1,registration:"BJ-57-AN",start:"2026-11-09 23:59:50+00",end:"2026-11-10 00:00:10+00"};
+let rows=api.rows([trip,trip],range,"bj57"); assert.equal(rows.length,1); assert.equal(rows[0].seconds,20); assert.equal(rows[0].crossesPeriod,true);
+assert.equal(api.rows([trip],range,"XX").length,0);
+rows=api.rows([{...trip,id:2,end:null}],range); assert.equal(rows[0].seconds,null);
+rows=api.rows([{...trip,end:"2026-11-09 23:59:40+00"}],range); assert.equal(rows[0].invalid,true); assert.equal(rows[0].seconds,null);
+assert.equal(api.rows([{...trip,end:"2026-11-10 00:00:00+00"}],range).length,0);
+console.log("PASS ignition second precision, timezone offsets, missing timezone, duplicate trips, plate search, open and cross-period intervals.");

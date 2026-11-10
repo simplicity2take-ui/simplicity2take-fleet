@@ -721,6 +721,8 @@ async function logout() {
   documentBlobCache.clear();
   state.sessionUserId = null;
   state.profile = null;
+  state.cartrackIgnitionHistory = null;
+  state.cartrackIgnitionPlate = "";
   selectors.appShell.classList.add("hidden");
   selectors.loginScreen.classList.remove("hidden");
   selectors.loginPassword.value = "";
@@ -1267,6 +1269,49 @@ function cartrackTimestampIsStale(iso, now = Date.now()) {
   return !Number.isFinite(time) || time > now || now - time > 30 * 60 * 1000;
 }
 
+function renderCartrackIgnitionHistory() {
+  const history = state.cartrackIgnitionHistory;
+  const plate = state.cartrackIgnitionPlate || "";
+  const rows = history?.trips ? CartrackIgnition.rows(history.trips, history.range, plate) : [];
+  const date = value => value === null ? "—" : new Date(value).toLocaleString("pt-PT", {timeZone:"Europe/Lisbon",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  return `<article class="panel">
+    <div class="panel-heading"><h2>Histórico da ignição Cartrack</h2></div>
+    <p class="section-copy">Consulta os intervalos entre ligar e desligar a ignição, com segundos e hora de Lisboa. Inclui tempo com a viatura parada e ligada. Não indica atividade na Uber ou Bolt. A ausência de intervalos não prova que esteve desligada. Os trajetos privados não estão incluídos.</p>
+    <div class="row-actions"><label>Matrícula <input id="cartrackIgnitionPlate" type="search" placeholder="Ex.: BJ-57-AN" value="${escapeHtml(plate)}"></label><button class="secondary-button" type="button" data-cartrack-history ${history?.loading ? "disabled" : ""}>${history?.loading ? "A consultar…" : "Consultar ignição"}</button></div>
+    ${history?.error ? `<p role="alert">${escapeHtml(history.error)}</p>` : ""}
+    ${history?.trips ? `<p class="section-copy">Consulta: ${date(history.range.start)} a ${date(history.range.end)}. ${history.partial ? "Resultado parcial: o limite de páginas foi atingido. Escolhe um período menor." : "Todas as páginas recebidas."} Duração total de cada intervalo; pode começar ou terminar fora do período escolhido.</p><div class="table-wrap"><table><thead><tr><th>Viatura</th><th>Ligou</th><th>Desligou</th><th>Duração total (HH:MM:SS)</th></tr></thead><tbody>${rows.map(row=>`<tr><td><strong>${escapeHtml(row.registration)}</strong></td><td>${date(row.startMs)}</td><td>${date(row.endMs)}${row.end == null ? " · Sem desligação registada" : ""}</td><td>${row.invalid ? "Rever datas do registo" : CartrackIgnition.duration(row.seconds)}${row.crossesPeriod ? " · Atravessa o limite do período" : ""}</td></tr>`).join("") || '<tr><td colspan="4">Sem intervalos devolvidos para esta matrícula e período.</td></tr>'}</tbody></table></div>` : '<p class="section-copy">Escolhe o período acima e clica em Consultar ignição.</p>'}
+  </article>`;
+}
+
+async function loadCartrackIgnitionHistory() {
+  if (state.profile?.role !== "admin" || state.cartrackIgnitionHistory?.loading) return;
+  state.cartrackIgnitionPlate = document.querySelector("#cartrackIgnitionPlate")?.value.trim() || "";
+  const now = Date.now();
+  const range = boltActivitySummary(state.activityPeriodDays || 7, now, state.activityWeek).range;
+  const request = {loading:true,range:{start:range.start,end:Math.min(range.end,now)}};
+  const userId = state.sessionUserId;
+  state.cartrackIgnitionHistory = request;
+  renderActivity();
+  const current = () => state.cartrackIgnitionHistory === request && state.sessionUserId === userId && state.profile?.role === "admin";
+  try {
+    const trips = [];
+    let partial = false;
+    for (let page=1; page<=10; page++) {
+      const {data,error} = await supabaseClient.functions.invoke("cartrack-history", {body:{start:new Date(request.range.start).toISOString(),end:new Date(request.range.end).toISOString(),page}});
+      if (!current()) return;
+      if (error || !data?.success || !Array.isArray(data.trips)) throw new Error("Não foi possível consultar a ignição. Tenta novamente mais tarde.");
+      trips.push(...data.trips);
+      const lastPage = Number(data.meta?.last_page);
+      if ((Number.isFinite(lastPage) && page>=lastPage) || data.trips.length===0 || (!Number.isFinite(lastPage) && data.trips.length<1000)) break;
+      if (page===10) partial=true;
+    }
+    if (current()) state.cartrackIgnitionHistory = {loading:false,trips,range:request.range,partial};
+  } catch (error) {
+    if (current()) state.cartrackIgnitionHistory = {loading:false,error:error.message};
+  }
+  if (state.activeView === "activity" && state.sessionUserId === userId && state.profile?.role === "admin") renderActivity();
+}
+
 function renderActivity() {
   selectors.pageTitle.textContent = "Utilização da Frota";
 
@@ -1377,6 +1422,7 @@ function renderActivity() {
         <div class="table-wrap"><table><thead><tr><th>Dia</th><th>Viatura</th><th>Primeira leitura</th><th>Última leitura</th><th>Leituras</th><th>Km observados</th></tr></thead>
         <tbody>${cartrackDistance.rows.map(row=>`<tr><td>${escapeHtml(row.day)}</td><td><strong>${escapeHtml(row.registration)}</strong></td><td>${new Date(row.firstAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.firstOdometer.toFixed(1)} km</td><td>${new Date(row.lastAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.lastOdometer.toFixed(1)} km</td><td>${row.count}</td><td>${row.distance === null ? `<span class="tag expiring">${row.invalid ? "Rever odómetro" : "Leituras insuficientes"}</span>` : row.distance.toFixed(1)+" km"}</td></tr>`).join("") || '<tr><td colspan="6">Sem leituras Cartrack neste período.</td></tr>'}</tbody></table></div>
       </article>
+      ${renderCartrackIgnitionHistory()}
     </section>
   `;
 }
@@ -2574,6 +2620,7 @@ function bindPortalEvents() {
     if (target.dataset.requestPassword) return copyPasswordRequest();
     if (target.dataset.boltSync !== undefined) return syncBolt();
     if (["current", "previous"].includes(target.dataset.activityWeek)) {
+      state.cartrackIgnitionHistory = null;
       state.activityWeek = target.dataset.activityWeek;
       state.activityPeriodDays = 7;
       renderActivity();
@@ -2581,10 +2628,11 @@ function bindPortalEvents() {
     }
     if (target.dataset.activityDays !== undefined) {
       const days = Number(target.dataset.activityDays);
-      if ([1, 7, 30].includes(days)) { state.activityPeriodDays = days; state.activityWeek = null; renderActivity(); }
+      if ([1, 7, 30].includes(days)) { state.cartrackIgnitionHistory = null; state.activityPeriodDays = days; state.activityWeek = null; renderActivity(); }
       return;
     }
     if (target.dataset.boltActivitySync !== undefined) return syncBoltActivity();
+    if (target.dataset.cartrackHistory !== undefined) return loadCartrackIgnitionHistory();
     if (target.dataset.cartrackSync !== undefined) return syncCartrack();
     const uberReportActions = {
       uberImportStatus: ["status", "#uberStatusCsv", "Não foi possível importar o estado Uber."],
@@ -2646,6 +2694,8 @@ function bindPortalEvents() {
       documentBlobCache.clear();
       state.sessionUserId = null;
       state.profile = null;
+  state.cartrackIgnitionHistory = null;
+  state.cartrackIgnitionPlate = "";
       selectors.appShell.classList.add("hidden");
       selectors.loginScreen.classList.remove("hidden");
     }

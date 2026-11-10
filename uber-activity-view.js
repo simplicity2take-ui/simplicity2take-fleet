@@ -67,11 +67,13 @@
 
     const driverById = new Map(driverRows.map(d => [d.id, d]));
     const activeAssignments = assignmentRows.filter(a => (!a.active_from || a.active_from <= today) && (!a.active_until || a.active_until >= today));
-    const vehicleState = vehicleRows.map(v => {
-      const assignment = activeAssignments.find(a => a.vehicle_id === v.id);
-      const driver = assignment ? driverById.get(assignment.driver_id) : null;
-      const label = driver ? statusLabel(driver.uber_realtime_status || driver.uber_status) : "Sem dados";
-      return { v, driver, label };
+    const vehicleState = vehicleRows.flatMap(v => {
+      const driverIds = [...new Set(activeAssignments.filter(a => a.vehicle_id === v.id).map(a => a.driver_id).filter(Boolean))];
+      return (driverIds.length ? driverIds : [null]).map(driverId => {
+        const driver = driverId ? driverById.get(driverId) : null;
+        const label = driver ? statusLabel(driver.uber_realtime_status || driver.uber_status) : "Sem dados";
+        return {v,driver,label,assignmentCount:driverIds.length};
+      });
     });
 
     const content = document.querySelector("#content");
@@ -85,7 +87,7 @@
       <div class="panel-heading">
         <div>
           <h2>Últimos estados Uber registados</h2>
-          <p class="section-copy">Estados guardados no Fleet, com a data do último registo em cada linha. Os registos antigos não indicam o estado atual. A quilometragem está no resumo Cartrack acima.</p>
+          <p class="section-copy">Estados guardados no Fleet, com a data do último registo em cada linha. Os registos antigos não indicam o estado atual. Associações atuais: uma linha por motorista associado. O histórico de ignição é por viatura; a associação não identifica quem conduziu cada intervalo. A quilometragem está no resumo Cartrack acima.</p>
         </div>
         <span class="tag ${outdated ? "expiring" : ""}">${outdated ? `${outdated} estados antigos ou sem data` : "Estados guardados"}</span>
       </div>
@@ -97,10 +99,10 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Viatura</th><th>Motorista</th><th>Estado de serviço registado</th><th>Data do estado (Lisboa)</th></tr></thead>
+          <thead><tr><th>Viatura</th><th>Motorista associado</th><th>Estado de serviço registado</th><th>Data do estado (Lisboa)</th></tr></thead>
           <tbody>
             ${vehicleState.map(row => `<tr>
-              <td><strong>${esc(row.v.plate)}</strong><br><span class="section-copy">${esc(row.v.brand)} ${esc(row.v.model)}</span></td>
+              <td><strong>${esc(row.v.plate)}</strong><br><span class="section-copy">${esc(row.v.brand)} ${esc(row.v.model)}</span>${row.assignmentCount > 1 ? `<br><span class="section-copy">${row.assignmentCount} motoristas associados</span>` : ""}</td>
               <td>${esc(row.driver?.full_name || row.driver?.name || "Sem motorista")}</td>
               <td><span class="tag ${row.driver && oldStatus(row.driver) ? "expiring" : statusClass(row.label)}">${esc(row.label)}</span>${row.driver && row.label !== "Sem dados" && oldStatus(row.driver) ? '<br><span class="section-copy">Estado antigo ou sem data</span>' : ""}</td>
               <td>${esc(statusDate(row.driver))}</td>

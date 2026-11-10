@@ -31,7 +31,10 @@ Deno.serve(async(req:Request)=>{
     if(!id||!secret) return reply({ok:false,stage:"configuration",error:"As credenciais Bolt não estão configuradas."});
     const auth=await fetch("https://oidc.bolt.eu/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_id:id,client_secret:secret,grant_type:"client_credentials",scope:"fleet-integration:api"}),signal:AbortSignal.timeout(15000)});
     const credentials=await auth.json().catch(()=>({}));
-    if(!auth.ok||typeof credentials.access_token!=="string"||!credentials.access_token) return reply({ok:false,stage:"authentication",error:"A Bolt recusou a autenticação da API."});
+    if(!auth.ok||typeof credentials.access_token!=="string"||!credentials.access_token) {
+      const allowed = ["invalid_client","invalid_scope","unauthorized_client","unsupported_grant_type","invalid_request","invalid_grant"];
+      return reply({ok:false,stage:"authentication",code:allowed.includes(credentials.error)?credentials.error:"BOLT_TOKEN_FAILED_HTTP_"+auth.status,httpStatus:auth.status,error:"Não foi possível obter autenticação na API Bolt."});
+    }
     const response=await fetch(BASE+"/getOnlineDrivers",{method:"POST",headers:{Authorization:"Bearer "+credentials.access_token,"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({company_id:COMPANY_ID}),signal:AbortSignal.timeout(20000)});
     const payload=await response.json().catch(()=>({}));
     if(!response.ok||payload.code!==0) return reply({ok:false,stage:"online",code:Number.isFinite(Number(payload.code))?Number(payload.code):null,error:messages[String(payload.code)]||"A Bolt não disponibilizou os dados nesta consulta."});

@@ -11,3 +11,7 @@ HTTP-200 Bolt responses with nonzero API codes are failures, including missing c
 Official API specification: https://developer.bolt.eu/fleet-integration
 
 Tests: `node tests/bolt-online-read.test.cjs` (Node 24) and `node tests/bolt-online-ui.test.cjs`.
+
+Live account check on 10 November 2026 reached the OAuth token request but authentication was refused, so no online driver/vehicle data was returned. A small allowlist of OAuth error names and HTTP status is exposed for diagnosis; descriptions and credential values are excluded. API availability for this account remains unconfirmed until authentication succeeds.
+
+The completed live diagnostic returned HTTP 500 from the Bolt OAuth token service (`BOLT_TOKEN_FAILED_HTTP_500`). This is not proof of invalid credentials or offline drivers. No online driver data was received and no authentication success is claimed. No further live retries were attempted after diagnosis.

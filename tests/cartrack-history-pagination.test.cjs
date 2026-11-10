@@ -2,7 +2,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const CartrackIgnition=require('../cartrack-ignition.js');
 function setup(file,invoke){
  const source=fs.readFileSync(file,'utf8');let renders=0;
- const c={Date,Number,Math,CartrackIgnition,state:{profile:{role:'admin'},sessionUserId:'admin',activeView:'activity'},document:{querySelector:()=>({value:'BJ57'})},escapeHtml:x=>String(x),renderActivity:()=>renders++,boltActivitySummary:()=>({range:{start:Date.parse('2026-11-09T00:00:00Z'),end:Date.parse('2026-11-10T00:00:00Z')}}),supabaseClient:{functions:{invoke}}};vm.createContext(c);vm.runInContext(source.slice(source.indexOf('function localDay('),source.indexOf('function activityReportRange(')),c);
+ const c={Date,Number,Math,CartrackIgnition,state:{profile:{role:'admin'},sessionUserId:'admin',activeView:'activity'},document:{querySelector:selector=>({value:selector==='#cartrackIgnitionDay'?'':'BJ57'})},escapeHtml:x=>String(x),renderActivity:()=>renders++,boltActivitySummary:()=>({range:{start:Date.parse('2026-11-09T00:00:00Z'),end:Date.parse('2026-11-10T00:00:00Z')}}),supabaseClient:{functions:{invoke}}};vm.createContext(c);vm.runInContext(source.slice(source.indexOf('function localDay('),source.indexOf('function activityReportRange(')),c);
  vm.runInContext(source.slice(source.indexOf('function renderCartrackIgnitionHistory('),source.indexOf('function renderActivity(')),c);
  return c;
 }

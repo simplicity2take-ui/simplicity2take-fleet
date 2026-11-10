@@ -723,6 +723,7 @@ async function logout() {
   state.profile = null;
   state.cartrackIgnitionHistory = null;
   state.cartrackIgnitionPlate = "";
+  state.cartrackIgnitionDay = "";
   selectors.appShell.classList.add("hidden");
   selectors.loginScreen.classList.remove("hidden");
   selectors.loginPassword.value = "";
@@ -1278,7 +1279,7 @@ function renderCartrackIgnitionHistory() {
   return `<article class="panel">
     <div class="panel-heading"><h2>Histórico da ignição Cartrack</h2></div>
     <p class="section-copy">Consulta os intervalos entre ligar e desligar a ignição, com segundos e hora de Lisboa. Inclui tempo com a viatura parada e ligada. Não indica atividade na Uber ou Bolt. A ausência de intervalos não prova que esteve desligada. Os trajetos privados não estão incluídos.</p>
-    <div class="row-actions"><label>Matrícula <input id="cartrackIgnitionPlate" type="search" placeholder="Ex.: BJ-57-AN" value="${escapeHtml(plate)}"></label><button class="secondary-button" type="button" data-cartrack-history ${history?.loading ? "disabled" : ""}>${history?.loading ? "A consultar…" : "Consultar ignição"}</button></div>
+    <div class="row-actions"><label>Matrícula <input id="cartrackIgnitionPlate" type="search" placeholder="Ex.: BJ-57-AN" value="${escapeHtml(plate)}" ${history?.loading ? "disabled" : ""}></label><label>Dia específico (opcional) <input id="cartrackIgnitionDay" type="date" max="${localDay(Date.now())}" value="${escapeHtml(state.cartrackIgnitionDay || "")}" ${history?.loading ? "disabled" : ""}></label><button class="secondary-button" type="button" data-cartrack-history ${history?.loading ? "disabled" : ""}>${history?.loading ? "A consultar…" : "Consultar ignição"}</button></div>
     ${history?.error ? `<p role="alert">${escapeHtml(history.error)}</p>` : ""}
     ${history?.trips ? `<p class="section-copy">Consulta: ${date(history.range.start)} a ${date(history.range.end)}. ${history.partial ? "Resultado parcial: o limite de páginas foi atingido. Escolhe um período menor." : "Todas as páginas recebidas."} Duração total de cada intervalo; pode começar ou terminar fora do período escolhido.</p>
       <h3>Tempo com ignição ligada no período</h3>
@@ -1287,15 +1288,18 @@ function renderCartrackIgnitionHistory() {
       <h3>Tempo por dia e viatura</h3>
       <div class="table-wrap"><table><thead><tr><th>Dia</th><th>Viatura</th><th>Ignição ligada (HH:MM:SS)</th></tr></thead><tbody>${totals.daily.map(row=>`<tr><td>${escapeHtml(row.day)}</td><td><strong>${escapeHtml(row.registration)}</strong></td><td>${CartrackIgnition.duration(row.seconds)}</td></tr>`).join("") || '<tr><td colspan="3">Sem intervalos completos para calcular o tempo diário.</td></tr>'}</tbody></table></div>
       <h3>Intervalos de ignição</h3>
-      <div class="table-wrap"><table><thead><tr><th>Viatura</th><th>Ligou</th><th>Desligou</th><th>Duração total (HH:MM:SS)</th></tr></thead><tbody>${rows.map(row=>`<tr><td><strong>${escapeHtml(row.registration)}</strong></td><td>${date(row.startMs)}</td><td>${date(row.endMs)}${row.end == null ? " · Sem desligação registada" : ""}</td><td>${row.invalid ? "Rever datas do registo" : CartrackIgnition.duration(row.seconds)}${row.crossesPeriod ? " · Atravessa o limite do período" : ""}</td></tr>`).join("") || '<tr><td colspan="4">Sem intervalos devolvidos para esta matrícula e período.</td></tr>'}</tbody></table></div>` : '<p class="section-copy">Escolhe o período acima e clica em Consultar ignição.</p>'}
+      <div class="table-wrap"><table><thead><tr><th>Viatura</th><th>Ligou</th><th>Desligou</th><th>Duração total (HH:MM:SS)</th></tr></thead><tbody>${rows.map(row=>`<tr><td><strong>${escapeHtml(row.registration)}</strong></td><td>${date(row.startMs)}</td><td>${date(row.endMs)}${row.end == null ? " · Sem desligação registada" : ""}</td><td>${row.invalid ? "Rever datas do registo" : CartrackIgnition.duration(row.seconds)}${row.crossesPeriod ? " · Atravessa o limite do período" : ""}</td></tr>`).join("") || '<tr><td colspan="4">Sem intervalos devolvidos para esta matrícula e período.</td></tr>'}</tbody></table></div>` : '<p class="section-copy">Escolhe o período acima ou um dia específico e clica em Consultar ignição.</p>'}
   </article>`;
 }
 
 async function loadCartrackIgnitionHistory() {
   if (state.profile?.role !== "admin" || state.cartrackIgnitionHistory?.loading) return;
   state.cartrackIgnitionPlate = document.querySelector("#cartrackIgnitionPlate")?.value.trim() || "";
-  const now = Date.now();
-  const range = boltActivitySummary(state.activityPeriodDays || 7, now, state.activityWeek).range;
+  const day = document.querySelector("#cartrackIgnitionDay")?.value || "";
+  const now = Math.floor(Date.now()/1000)*1000;
+  const range = day ? CartrackIgnition.dayRange(day, now, {day:localDay,startDay:reportMidnight,nextDayStart:value=>reportMidnight(reportDayShift(value,1))}) : boltActivitySummary(state.activityPeriodDays || 7, now, state.activityWeek).range;
+  if (!range) { showToast("Escolhe um dia válido até hoje."); return; }
+  state.cartrackIgnitionDay = day;
   const request = {loading:true,range:{start:range.start,end:Math.min(range.end,now)}};
   const userId = state.sessionUserId;
   state.cartrackIgnitionHistory = request;
@@ -2629,6 +2633,7 @@ function bindPortalEvents() {
     if (target.dataset.boltSync !== undefined) return syncBolt();
     if (["current", "previous"].includes(target.dataset.activityWeek)) {
       state.cartrackIgnitionHistory = null;
+      state.cartrackIgnitionDay = "";
       state.activityWeek = target.dataset.activityWeek;
       state.activityPeriodDays = 7;
       renderActivity();
@@ -2636,7 +2641,7 @@ function bindPortalEvents() {
     }
     if (target.dataset.activityDays !== undefined) {
       const days = Number(target.dataset.activityDays);
-      if ([1, 7, 30].includes(days)) { state.cartrackIgnitionHistory = null; state.activityPeriodDays = days; state.activityWeek = null; renderActivity(); }
+      if ([1, 7, 30].includes(days)) { state.cartrackIgnitionHistory = null; state.cartrackIgnitionDay = ""; state.activityPeriodDays = days; state.activityWeek = null; renderActivity(); }
       return;
     }
     if (target.dataset.boltActivitySync !== undefined) return syncBoltActivity();
@@ -2704,6 +2709,7 @@ function bindPortalEvents() {
       state.profile = null;
   state.cartrackIgnitionHistory = null;
   state.cartrackIgnitionPlate = "";
+  state.cartrackIgnitionDay = "";
       selectors.appShell.classList.add("hidden");
       selectors.loginScreen.classList.remove("hidden");
     }

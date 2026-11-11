@@ -1,0 +1,52 @@
+# Driver shift clock and automatic checks
+
+The driver signs in with their existing account, opens the vehicle QR and starts or ends their own shift. There is no driver/vehicle selector that can substitute another person's identity. Fixed vehicle assignments are not required. QR lookup returns only a safe vehicle summary and does not extend document permissions. Times come from the database server. Failed/offline requests are not presented as locally saved shifts. If the current-state read fails, the screen says the turn is unconfirmed and blocks a new start. An unsuccessful QR lookup clears the previous selection.
+
+`driver_shift_sessions` is separate from the existing Google form import. RLS allows active drivers to read their own rows, and active administrators to read all. Drivers cannot directly insert/update/delete rows. Public invoker RPCs delegate to tightly granted private functions that validate `auth.uid()`, active profile and driver, lock rows, enforce one open shift per driver/vehicle and support idempotent request IDs. No `vehicle_assignments`, legacy events, contacts, documents or lifecycle statuses are changed.
+
+## Installation and current state
+
+The restricted pilot backend and `/teste/` portal were installed on 11 November 2026 through PR #86. Exactly one verified existing owner account is enabled with `test_mode=true`. Do not rerun the one-time table installation or duplicate the review schedule when integrating the full frontend. The authenticated live start/end acceptance remains pending.
+
+For a fresh project only:
+
+1. Review/install `supabase/sql/native-driver-shifts.sql` in the S2T project. This is additive and must run once.
+2. Deploy `supabase/functions/shift-review/index.ts` with its two local JS dependencies. Keep gateway `verify_jwt=false`: the handler requires and verifies the existing scoped `x-cartrack-sync-key` before reading data. Browser/anonymous calls are denied. No new secret or external account is needed.
+3. Install `supabase/sql/native-shift-review-scheduler.sql` only after the endpoint is deployed. This creates a separate 15-minute job using the existing key in Vault and does not change the existing Cartrack schedule.
+4. Publish the changed static portal files together, including the new JS modules and manifest. Root and `/teste/` share the same logic.
+5. Run an authenticated driver acceptance test with a designated test account/vehicle before rollout. No synthetic shift rows have been written to the production project by this change.
+
+The review job processes up to ten due rows per run with a time budget. A closed shift is queued immediately; open shifts are checked again at the 18-hour warning boundary. Unavailable data is retried; already checked rows are revisited daily for seven days to catch delayed imports. Queue load and upstream availability can delay the result. No turn is auto-closed or repaired. An active administrator may explicitly release an open session with an 8–500-character reason. The server stores the actor, reason and current administrative closure time, preserves the original start, marks it for review and withholds mileage because that time is not proof of the actual exit. Drivers cannot invoke this administrative action, including when the original driver account is now inactive.
+
+Uber/Bolt checks use confirmed IDs/UUIDs and actual trip timestamps: mismatched vehicles/drivers, services crossing shift boundaries and partial/undated data are flagged. Received trips do not prove complete import coverage. Results explicitly retain `platform_coverage_unconfirmed`; no-trips is pending, not an assertion of zero work. The worker does not change the inactivity rule or Rúben Peres exemption.
+
+Mileage comes exclusively from authenticated Cartrack history, with complete pagination required. The nearest odometer readings within 15 minutes of the server entry/exit are used. Reading times, odometer values and offsets are retained and displayed in Europe/Lisbon; this is a difference between nearby readings, not an exact measurement of the submission instants. Missing, conflicting, reversed or partial history stays pending. Closed shifts over 36 hours are flagged and withheld from mileage calculation. No form-supplied km, platform distance or estimates are substituted. A temporary upstream failure or incomplete pagination does not erase an earlier verified Cartrack result for the unchanged shift: the UI labels it as previous readings with a pending refresh, and a retry is queued. Contradictory readings still require review. Conditional metadata writes return the affected row ID; stale/no-op writes count as skipped rather than reviewed.
+
+## Validation
+
+```sh
+npm ci --prefix tools/driver-lifecycle-tests
+node --test tests/*.test.cjs
+node tests/native-shifts-db.mjs
+```
+
+The database test uses synthetic profiles, roles and tables in in-memory PostgreSQL (PGlite); it covers RLS, unauthorized/direct writes, exclusive open shifts, server times, idempotency, handover and inactive accounts. Worker/UI tests use fake data and block real external writes.
+
+`tests/native-shifts-browser.cjs` is an additional mobile integration test using Playwright and mocked Supabase calls. Run against a local static server, with Playwright available (optional `FLEET_PLAYWRIGHT_MODULE`, `FLEET_CHROMIUM_PATH`, `FLEET_TEST_URL`). It has not passed in this executor: local Chromium cannot create its process socket (Operation not permitted). A subsequent shared-browser attempt also rejected the local file preview under its URL policy; no browser-policy workaround was attempted. Visual/mobile and real Supabase acceptance tests remain required before rollout.
+
+If rolling back, revert the frontend and unschedule `s2t-native-shift-review`; preserve all recorded shift rows. Do not drop tables or delete history.
+
+The proposed `.github/workflows/fleet-checks.yml` runs the portal/worker regressions, native-shift database tests and synchronization lifecycle regressions for matching pushes and pull requests. Official setup actions are pinned to commit SHAs, the job token is read-only, dependencies use the existing lockfile, and no production secrets, URLs or deployment steps are used by the test runner. The same commands passed locally and in both initial GitHub-hosted push and pull-request runs for code commit e2e1ded5f7c1b2f048e81b644e363bd729d5e9bf. Verified run: https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/43084398919 . The restricted pilot and subsequent integration changes are validated by their own workflow runs. These checks do not replace the outstanding visual/mobile acceptance test or enforce branch-protection settings.
+
+## Restricted pilot
+
+Installation creates an empty private `fleet_private.shift_access` allowlist. An active account alone cannot look up or start a native shift. After explicit pilot approval, enable only the verified driver's ID with `enabled=true,test_mode=true`, using a separate administrator operation; no driver ID is embedded in the schema script. All new pilot sessions are marked `is_test=true` by the server. Removing access blocks further starts/lookups but an active owner can still finish an existing session. Access grants do not create accounts, change passwords or reactivate drivers.
+
+The proposed pilot release publishes the native portal only under `/teste/` and keeps the existing root application files. During this pilot, paste the existing vehicle QR link into the test portal: the permanent printed QR still opens the root application until the full rollout. The native backend and periodic review were installed after approval through PR #86. Test sessions remain explicitly marked in histories and review results; legacy Google records and platform trips are never changed by the pilot.
+
+
+## Main-portal pilot access
+
+Apply `supabase/sql/native-shift-access.sql` once before publishing the gated main portal. It adds only a read RPC for the current authenticated driver's own access/open-shift booleans. The private allowlist and driver IDs are not returned. Drivers without enabled access retain their vehicle/document landing page and assigned-vehicle document QR behavior. Enabled drivers see the native turn page and QR lookup. An active driver whose grant was removed still sees an existing own open turn so it can be ended. Missing/error/stale access responses do not enable the turn feature. Logout clears the UI flag; server RPCs remain the authority for every write.
+
+The main-portal release retains the existing single enabled pilot grant and server test marking. It does not extend access to all drivers or convert pilot records into operational shifts. Actual mobile start/end acceptance is still pending; source/unit/database checks do not claim that real-world test passed. No synthetic sessions are inserted in production.

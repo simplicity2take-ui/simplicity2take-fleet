@@ -24,6 +24,21 @@
       } else result.push({entry:null,exit:row,flags:['missing_entry']});
     }
     for (const entry of open.values()) result.push({entry,exit:null,flags:['missing_exit']});
+    // A new entry can contradict an earlier pair even if it has no closing exit.
+    // Keep the declared events, but withhold mileage until the conflict is reviewed.
+    for (const session of result) {
+      if (!session.entry || !session.exit) continue;
+      const start=timestamp(session.entry.registered_at), end=timestamp(session.exit.registered_at);
+      const conflict=rows.some(row=>{
+        const at=timestamp(row.registered_at);
+        if(row.event_kind!=='entry'||at===null||at<start||at>=end)return false;
+        const sameDriver=row.driver_id && row.driver_id===session.entry.driver_id;
+        const plate=plateKey(row.vehicle_plate);
+        const sameVehicle=(row.vehicle_id && row.vehicle_id===session.entry.vehicle_id) || (plate && plate===plateKey(session.entry.vehicle_plate));
+        return (sameDriver && !sameVehicle) || (sameVehicle && row.driver_id!==session.entry.driver_id);
+      });
+      if(conflict)session.flags.push('conflicting_entry');
+    }
     for (let i=0;i<result.length;i++) for(let j=i+1;j<result.length;j++) {
       const a=result[i],b=result[j];
       if (a.entry&&a.exit&&b.entry&&b.exit&&a.entry.driver_id===b.entry.driver_id && timestamp(a.entry.registered_at)<timestamp(b.exit.registered_at)&&timestamp(b.entry.registered_at)<timestamp(a.exit.registered_at)) {
@@ -62,3 +77,4 @@
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.ShiftMileage=api;
 })(typeof globalThis==='undefined'?this:globalThis);
+

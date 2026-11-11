@@ -24,10 +24,18 @@ try{
  await db.exec('SET ROLE authenticated');
  await rejected('select public.fleet_shift_vehicle($1)',['a'.repeat(32)],/Sessão/);
  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[p1]);
+ await rejected('select public.fleet_shift_vehicle($1)',['a'.repeat(32)],/SHIFT_ACCESS_REQUIRED/);
+ await rejected('select public.fleet_shift_start($1,$2)',['a'.repeat(32),rq(90)],/SHIFT_ACCESS_REQUIRED/);
+ await rejected('select * from fleet_private.shift_access',[],/permission denied/);
+ await db.exec('RESET ROLE');
+ await db.query('insert into fleet_private.shift_access(driver_id) values($1),($2)',[d1,d2]);
+ await db.exec('SET ROLE authenticated');
  const lookup=(await first('select public.fleet_shift_vehicle($1) as result',['a'.repeat(32)])).result;
- assert.deepEqual(Object.keys(lookup).sort(),['brand','id','model','plate']);
+ assert.deepEqual(Object.keys(lookup).sort(),['brand','id','is_test','model','plate']);
+ assert.equal(lookup.is_test,true);
  const start=(await first('select public.fleet_shift_start($1,$2) as result',['a'.repeat(32),rq(1)])).result;
  assert.equal(start.driver_id,d1);assert.equal(start.vehicle_id,v1);
+ assert.equal(start.is_test,true);
  const repeat=(await first('select public.fleet_shift_start($1,$2) as result',['a'.repeat(32),rq(1)])).result;
  assert.deepEqual(repeat,start);
  await rejected('select public.fleet_shift_start($1,$2)',['b'.repeat(32),rq(2)],/turno aberto/);
@@ -59,6 +67,10 @@ try{
  assert.equal(closed.trip_review.state,'review');assert.equal(closed.cartrack_review.state,'pending');
  assert.deepEqual((await first('select public.fleet_shift_admin_close($1,$2,$3) as result',[secondShift.id,rq(8),'Synthetic explanation'])).result,closed);
  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[p1]);
- assert.equal((await first('select public.fleet_shift_start($1,$2) as result',['a'.repeat(32),rq(9)])).result.driver_id,d1);
+ const last=(await first('select public.fleet_shift_start($1,$2) as result',['a'.repeat(32),rq(9)])).result;
+ assert.equal(last.driver_id,d1);
+ await db.exec('RESET ROLE');await db.query('update fleet_private.shift_access set enabled=false where driver_id=$1',[d1]);await db.exec('SET ROLE authenticated');
+ await rejected('select public.fleet_shift_vehicle($1)',['a'.repeat(32)],/SHIFT_ACCESS_REQUIRED/);
+ assert.ok((await first('select public.fleet_shift_end($1,$2) as result',[last.id,rq(10)])).result.ended_at);
  console.log('PASS native shift database: authentication, QR allowlist, RLS isolation, server time, idempotency, exclusive driver/vehicle, handover and inactive accounts');
 }finally{await db.close();}

@@ -17,7 +17,7 @@ const {stripTypeScriptTypes}=require('node:module');
    return new Response(JSON.stringify({success:true,trips:[{id:1,registration:'AA-00-AA',start:'2026-11-10T08:00:00Z',end:'2026-11-10T16:00:00Z',startOdometerKm:1000,endOdometerKm:1120}],meta:{last_page:historyPartial?99:1,total:historyPartial?999:1}}));
  }};
  vm.createContext(context);
- for(const path of ['native-shifts.js','shift-mileage.js'])vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'..',path),'utf8'),context);
+ for(const path of ['supabase/functions/shift-review/native-shifts.js','supabase/functions/shift-review/shift-mileage.js'])vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'..',path),'utf8'),context);
  const source=fs.readFileSync(require('node:path').join(__dirname,'../supabase/functions/shift-review/index.ts'),'utf8').replace(/^import .*;\n/gm,'');
  vm.runInContext(stripTypeScriptTypes(source),context);
  const call=key=>handler(new Request('https://synthetic.example.test/shift-review',{method:'POST',headers:key?{'x-cartrack-sync-key':key}:{}}));

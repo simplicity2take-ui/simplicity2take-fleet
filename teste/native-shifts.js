@@ -15,6 +15,7 @@
  }
  function reviewTrips(shift,trips,driver,partial=false){
    const flags=new Set(['platform_coverage_unconfirmed']),counts={uber:0,bolt:0};
+   if(shift.is_test)flags.add('test_shift');
    const start=stamp(shift.started_at),end=stamp(shift.ended_at);let conflicts=0;
    if(!Number.isFinite(start)||!Number.isFinite(end)||end<start)return {state:'pending',flags:['incomplete_shift'],counts};
    if(end-start>36*3600000||end===start){flags.add('shift_duration_review');conflicts++;}

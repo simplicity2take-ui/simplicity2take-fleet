@@ -15,6 +15,7 @@ for(const file of ['../native-shifts.js','../teste/native-shifts.js']){
  assert.equal(reviewTrips({...s,ended_at:'2026-11-12T16:00:00Z'},[t],d).state,'review');
  assert.equal(reviewTrips(s,[t],d).state,'checked_available_data');
  assert.ok(reviewTrips(s,[t],d).flags.includes('platform_coverage_unconfirmed'));
+ assert.ok(reviewTrips({...s,is_test:true},[t],d).flags.includes('test_shift'));
  assert.equal(reviewTrips(s,[],d).state,'pending');
  assert.equal(reviewTrips(s,[t],d,true).state,'pending');
  assert.equal(reviewTrips(s,[t,t],d).counts.uber,1);

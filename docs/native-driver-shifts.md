@@ -33,3 +33,10 @@ The database test uses synthetic profiles, roles and tables in in-memory Postgre
 If rolling back, revert the frontend and unschedule `s2t-native-shift-review`; preserve all recorded shift rows. Do not drop tables or delete history.
 
 The proposed `.github/workflows/fleet-checks.yml` runs the portal/worker regressions, native-shift database tests and synchronization lifecycle regressions for matching pushes and pull requests. Official setup actions are pinned to commit SHAs, the job token is read-only, dependencies use the existing lockfile, and no production secrets, URLs or deployment steps are used by the test runner. The same commands passed locally and in both initial GitHub-hosted push and pull-request runs for code commit e2e1ded5f7c1b2f048e81b644e363bd729d5e9bf. Verified run: https://github.com/simplicity2take-ui/simplicity2take-fleet/actions/runs/43084398919 . The subsequent commits update documentation only. These checks do not replace the outstanding visual/mobile acceptance test or enforce branch-protection settings.
+
+## Restricted pilot
+
+Installation creates an empty private `fleet_private.shift_access` allowlist. An active account alone cannot look up or start a native shift. After explicit pilot approval, enable only the verified driver's ID with `enabled=true,test_mode=true`, using a separate administrator operation; no driver ID is embedded in the schema script. All new pilot sessions are marked `is_test=true` by the server. Removing access blocks further starts/lookups but an active owner can still finish an existing session. Access grants do not create accounts, change passwords or reactivate drivers.
+
+The proposed pilot release publishes the native portal only under `/teste/` and keeps the existing root application files. During this pilot, paste the existing vehicle QR link into the test portal: the permanent printed QR still opens the root application until the full rollout. The native backend and periodic review are installed only after approval. Test sessions remain explicitly marked in histories and review results; legacy Google records and platform trips are never changed by the pilot.
+

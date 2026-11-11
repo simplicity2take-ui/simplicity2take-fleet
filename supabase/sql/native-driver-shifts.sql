@@ -4,6 +4,7 @@ CREATE TABLE public.driver_shift_sessions (
  driver_id uuid NOT NULL REFERENCES public.drivers(id),
  vehicle_id uuid NOT NULL REFERENCES public.vehicles(id),
  driver_name text NOT NULL, vehicle_plate text NOT NULL,
+ is_test boolean NOT NULL DEFAULT true,
  started_at timestamptz NOT NULL DEFAULT clock_timestamp(), ended_at timestamptz,
  start_request_id uuid NOT NULL UNIQUE, end_request_id uuid UNIQUE,
  closure_kind text NOT NULL DEFAULT 'driver' CHECK (closure_kind IN ('driver','admin')),
@@ -30,6 +31,15 @@ CREATE POLICY native_shift_read ON public.driver_shift_sessions FOR SELECT TO au
 CREATE SCHEMA IF NOT EXISTS fleet_private;
 REVOKE ALL ON SCHEMA fleet_private FROM PUBLIC;
 GRANT USAGE ON SCHEMA fleet_private TO authenticated;
+-- Empty on installation: only explicitly enabled drivers may start shifts.
+CREATE TABLE fleet_private.shift_access (
+ driver_id uuid PRIMARY KEY REFERENCES public.drivers(id),
+ enabled boolean NOT NULL DEFAULT true,
+ test_mode boolean NOT NULL DEFAULT true
+);
+ALTER TABLE fleet_private.shift_access ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON fleet_private.shift_access FROM PUBLIC,anon,authenticated;
+GRANT ALL ON fleet_private.shift_access TO service_role;
 
 -- Privileged writes are required to enforce vehicle exclusivity across drivers.
 -- Every entry point resolves the active driver from auth.uid(), never client IDs.
@@ -44,16 +54,18 @@ BEGIN
 END $$;
 
 CREATE FUNCTION fleet_private.shift_vehicle(p_token text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE v public.vehicles;
+DECLARE v public.vehicles; did uuid; mode boolean;
 BEGIN
- PERFORM fleet_private.active_shift_driver();
+ did:=fleet_private.active_shift_driver();
+ SELECT test_mode INTO mode FROM fleet_private.shift_access WHERE driver_id=did AND enabled;
+ IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='SHIFT_ACCESS_REQUIRED'; END IF;
  SELECT * INTO v FROM public.vehicles WHERE qr_token=p_token AND status='Ativo';
  IF v.id IS NULL THEN RAISE EXCEPTION 'QR de viatura inválido ou viatura indisponível.'; END IF;
- RETURN jsonb_build_object('id',v.id,'plate',v.plate,'brand',v.brand,'model',v.model);
+ RETURN jsonb_build_object('id',v.id,'plate',v.plate,'brand',v.brand,'model',v.model,'is_test',mode);
 END $$;
 
 CREATE FUNCTION fleet_private.shift_start(p_token text,p_request_id uuid) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE d public.drivers; v public.vehicles; s public.driver_shift_sessions; did uuid;
+DECLARE d public.drivers; v public.vehicles; s public.driver_shift_sessions; did uuid; mode boolean;
 BEGIN
  did:=fleet_private.active_shift_driver();
  IF p_request_id IS NULL THEN RAISE EXCEPTION 'Identificador do pedido em falta.'; END IF;
@@ -61,6 +73,8 @@ BEGIN
  PERFORM fleet_private.active_shift_driver();
  -- Account activity is checked again after acquiring the per-driver lock.
  IF d.status<>'Ativo' THEN RAISE EXCEPTION 'Motorista inativo.'; END IF;
+ SELECT test_mode INTO mode FROM fleet_private.shift_access WHERE driver_id=did AND enabled FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='SHIFT_ACCESS_REQUIRED'; END IF;
  SELECT * INTO v FROM public.vehicles WHERE qr_token=p_token FOR UPDATE;
  IF v.id IS NULL OR v.status<>'Ativo' THEN RAISE EXCEPTION 'QR de viatura inválido ou viatura indisponível.'; END IF;
  SELECT * INTO s FROM public.driver_shift_sessions WHERE start_request_id=p_request_id;
@@ -70,8 +84,8 @@ BEGIN
  END IF;
  IF EXISTS(SELECT 1 FROM public.driver_shift_sessions WHERE driver_id=did AND ended_at IS NULL) THEN RAISE EXCEPTION 'Termine o turno aberto antes de iniciar outro.'; END IF;
  IF EXISTS(SELECT 1 FROM public.driver_shift_sessions WHERE vehicle_id=v.id AND ended_at IS NULL) THEN RAISE EXCEPTION 'Esta viatura tem um turno aberto. Peça a conferência ao administrador.'; END IF;
- INSERT INTO public.driver_shift_sessions(driver_id,vehicle_id,driver_name,vehicle_plate,start_request_id)
- VALUES(did,v.id,d.full_name,v.plate,p_request_id) RETURNING * INTO s;
+ INSERT INTO public.driver_shift_sessions(driver_id,vehicle_id,driver_name,vehicle_plate,start_request_id,is_test)
+ VALUES(did,v.id,d.full_name,v.plate,p_request_id,mode) RETURNING * INTO s;
  RETURN to_jsonb(s);
 END $$;
 

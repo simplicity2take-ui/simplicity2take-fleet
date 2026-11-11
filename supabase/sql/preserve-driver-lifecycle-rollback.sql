@@ -133,7 +133,7 @@ begin
     'assignmentsUpdated', assignments_count
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.sync_uber_driver_status(p_rows jsonb)
  RETURNS jsonb
@@ -167,4 +167,4 @@ begin
   end loop;
   return jsonb_build_object('matched',matched_count,'created',created_count,'skipped',skipped_count);
 end;
-$function$
+$function$;

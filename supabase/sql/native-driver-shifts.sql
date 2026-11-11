@@ -1,0 +1,98 @@
+-- Reviewed installation only. No legacy Google records or assignments are changed.
+CREATE TABLE public.driver_shift_sessions (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ driver_id uuid NOT NULL REFERENCES public.drivers(id),
+ vehicle_id uuid NOT NULL REFERENCES public.vehicles(id),
+ driver_name text NOT NULL, vehicle_plate text NOT NULL,
+ started_at timestamptz NOT NULL DEFAULT clock_timestamp(), ended_at timestamptz,
+ start_request_id uuid NOT NULL UNIQUE, end_request_id uuid UNIQUE,
+ trip_review jsonb NOT NULL DEFAULT '{"state":"pending","flags":["platform_coverage_unconfirmed"]}',
+ cartrack_review jsonb NOT NULL DEFAULT '{"state":"pending","reason":"awaiting_history"}',
+ reviewed_at timestamptz, next_review_at timestamptz NOT NULL DEFAULT now(),
+ CHECK (ended_at IS NULL OR ended_at >= started_at),
+ CHECK ((ended_at IS NULL) = (end_request_id IS NULL))
+);
+CREATE UNIQUE INDEX driver_shift_one_open_driver ON public.driver_shift_sessions(driver_id) WHERE ended_at IS NULL;
+CREATE UNIQUE INDEX driver_shift_one_open_vehicle ON public.driver_shift_sessions(vehicle_id) WHERE ended_at IS NULL;
+CREATE INDEX driver_shift_started ON public.driver_shift_sessions(started_at,id);
+ALTER TABLE public.driver_shift_sessions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.driver_shift_sessions FROM anon,authenticated;
+GRANT SELECT ON public.driver_shift_sessions TO authenticated;
+GRANT ALL ON public.driver_shift_sessions TO service_role;
+CREATE POLICY native_shift_read ON public.driver_shift_sessions FOR SELECT TO authenticated USING (
+ public.is_admin() OR EXISTS (SELECT 1 FROM public.drivers d JOIN public.profiles p ON p.id=d.profile_id
+ WHERE d.id=driver_shift_sessions.driver_id AND p.id=auth.uid() AND p.role='driver' AND p.status='Ativo' AND d.status='Ativo')
+);
+CREATE SCHEMA IF NOT EXISTS fleet_private;
+REVOKE ALL ON SCHEMA fleet_private FROM PUBLIC;
+GRANT USAGE ON SCHEMA fleet_private TO authenticated;
+
+-- Privileged writes are required to enforce vehicle exclusivity across drivers.
+-- Every entry point resolves the active driver from auth.uid(), never client IDs.
+CREATE FUNCTION fleet_private.active_shift_driver() RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE result uuid; n integer;
+BEGIN
+ IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Sessão de motorista necessária.'; END IF;
+ SELECT count(*),min(d.id::text)::uuid INTO n,result FROM public.drivers d JOIN public.profiles p ON p.id=d.profile_id
+ WHERE p.id=auth.uid() AND p.role='driver' AND p.status='Ativo' AND d.status='Ativo';
+ IF n<>1 THEN RAISE EXCEPTION 'Conta de motorista inativa ou não associada.'; END IF;
+ RETURN result;
+END $$;
+
+CREATE FUNCTION fleet_private.shift_vehicle(p_token text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE v public.vehicles;
+BEGIN
+ PERFORM fleet_private.active_shift_driver();
+ SELECT * INTO v FROM public.vehicles WHERE qr_token=p_token AND status='Ativo';
+ IF v.id IS NULL THEN RAISE EXCEPTION 'QR de viatura inválido ou viatura indisponível.'; END IF;
+ RETURN jsonb_build_object('id',v.id,'plate',v.plate,'brand',v.brand,'model',v.model);
+END $$;
+
+CREATE FUNCTION fleet_private.shift_start(p_token text,p_request_id uuid) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE d public.drivers; v public.vehicles; s public.driver_shift_sessions; did uuid;
+BEGIN
+ did:=fleet_private.active_shift_driver();
+ IF p_request_id IS NULL THEN RAISE EXCEPTION 'Identificador do pedido em falta.'; END IF;
+ SELECT * INTO d FROM public.drivers WHERE id=did FOR UPDATE;
+ PERFORM fleet_private.active_shift_driver();
+ -- Account activity is checked again after acquiring the per-driver lock.
+ IF d.status<>'Ativo' THEN RAISE EXCEPTION 'Motorista inativo.'; END IF;
+ SELECT * INTO v FROM public.vehicles WHERE qr_token=p_token FOR UPDATE;
+ IF v.id IS NULL OR v.status<>'Ativo' THEN RAISE EXCEPTION 'QR de viatura inválido ou viatura indisponível.'; END IF;
+ SELECT * INTO s FROM public.driver_shift_sessions WHERE start_request_id=p_request_id;
+ IF s.id IS NOT NULL THEN
+   IF s.driver_id<>did OR s.vehicle_id<>v.id THEN RAISE EXCEPTION 'Pedido não corresponde a este turno.'; END IF;
+   RETURN to_jsonb(s);
+ END IF;
+ IF EXISTS(SELECT 1 FROM public.driver_shift_sessions WHERE driver_id=did AND ended_at IS NULL) THEN RAISE EXCEPTION 'Termine o turno aberto antes de iniciar outro.'; END IF;
+ IF EXISTS(SELECT 1 FROM public.driver_shift_sessions WHERE vehicle_id=v.id AND ended_at IS NULL) THEN RAISE EXCEPTION 'Esta viatura tem um turno aberto. Peça a conferência ao administrador.'; END IF;
+ INSERT INTO public.driver_shift_sessions(driver_id,vehicle_id,driver_name,vehicle_plate,start_request_id)
+ VALUES(did,v.id,d.full_name,v.plate,p_request_id) RETURNING * INTO s;
+ RETURN to_jsonb(s);
+END $$;
+
+CREATE FUNCTION fleet_private.shift_end(p_shift_id uuid,p_request_id uuid) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE did uuid; s public.driver_shift_sessions;
+BEGIN
+ did:=fleet_private.active_shift_driver();
+ IF p_request_id IS NULL THEN RAISE EXCEPTION 'Identificador do pedido em falta.'; END IF;
+ PERFORM 1 FROM public.drivers WHERE id=did AND status='Ativo' FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Motorista inativo.'; END IF;
+ PERFORM fleet_private.active_shift_driver();
+ SELECT * INTO s FROM public.driver_shift_sessions WHERE id=p_shift_id AND driver_id=did FOR UPDATE;
+ IF s.id IS NULL THEN RAISE EXCEPTION 'Turno não encontrado para esta conta.'; END IF;
+ IF s.ended_at IS NOT NULL THEN
+   IF s.end_request_id=p_request_id THEN RETURN to_jsonb(s); END IF;
+   RAISE EXCEPTION 'Este turno já está terminado. Atualize a página.';
+ END IF;
+ UPDATE public.driver_shift_sessions SET ended_at=clock_timestamp(),end_request_id=p_request_id,next_review_at=clock_timestamp() WHERE id=s.id RETURNING * INTO s;
+ RETURN to_jsonb(s);
+END $$;
+
+REVOKE ALL ON FUNCTION fleet_private.active_shift_driver(),fleet_private.shift_vehicle(text),fleet_private.shift_start(text,uuid),fleet_private.shift_end(uuid,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION fleet_private.shift_vehicle(text),fleet_private.shift_start(text,uuid),fleet_private.shift_end(uuid,uuid) TO authenticated;
+CREATE FUNCTION public.fleet_shift_vehicle(p_token text) RETURNS jsonb LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$ SELECT fleet_private.shift_vehicle(p_token) $$;
+CREATE FUNCTION public.fleet_shift_start(p_token text,p_request_id uuid) RETURNS jsonb LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$ SELECT fleet_private.shift_start(p_token,p_request_id) $$;
+CREATE FUNCTION public.fleet_shift_end(p_shift_id uuid,p_request_id uuid) RETURNS jsonb LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$ SELECT fleet_private.shift_end(p_shift_id,p_request_id) $$;
+REVOKE ALL ON FUNCTION public.fleet_shift_vehicle(text),public.fleet_shift_start(text,uuid),public.fleet_shift_end(uuid,uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.fleet_shift_vehicle(text),public.fleet_shift_start(text,uuid),public.fleet_shift_end(uuid,uuid) TO authenticated;

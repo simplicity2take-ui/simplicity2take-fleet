@@ -1,0 +1,11 @@
+{
+ "name":"Simplicity2Take Fleet",
+ "short_name":"Fleet S2T",
+ "lang":"pt-PT",
+ "start_url":"./",
+ "scope":"./",
+ "display":"standalone",
+ "background_color":"#f5f8fc",
+ "theme_color":"#0f4c81",
+ "icons":[{"src":"./simplicity2take-logo.jpeg","sizes":"any","type":"image/jpeg"}]
+}

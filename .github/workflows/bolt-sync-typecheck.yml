@@ -1,0 +1,23 @@
+name: Bolt sync checks
+
+on:
+  pull_request:
+    paths:
+      - "supabase/functions/bolt-sync/**"
+      - ".github/workflows/bolt-sync-typecheck.yml"
+  workflow_dispatch:
+
+jobs:
+  deno-check-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check Bolt sync Edge Function
+        run: deno check supabase/functions/bolt-sync/index.ts
+      - name: Run Bolt normalization unit tests
+        run: deno test supabase/functions/bolt-sync/*_test.ts

@@ -21,7 +21,25 @@ for(const file of ['../shift-mileage.js','../teste/shift-mileage.js']){
  const overlapping=sessions([entry,event('entry','2026-11-09T23:00:00Z','v2','BB-00-BB'),exit,event('exit','2026-11-10T07:00:00Z','v2','BB-00-BB')]);
  assert.ok(overlapping.every(s=>s.flags.includes('overlapping_shift')));
  assert.equal(mileage(overlapping[0],trips).distance,null);
+ // An intervening entry must block mileage even when its own exit is absent.
+ const switchEntry=event('entry','2026-11-09T23:00:00Z','v2','BB-00-BB');
+ const switched=sessions([entry,switchEntry,exit]).find(s=>s.entry===entry);
+ assert.ok(switched.flags.includes('conflicting_entry'));
+ assert.equal(mileage(switched,trips).distance,null);
+ const handover={...event('entry','2026-11-09T23:00:00Z'),driver_id:'other'};
+ const shared=sessions([entry,handover,exit]).find(s=>s.entry===entry);
+ assert.ok(shared.flags.includes('conflicting_entry'));
+ assert.equal(mileage(shared,trips).distance,null);
+ const unknownHandover={...handover,driver_id:null};
+ assert.ok(sessions([entry,unknownHandover,exit]).find(s=>s.entry===entry).flags.includes('conflicting_entry'));
+ const simultaneous={...switchEntry,registered_at:entry.registered_at};
+ assert.ok(sessions([entry,simultaneous,exit]).find(s=>s.entry===entry).flags.includes('conflicting_entry'));
+ const legitimate=sessions([entry,exit,event('entry',exit.registered_at,'v2','BB-00-BB'),event('exit','2026-11-10T08:00:00Z','v2','BB-00-BB')]);
+ assert.ok(legitimate.every(s=>s.flags.length===0));
+ const unrelated={...switchEntry,driver_id:'other'};
+ assert.equal(sessions([entry,unrelated,exit]).find(s=>s.entry===entry).flags.length,0);
  assert.ok(sessions([{...entry,driver_id:null},exit])[0].flags.length);
  assert.ok(sessions([entry,event('exit','2026-11-12T06:00:00Z')])[0].flags.includes('invalid_or_long_shift'));
  console.log(file+': PASS midnight pairing, missing/duplicate/overlapping entries, nearest readings, ambiguity, odometer reversal and incomplete-history protection');
 }
+

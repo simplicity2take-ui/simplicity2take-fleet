@@ -2,6 +2,9 @@ name: Fleet automated checks
 on:
   push:
     paths:
+      - '**/*.html'
+      - '**/*.css'
+      - '**/*.webmanifest'
       - '**/*.js'
       - '**/*.cjs'
       - '**/*.mjs'
@@ -11,6 +14,9 @@ on:
       - '.github/workflows/fleet-checks.yml'
   pull_request:
     paths:
+      - '**/*.html'
+      - '**/*.css'
+      - '**/*.webmanifest'
       - '**/*.js'
       - '**/*.cjs'
       - '**/*.mjs'

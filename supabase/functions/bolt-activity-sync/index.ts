@@ -69,13 +69,22 @@ async function boltPost(path: string, token: string, payload: Record<string, unk
   return data;
 }
 async function getRideLogs(token:string,startTs:number,endTs:number) {
- const rows:any[]=[];
+ const rows:any[]=[],seen=new Set<string>();
+ let expectedTotal:number|null=null;
  for(let page=0,offset=0;page<100;page++){
   const response=await boltPost("/getRideHistory",token,{company_id:COMPANY_ID,limit:1000,offset,start_datetime:new Date(startTs*1000).toISOString().replace(/\.\d{3}Z$/,"+00:00"),end_datetime:new Date(endTs*1000).toISOString().replace(/\.\d{3}Z$/,"+00:00")});
   const d=response?.data;
   if(!Array.isArray(d?.orders)||!Number.isSafeInteger(d?.total)||d.total<0)throw new Error("Resposta inesperada do histórico Bolt V2.");
-  if(!d.orders.length){if(offset<d.total)throw new Error("Histórico Bolt incompleto.");return rows;}
-  rows.push(...d.orders);offset+=d.orders.length;if(offset>=d.total)return rows;
+  if(expectedTotal===null)expectedTotal=d.total;
+  if(d.total!==expectedTotal)throw new Error("O total Bolt mudou entre páginas; repita a consulta completa.");
+  if(d.orders.length>1000||offset+d.orders.length>expectedTotal)throw new Error("Contagem de viagens Bolt inconsistente.");
+  for(const order of d.orders){
+   const reference=typeof order?.order_reference==="string"?order.order_reference.trim():"";
+   if(!reference||seen.has(reference))throw new Error("Referência Bolt ausente ou repetida entre páginas; não foi gravado.");
+   seen.add(reference);
+  }
+  if(!d.orders.length){if(offset<expectedTotal)throw new Error("Histórico Bolt incompleto.");return {rows,pageCount:page+1,total:expectedTotal};}
+  rows.push(...d.orders);offset+=d.orders.length;if(offset===expectedTotal)return {rows,pageCount:page+1,total:expectedTotal};
  }
  throw new Error("Limite de páginas Bolt excedido; não foi gravado.");
 }
@@ -97,6 +106,9 @@ async function save(trips: any[]) {
 }
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if(req.method!=="POST")return json({ok:false,error:"Método não permitido."},405);
+  let trace:Record<string,unknown>|null=null;
+  let dataWriteAttempted=false;
   try {
     const authHeader = req.headers.get("Authorization") || "";
     const userToken = authHeader.replace(/^Bearer\s+/i, "");
@@ -109,19 +121,29 @@ Deno.serve(async (req: Request) => {
     if ((authData.user.email || "").toLowerCase() !== "simplicity2take@gmail.com") {
       return json({ ok: false, error: "Apenas o administrador pode sincronizar a atividade Bolt." }, 403);
     }
+    const {data:profile,error:profileError}=await admin.from("profiles").select("role,status").eq("id",authData.user.id).maybeSingle();
+    if(profileError||profile?.role!=="admin"||profile?.status!=="Ativo")return json({ok:false,error:"Apenas um administrador ativo pode sincronizar a atividade Bolt."},403);
     let body: any = {};
     try { body = await req.json(); } catch {}
     const requestedDays = Number(body?.days ?? 7);
     const days = Math.min(31, Math.max(1, Number.isFinite(requestedDays) ? Math.floor(requestedDays) : 7));
     const endTs = Math.floor(Date.now() / 1000);
     const startTs = endTs - days * 86400;
+    trace={request_id:crypto.randomUUID(),actor_id:authData.user.id,platform:"bolt",api_version:2,company_id:COMPANY_ID,
+      requested_start:new Date(startTs*1000).toISOString(),requested_end:new Date(endTs*1000).toISOString(),
+      started_at:new Date().toISOString(),coverage_verified:false};
+    console.info(JSON.stringify({event:"platform_report_import_started",...trace}));
     const token = await getBoltToken();
-    const rides=await getRideLogs(token,startTs,endTs);
+    const received=await getRideLogs(token,startTs,endTs);
+    const rides=received.rows;
+    trace={...trace,received_rows:rides.length,expected_total:received.total,page_count:received.pageCount,api_pagination_complete:true,snapshot_consistency_unverified:true};
     const trips=normalizeRideLogs(rides);
+    dataWriteAttempted=true;
     const dbResult=await save(trips);
+    console.info(JSON.stringify({event:"platform_report_import_succeeded",...trace,finished_at:new Date().toISOString(),data_write_attempted:true}));
     return json({ok:true,source:"bolt",apiVersion:2,days,range:{start:new Date(startTs*1000).toISOString(),end:new Date(endTs*1000).toISOString()},stateLogsReceived:0,eventsPrepared:0,tripsReceived:rides.length,tripsPrepared:trips.length,stateHistoryAvailable:false,db:dbResult,tripsEndpoint:"getRideHistory"});
   } catch (error) {
-    console.error("bolt-activity-sync error", error);
+    console.error(JSON.stringify({event:"platform_report_import_failed",...(trace||{platform:"bolt",coverage_verified:false}),finished_at:new Date().toISOString(),data_write_attempted:dataWriteAttempted}));
     return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 502);
   }
 });

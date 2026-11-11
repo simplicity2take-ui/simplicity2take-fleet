@@ -1606,10 +1606,16 @@ async function syncUber() {
 }
 
 function inferUberReportPeriod(fileName) {
-  const match = String(fileName || "").match(/(20\\d{6})-(20\\d{6})/);
+  const match = String(fileName || "").match(/(20\d{6})-(20\d{6})/);
   if (!match) return { start: "", end: "" };
   const iso = value => `${value.slice(0,4)}-${value.slice(4,6)}-${value.slice(6,8)}`;
-  return { start: iso(match[1]), end: iso(match[2]) };
+  const start = iso(match[1]), end = iso(match[2]);
+  const validDate = value => {
+    const date = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  };
+  if (!validDate(start) || !validDate(end) || start > end) return { start: "", end: "" };
+  return { start, end };
 }
 
 async function importUberReport(type, input, periodStart = "", periodEnd = "", dryRun = false) {
@@ -1618,6 +1624,9 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
   const inferred = inferUberReportPeriod(file.name);
   const text = await file.text();
   const inferredPeriod = { start: periodStart || inferred.start, end: periodEnd || inferred.end };
+  if (type === "activity" && (!inferredPeriod.start || !inferredPeriod.end)) {
+    throw new Error("O CSV de atividade precisa de um período válido no nome: AAAAMMDD-AAAAMMDD. A importação não foi guardada.");
+  }
   if (type === "trip_activity" && !dryRun) {
     const previewQuery = new URLSearchParams({ type, dry_run: "true" });
     if (inferredPeriod.start) previewQuery.set("period_start", inferredPeriod.start);
@@ -1648,7 +1657,7 @@ async function importUberReport(type, input, periodStart = "", periodEnd = "", d
       "",
       "ATENÇÃO: viagens sem motorista/viatura associado serão importadas sem essa ligação. Importa primeiro o Estado do motorista Uber para melhorar a correspondência.",
       "Confirma apenas se reviu estes números."
-    ].join("\\n");
+    ].join("\n");
     if (!window.confirm(confirmation)) return;
   }
   if (type === "status" && !dryRun) {

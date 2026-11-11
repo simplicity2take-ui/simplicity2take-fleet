@@ -1265,7 +1265,7 @@ function boltActivitySummary(days = 7, now = Date.now(), week = null) {
   let onlineMinutes = 0, serviceMinutes = 0;
   const grouped = new Map();
   const bucketFor = day => {
-    if(!grouped.has(day)) grouped.set(day,{onlineMinutes:0,serviceMinutes:0,trips:0,distance:0,distanceCount:0});
+    if(!grouped.has(day)) grouped.set(day,{onlineMinutes:0,serviceMinutes:0,trips:0,distance:0,distanceCount:0,coverageMinutes:0});
     return grouped.get(day);
   };
   const byKey = new Map();
@@ -1283,6 +1283,7 @@ function boltActivitySummary(days = 7, now = Date.now(), week = null) {
       const day=localDay(start), boundary=Math.min(end,reportMidnight(reportDayShift(day,1)));
       if(boundary<=start) break;
       const minutes=(boundary-start)/60000, bucket=bucketFor(day);
+      bucket.coverageMinutes+=minutes;
       if(label==="Em serviço") {serviceMinutes+=minutes;bucket.serviceMinutes+=minutes;}
       if(label==="Em serviço" || label==="Online sem serviço") {onlineMinutes+=minutes;bucket.onlineMinutes+=minutes;}
       start=boundary;
@@ -1756,12 +1757,12 @@ function renderActivity() {
 
       <article id="activity-bolt" class="panel activity-section" tabindex="-1">
         <div class="panel-heading"><h2>Atividade Bolt</h2><span class="tag">${escapeHtml(periodLabel)}</span></div>
-        <p class="section-copy">Dias e semanas em hora de Lisboa. Tempos estimados entre leituras de estado, limitados a 24 horas por intervalo; dependem da cobertura dos dados recebidos.</p>
+        <p class="section-copy">Dias e semanas em hora de Lisboa. Tempos estimados entre leituras de estado, limitados a 24 horas por intervalo; dependem da cobertura dos dados recebidos. Sem histórico de estados, os tempos ficam indisponíveis; viagens sem estados não significam zero horas online.</p>
         <div class="table-wrap"><table>
           <thead><tr><th>Dia</th><th>Online</th><th>Em serviço</th><th>Viagens</th><th>Distância</th></tr></thead>
           <tbody>
             ${dayRows.map(([day, value]) => `
-              <tr><td><strong>${escapeHtml(day)}</strong></td><td>${(value.onlineMinutes / 60).toFixed(1)} h</td><td>${(value.serviceMinutes / 60).toFixed(1)} h</td><td>${value.trips}</td><td>${value.distanceCount ? value.distance.toFixed(1) + (value.distanceCount < value.trips ? " · Parcial" : "") : "Indisponível"}</td></tr>
+              <tr><td><strong>${escapeHtml(day)}</strong></td><td>${value.coverageMinutes ? (value.onlineMinutes / 60).toFixed(1) + " h · Estimado" : "Indisponível"}</td><td>${value.coverageMinutes ? (value.serviceMinutes / 60).toFixed(1) + " h · Estimado" : "Indisponível"}</td><td>${value.trips}</td><td>${value.distanceCount ? value.distance.toFixed(1) + (value.distanceCount < value.trips ? " · Parcial" : "") : "Indisponível"}</td></tr>
             `).join("") || emptyRow("Ainda não existem dados de atividade Bolt.")}
           </tbody>
         </table></div>
@@ -1804,7 +1805,7 @@ async function syncBoltActivity() {
     if (error) throw error;
     if (!data?.ok) throw new Error(data?.error || "A sincronização da atividade Bolt falhou.");
     await loadBackendData(); renderApp();
-    showToast(`Atividade Bolt atualizada: ${data.eventsPrepared ?? 0} estados e ${data.tripsPrepared ?? 0} viagens processados.`);
+    showToast(data.stateHistoryAvailable === false ? `Bolt: ${data.tripsPrepared ?? 0} registos de viagens processados. Tempos online indisponíveis nesta consulta.` : `Atividade Bolt atualizada: ${data.eventsPrepared ?? 0} estados e ${data.tripsPrepared ?? 0} registos de viagens processados.`);
   } catch (error) {
     console.error("Bolt activity sync error", error);
     showToast(error?.message || "Não foi possível atualizar a atividade Bolt.");

@@ -148,7 +148,8 @@ begin
       set full_name = coalesce(nullif(trim(full_name), ''), d_name),
           email = coalesce(nullif(trim(email), ''), d_email),
           phone = coalesce(nullif(trim(phone), ''), d_phone),
-          status = d_status,
+          -- Fleet lifecycle is managed by the administrator / inactivity policy.
+          -- A platform account state must not reactivate or deactivate this driver.
           bolt_driver_uuid = coalesce(d_bolt_id, bolt_driver_uuid),
           bolt_partner_uuid = coalesce(d_partner_id, bolt_partner_uuid),
           bolt_last_synced_at = p_now,
@@ -200,7 +201,7 @@ begin
       returning id into v_driver_id; created_count:=created_count+1;
     else
       update public.drivers set full_name=coalesce(nullif(trim(full_name),''),v_name),email=coalesce(nullif(trim(email),''),v_email),phone=coalesce(nullif(trim(phone),''),v_phone),
-        status='Ativo',uber_driver_uuid=v_uuid,uber_status=v_status,uber_realtime_status=v_realtime,
+        uber_driver_uuid=v_uuid,uber_status=v_status,uber_realtime_status=v_realtime,
         uber_status_at=coalesce(nullif(r->>'observed_at','')::timestamptz,now()),uber_last_online_at=v_last_online,
         uber_status_raw=coalesce(r->'raw','{}'::jsonb),uber_last_synced_at=now(),updated_at=now()
       where id=v_driver_id; matched_count:=matched_count+1;

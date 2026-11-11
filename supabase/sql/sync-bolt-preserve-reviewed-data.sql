@@ -125,7 +125,8 @@ begin
       set full_name = coalesce(nullif(trim(full_name), ''), d_name),
           email = coalesce(nullif(trim(email), ''), d_email),
           phone = coalesce(nullif(trim(phone), ''), d_phone),
-          status = d_status,
+          -- Fleet lifecycle is managed by the administrator / inactivity policy.
+          -- A platform account state must not reactivate or deactivate this driver.
           bolt_driver_uuid = coalesce(d_bolt_id, bolt_driver_uuid),
           bolt_partner_uuid = coalesce(d_partner_id, bolt_partner_uuid),
           bolt_last_synced_at = p_now,

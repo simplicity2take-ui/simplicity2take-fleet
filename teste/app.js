@@ -145,7 +145,7 @@ const vehicleDocumentTypes = ["DUA", "Seguro", "Carta Verde", "IPO"];
 
 const navByRole = {
   admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["activity", "Utilização", "UT"], ["documents", "Documentos da Empresa", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
-  driver: [["vehicles", "Meus Veículos", "VE"], ["documents", "Meus Documentos", "DO"], ["account", "Minha Conta", "EU"]]
+  driver: [["shift", "O meu turno", "TU"], ["vehicles", "Meus Veículos", "VE"], ["documents", "Meus Documentos", "DO"], ["account", "Minha Conta", "EU"]]
 };
 
 const $ = selector => document.querySelector(selector);
@@ -173,6 +173,9 @@ const selectors = {
   modalFields: $("#modalFields"),
   toast: $("#toast")
 };
+
+const nativeShiftPortal = window.NativeShiftPortal.create({client:supabaseClient,getUser:currentUser,escapeHtml,visible:()=>state.activeView==='shift'||state.activeView==='activity',changed:()=>{if(state.profile && (state.activeView==='shift'||state.activeView==='activity'))renderApp();}});
+function renderNativeShift(){selectors.pageTitle.textContent='O meu turno';selectors.content.innerHTML=nativeShiftPortal.render();}
 
 function currentUser() {
   if (state.profile) {
@@ -394,6 +397,7 @@ async function openRequestedVehicle() {
   state.requestedVehicleId = null;
   const token = requestedVehicleToken();
   if (!token) return;
+  if(currentUser().role==='driver'){state.activeView='shift';await nativeShiftPortal.lookup(token);return;}
   const vehicle = state.vehicles.find(item =>
     String(item.qrToken || "").toLowerCase() === token.toLowerCase() ||
     String(item.id) === token
@@ -727,7 +731,8 @@ async function startAuthenticatedSession(user) {
   state.profile = { ...profile, email: profile.email || user.email };
   state.sessionUserId = user.id;
   await loadBackendData();
-  state.activeView = profile.role === "admin" ? "dashboard" : "vehicles";
+  state.activeView = profile.role === "admin" ? "dashboard" : "shift";
+  if(profile.role==='driver')await nativeShiftPortal.load();
   await openRequestedVehicle();
   selectors.loginScreen.classList.add("hidden");
   selectors.appShell.classList.remove("hidden");
@@ -738,6 +743,7 @@ async function logout() {
   await supabaseClient.auth.signOut();
   documentBlobCache.clear();
   state.sessionUserId = null;
+  nativeShiftPortal.clear();
   state.profile = null;
   state.boltOnlineRead = null;
   state.shiftMileage = null;
@@ -783,10 +789,12 @@ function setView(view) {
   if (!allowed) return;
   state.activeView = view;
   renderApp();
+  if(view==='shift'||view==='activity')void nativeShiftPortal.load();
 }
 
 function renderContent() {
   const views = {
+    shift: renderNativeShift,
     dashboard: renderDashboard,
     vehicles: renderVehicles,
     drivers: renderDrivers,
@@ -1748,7 +1756,7 @@ function renderActivity() {
         <div class="table-wrap"><table><thead><tr><th>Dia</th><th>Viatura</th><th>Primeira leitura</th><th>Última leitura</th><th>Leituras</th><th>Km observados</th></tr></thead>
         <tbody>${cartrackDistance.rows.map(row=>`<tr><td>${escapeHtml(row.day)}</td><td><strong>${escapeHtml(row.registration)}</strong></td><td>${new Date(row.firstAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.firstOdometer.toFixed(1)} km</td><td>${new Date(row.lastAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.lastOdometer.toFixed(1)} km</td><td>${row.count}</td><td>${row.distance === null ? `<span class="tag expiring">${row.invalid ? "Rever odómetro" : "Leituras insuficientes"}</span>` : row.distance.toFixed(1)+" km"}</td></tr>`).join("") || '<tr><td colspan="6">Sem leituras Cartrack neste período.</td></tr>'}</tbody></table></div>
       </article>
-      ${renderBoltOnlineRead()}${renderBoltRideHistory()}${renderUberRideHistory()}${renderShiftRegister()}${renderShiftMileage()}
+      ${nativeShiftPortal.adminPanel()}${renderBoltOnlineRead()}${renderBoltRideHistory()}${renderUberRideHistory()}${renderShiftRegister()}${renderShiftMileage()}
       ${renderCartrackIgnitionHistory()}
     </section>
   `;
@@ -2917,6 +2925,15 @@ function bindPortalEvents() {
     const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-open-vehicle-doc],[data-doc-driver],[data-open-document-id],[data-edit-document-id],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password],[data-bolt-activity-sync],[data-cartrack-sync],[data-bolt-sync]");
     if (!target) return;
 
+    if(target.dataset.nativeShiftAdminClose && currentUser().role==='admin'){
+      const note=window.prompt('Encerrar este turno agora para libertar a viatura? A hora de agora não confirma a saída real. Indica o motivo (8 a 500 caracteres):');
+      if(note!==null)return nativeShiftPortal.adminClose(target.dataset.nativeShiftAdminClose,note);
+      return;
+    }
+    if(target.dataset.nativeShiftRefresh!==undefined)return nativeShiftPortal.load();
+    if(target.dataset.nativeShiftLookup!==undefined)return nativeShiftPortal.lookup(document.querySelector('#nativeShiftQr')?.value);
+    if(target.dataset.nativeShiftStart!==undefined)return nativeShiftPortal.submit('start');
+    if(target.dataset.nativeShiftEnd!==undefined)return nativeShiftPortal.submit('end');
     const view = target.dataset.view;
     if (view) return setView(view);
     if (target.dataset.viewDriverDocs && currentUser().role === "admin") {
@@ -3037,7 +3054,8 @@ function bindPortalEvents() {
       document.querySelector("#documentViewerModal")?.close();
       documentBlobCache.clear();
       state.sessionUserId = null;
-      state.profile = null;
+      nativeShiftPortal.clear();
+  state.profile = null;
   state.boltOnlineRead = null;
   state.shiftMileage = null;
   state.shiftRegister = null;

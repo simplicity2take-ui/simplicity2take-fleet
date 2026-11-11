@@ -1,0 +1,12 @@
+/* Driver shift clock: clear mobile controls, matching the existing portal. */
+.native-shift-panel { max-width:760px; margin:0 auto 24px; }
+.native-shift-panel h2 { font-size:clamp(1.65rem,5vw,2.3rem); margin:8px 0 14px; }
+.native-shift-panel h3 { font-size:1.6rem; letter-spacing:.06em; margin:22px 0 8px; }
+.native-shift-panel label { display:grid; gap:8px; margin:18px 0 12px; }
+.native-shift-panel input { width:100%; min-height:48px; }
+.native-shift-panel button { min-height:48px; margin:8px 8px 8px 0; }
+.native-shift-panel .primary-button { display:block; width:100%; min-height:58px; font-size:1.1rem; margin:20px 0; }
+.native-shift-panel [role=alert] { padding:14px; border-left:4px solid #ce7500; background:#fff7e7; border-radius:6px; }
+@media(max-width:640px){ .native-shift-panel button { width:100%; margin:8px 0; } }
+
+.pilot-banner { padding:12px 16px; background:#fff4d5; color:#5d4100; border-bottom:1px solid #dbc58b; text-align:center; font:600 14px/1.5 system-ui; }

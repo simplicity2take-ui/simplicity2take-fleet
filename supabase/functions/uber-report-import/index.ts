@@ -118,8 +118,11 @@ function baseDates(periodStart: string | null, periodEnd: string | null) {
 }
 
 Deno.serve(async (req) => {
+  // Request-local metadata: never retain CSV contents, credentials or contacts in logs.
+  let importTrace: Record<string, unknown> | null = null;
   const response = await (async () => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204 });
+  if (req.method !== "POST") return new Response(JSON.stringify({ ok: false, error: "Método não permitido." }), { status: 405, headers: { "Content-Type": "application/json", Allow: "POST, OPTIONS" } });
   try {
     const auth = req.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ")) return new Response(JSON.stringify({ error: "Não autenticado" }), { status: 401, headers: { "Content-Type": "application/json" } });
@@ -127,13 +130,39 @@ Deno.serve(async (req) => {
     const me = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` } });
     if (!me.ok) return new Response(JSON.stringify({ error: "Sessão inválida" }), { status: 401, headers: { "Content-Type": "application/json" } });
 
+    const authenticatedUser = await me.json();
+    if (!authenticatedUser?.id) return new Response(JSON.stringify({ ok: false, error: "Sessão inválida" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    const profiles = await getRestRows("profiles?select=role,status&id=eq." + encodeURIComponent(authenticatedUser.id) + "&limit=2");
+    if (!Array.isArray(profiles) || profiles.length !== 1 || profiles[0].role !== "admin" || profiles[0].status !== "Ativo") {
+      return new Response(JSON.stringify({ ok: false, error: "Apenas um administrador ativo pode importar relatórios Uber." }), { status: 403, headers: { "Content-Type": "application/json" } });
+    }
+
     const url = new URL(req.url);
     const requestedType = url.searchParams.get("type") || "status";
     // The frontend uses a hyphenated type for individual trip CSV previews.
     const type = requestedType === "trip-activity" ? "trip_activity" : requestedType;
     const periodStart = url.searchParams.get("period_start");
     const periodEnd = url.searchParams.get("period_end");
-    const rows = parseCsv(await req.text());
+    const supportedTypes = ["status", "activity", "driver_time_distance", "driver_quality", "driver_payments", "trip_activity", "vehicle_performance", "vehicle_time_distance"];
+    if (!supportedTypes.includes(type)) throw new Error("Tipo de relatório inválido");
+    const dryRun = url.searchParams.get("dry_run");
+    if (dryRun !== null && dryRun !== "true" && dryRun !== "false") throw new Error("Modo de pré-visualização inválido.");
+    if (dryRun === "true" && type !== "status" && type !== "trip_activity") throw new Error("Este relatório não suporta pré-visualização; nenhum dado foi gravado.");
+    const validDate = (value: string | null) => Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value);
+    if ((periodStart || periodEnd || !["status", "trip_activity"].includes(type)) && (!validDate(periodStart) || !validDate(periodEnd) || periodStart! > periodEnd!)) {
+      throw new Error("Indique um período válido para o relatório. Nenhum dado foi gravado.");
+    }
+    const csv = await req.text();
+    if (dryRun !== "true") {
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(csv));
+      importTrace = { request_id: crypto.randomUUID(), actor_id: authenticatedUser.id, platform: "uber", type,
+        requested_period_start: periodStart, requested_period_end: periodEnd,
+        source_sha256: Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join(""),
+        started_at: new Date().toISOString(), coverage_verified: false, source_scope: "uploaded_csv_completeness_unverified" };
+      console.info(JSON.stringify({ event: "platform_report_import_started", ...importTrace }));
+    }
+    const rows = parseCsv(csv);
+    if (importTrace) importTrace.received_rows = rows.length;
     if (!rows.length) throw new Error("CSV vazio ou sem linhas de dados.");
     const headers = new Set(Object.keys(rows[0] || {}));
     const requireAnyHeader = (names: string[], description: string) => {
@@ -508,6 +537,16 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
   })();
+  if (importTrace) {
+    let outcome: any = null;
+    try { outcome = await response.clone().json(); } catch {}
+    const succeeded = response.ok && outcome?.ok === true;
+    // A successful write and a declared period do not prove complete platform coverage.
+    console.info(JSON.stringify({ event: succeeded ? "platform_report_import_succeeded" : "platform_report_import_failed",
+      ...importTrace, finished_at: new Date().toISOString(), http_status: response.status,
+      response_rows: Number.isSafeInteger(outcome?.rows) ? outcome.rows : null,
+      coverage_verified: false }));
+  }
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Access-Control-Allow-Headers", "authorization, x-client-info, apikey, content-type");

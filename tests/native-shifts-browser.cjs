@@ -11,6 +11,7 @@ const stub=`(()=>{
  const client={auth:{onAuthStateChange:fn=>{callbacks.push(fn);return {data:{subscription:{unsubscribe(){}}}}},getSession:async()=>({data:{session:localStorage.getItem('fixture-login')?{user}:null}}),signInWithPassword:async()=>{localStorage.setItem('fixture-login','yes');return {data:{user}}},signOut:async()=>{localStorage.removeItem('fixture-login');callbacks.forEach(fn=>fn('SIGNED_OUT'));return {error:null}}},
  from:table=>{const q={select(){return q},eq(){return q},in(){return q},order(){return q},range(){return q},limit(){return q},single(){return q},then(resolve){return Promise.resolve({data:table==='profiles'?profile:table==='drivers'?[driver]:table==='driver_shift_sessions'?read():[],count:0,error:null}).then(resolve)}};return q},
  rpc:async(name,args)=>{
+  if(name==='fleet_shift_access')return {data:{can_start:true,has_open_shift:read().some(x=>!x.ended_at)}};
   if(name==='fleet_shift_vehicle')return {data:{id:'fixture-vehicle',plate:'AA-00-AA',brand:'Marca',model:'Modelo'}};
   const rows=read();
   if(name==='fleet_shift_start'){

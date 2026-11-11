@@ -6,6 +6,7 @@ const state = {
   profile: null,
   backendReady: false,
   activeView: "dashboard",
+  nativeShiftAvailable: false,
   editing: null,
   smartPreview: null,
   requestedVehicleId: null,
@@ -175,6 +176,16 @@ const selectors = {
 };
 
 const nativeShiftPortal = window.NativeShiftPortal.create({client:supabaseClient,getUser:currentUser,escapeHtml,visible:()=>state.activeView==='shift'||state.activeView==='activity',changed:()=>{if(state.profile && (state.activeView==='shift'||state.activeView==='activity'))renderApp();}});
+async function loadNativeShiftAccess() {
+  const userId=state.sessionUserId;
+  state.nativeShiftAvailable=false;
+  if(!userId || state.profile?.role!=='driver')return;
+  try{
+    const {data,error}=await supabaseClient.rpc('fleet_shift_access');
+    if(state.sessionUserId!==userId)return;
+    state.nativeShiftAvailable=!error&&(data?.can_start===true||data?.has_open_shift===true);
+  }catch{if(state.sessionUserId===userId)state.nativeShiftAvailable=false;}
+}
 function renderNativeShift(){selectors.pageTitle.textContent='O meu turno';selectors.content.innerHTML=nativeShiftPortal.render();}
 
 function currentUser() {
@@ -397,7 +408,7 @@ async function openRequestedVehicle() {
   state.requestedVehicleId = null;
   const token = requestedVehicleToken();
   if (!token) return;
-  if(currentUser().role==='driver'){state.activeView='shift';await nativeShiftPortal.lookup(token);return;}
+  if(currentUser().role==='driver'&&state.nativeShiftAvailable){state.activeView='shift';await nativeShiftPortal.lookup(token);return;}
   const vehicle = state.vehicles.find(item =>
     String(item.qrToken || "").toLowerCase() === token.toLowerCase() ||
     String(item.id) === token
@@ -731,8 +742,9 @@ async function startAuthenticatedSession(user) {
   state.profile = { ...profile, email: profile.email || user.email };
   state.sessionUserId = user.id;
   await loadBackendData();
-  state.activeView = profile.role === "admin" ? "dashboard" : "shift";
-  if(profile.role==='driver')await nativeShiftPortal.load();
+  await loadNativeShiftAccess();
+  state.activeView = profile.role === "admin" ? "dashboard" : state.nativeShiftAvailable ? "shift" : "vehicles";
+  if(profile.role==='driver'&&state.nativeShiftAvailable)await nativeShiftPortal.load();
   await openRequestedVehicle();
   selectors.loginScreen.classList.add("hidden");
   selectors.appShell.classList.remove("hidden");
@@ -744,6 +756,7 @@ async function logout() {
   documentBlobCache.clear();
   state.sessionUserId = null;
   nativeShiftPortal.clear();
+  state.nativeShiftAvailable=false;
   state.profile = null;
   state.boltOnlineRead = null;
   state.shiftMileage = null;
@@ -791,7 +804,7 @@ function renderApp() {
 
 function renderNav() {
   const user = currentUser();
-  selectors.sideNav.innerHTML = navByRole[user.role].map(([view, label, icon]) => `
+  selectors.sideNav.innerHTML = navByRole[user.role].filter(([view])=>view!=='shift'||state.nativeShiftAvailable).map(([view, label, icon]) => `
     <button class="nav-item ${state.activeView === view ? "active" : ""}" type="button" data-view="${view}">
       <span class="nav-icon">${icon}</span>
       <span>${label}</span>
@@ -800,6 +813,7 @@ function renderNav() {
 }
 
 function setView(view) {
+  if(view==='shift'&&!state.nativeShiftAvailable)return;
   const allowed = navByRole[currentUser().role].some(item => item[0] === view);
   if (!allowed) return;
   state.activeView = view;
@@ -3091,6 +3105,7 @@ function bindPortalEvents() {
       documentBlobCache.clear();
       state.sessionUserId = null;
       nativeShiftPortal.clear();
+  state.nativeShiftAvailable=false;
   state.profile = null;
   state.boltOnlineRead = null;
   state.shiftMileage = null;

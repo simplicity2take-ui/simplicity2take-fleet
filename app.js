@@ -1362,7 +1362,7 @@ function renderUberRideHistory() {
   const groups = uberRidePlateGroups(rows);
   const date = value => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }) : "Sem hora";
   const status = value => ({ completed: "Concluída", rider_cancelled: "Cancelada pelo passageiro", driver_cancelled: "Cancelada pelo motorista" })[value] || value || "Não indicado";
-  return `<article class="panel"><h2>Histórico de viagens Uber</h2>
+  return `<article id="activity-uber" class="panel activity-section" tabindex="-1"><h2>Histórico de viagens Uber</h2>
     <p class="section-copy">Consulta dos relatórios importados, por dia em hora de Lisboa. A matrícula é a registada em cada viagem; não indica os períodos online sem serviço nem a hora exata da troca de viatura. A hora apresentada é o fim da viagem ou, quando indisponível, a hora registada no relatório.</p>
     <div class="row-actions"><label>Dia das viagens Uber <input id="uberRideDay" type="date" value="${escapeHtml(state.uberRideDay || localDay(Date.now()))}" max="${localDay(Date.now())}"></label>
       <label>Motorista ou matrícula Uber <input id="uberRideFilter" type="search" value="${escapeHtml(state.uberRideFilter || "")}" placeholder="Ex.: Álvaro ou 82-ZH-99"></label>
@@ -1483,7 +1483,7 @@ function renderShiftRegister() {
   const query = normalize(state.shiftRegisterFilter);
   const rows = (history?.rides || []).filter(row => !query || normalize(row.driver_name).includes(query) || normalize(row.vehicle_plate).includes(query));
   const date = value => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString("pt-PT", {timeZone:"Europe/Lisbon"}) : "Rever data na origem";
-  return `<article class="panel"><h2>Registos de entrada e saída de turno</h2>
+  return `<article id="activity-turns" class="panel activity-section" tabindex="-1"><h2>Registos de entrada e saída de turno</h2>
     <p class="section-copy">Registos submetidos pelos motoristas no formulário Google. A hora é a submissão, não uma confirmação automática da hora de entrega da viatura. A falta de entrada ou saída não prova ausência de trabalho. Os quilómetros do formulário não são utilizados.</p>
     <div class="row-actions"><label>Dia dos registos <input id="shiftRegisterDay" type="date" value="${escapeHtml(state.shiftRegisterDay || localDay(Date.now()))}" max="${localDay(Date.now())}"></label><label>Motorista ou matrícula do turno <input id="shiftRegisterFilter" type="search" value="${escapeHtml(state.shiftRegisterFilter || "")}" placeholder="Ex.: Álvaro ou AC-85-ZT"></label><button type="button" class="secondary-button" data-shift-register ${history?.loading ? "disabled" : ""}>${history?.loading ? "A consultar…" : "Consultar turnos"}</button></div>
     ${history?.error ? `<p role="alert">${escapeHtml(history.error)}</p>` : ""}
@@ -1710,6 +1710,13 @@ function renderActivity() {
   selectors.content.innerHTML = `
     ${heading("Utilização da frota", "Cartrack: última leitura e quilometragem registada. Bolt: atividade e viagens no período selecionado.", `<div class="row-actions"><button class="${week === "current" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="current">Semana atual</button><button class="${week === "previous" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="previous">Semana anterior</button><button class="${!week && periodDays === 1 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="1">24 horas</button><button class="${!week && periodDays === 7 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="7">7 dias</button><button class="${!week && periodDays === 30 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="30">30 dias</button><button class="secondary-button" type="button" data-bolt-activity-sync>Atualizar Bolt</button></div>`)}
 
+    <nav class="activity-shortcuts" aria-label="Consultas de utilização">
+      <a href="#activity-turns"><strong>Turnos</strong><span>Entradas, saídas e quilómetros</span></a>
+      <a href="#activity-uber"><strong>Uber</strong><span>Viagens e matrículas importadas</span></a>
+      <a href="#activity-bolt"><strong>Bolt</strong><span>Atividade e viagens da plataforma</span></a>
+      <a href="#activity-cartrack"><strong>Cartrack</strong><span>Leituras e histórico da viatura</span></a>
+    </nav>
+
     <section class="status-strip">
       ${metric("Viaturas Cartrack", (state.cartrackVehicles || []).length)}
       ${metric("Km Cartrack observados", cartrackDistance.total === null ? "—" : cartrackDistance.total.toFixed(1))}
@@ -1721,7 +1728,7 @@ function renderActivity() {
     </section>
 
     <section class="content-grid">
-      <article class="panel">
+      <article id="activity-cartrack" class="panel activity-section" tabindex="-1">
         <div class="panel-heading">
           <h2>Última leitura das viaturas</h2>
           <span class="tag ${staleCartrackRows.length ? "expiring" : "active"}">${staleCartrackRows.length ? "Há dados antigos" : "Dados recentes"}</span>
@@ -1746,7 +1753,7 @@ function renderActivity() {
         <p class="section-copy" style="margin-top:14px">O estado da viatura usa a data da última leitura Cartrack: leituras com mais de 30 minutos, sem data válida ou com data futura são assinaladas. A coluna Sincronização indica separadamente quando o Fleet consultou a Cartrack; uma consulta recente pode trazer uma leitura antiga. O odómetro Cartrack é telemático; a distância Bolt é apresentada separadamente.</p>
       </article>
 
-      <article class="panel">
+      <article id="activity-bolt" class="panel activity-section" tabindex="-1">
         <div class="panel-heading"><h2>Atividade Bolt</h2><span class="tag">${escapeHtml(periodLabel)}</span></div>
         <p class="section-copy">Dias e semanas em hora de Lisboa. Tempos estimados entre leituras de estado, limitados a 24 horas por intervalo; dependem da cobertura dos dados recebidos.</p>
         <div class="table-wrap"><table>

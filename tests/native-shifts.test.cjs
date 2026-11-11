@@ -20,6 +20,11 @@ for(const file of ['../native-shifts.js','../teste/native-shifts.js']){
  assert.equal(reviewTrips(s,[{...t,vehicle_id:'other'}],d).state,'review');
  assert.equal(reviewTrips(s,[{...t,driver_id:'other'}],d).state,'review');
  assert.equal(reviewTrips(s,[{...t,driver_id:null,platform_driver_uuid:'uber-a'}],d).counts.uber,1);
+ assert.ok(reviewTrips(s,[{...t,driver_id:'other',platform_driver_uuid:'uber-a'}],d).flags.includes('trip_identity_conflict'));
+ assert.ok(reviewTrips(s,[{...t,platform_driver_uuid:'wrong-uuid'}],d).flags.includes('trip_identity_conflict'));
+ assert.ok(reviewTrips(s,[{...t,vehicle_plate:'ZZ-00-ZZ'}],d).flags.includes('trip_vehicle_identity_conflict'));
+ assert.ok(session({...s,closure_kind:'admin'}).flags.includes('admin_closure_requires_review'));
+ assert.equal(reviewTrips({...s,closure_kind:'admin'},[t],d).state,'review');
  assert.ok(reviewTrips(s,[{...t,accepted_at:'2026-11-10T07:00:00Z'}],d).flags.includes('trip_crosses_shift_boundary'));
  const undated={...t,accepted_at:null,finished_at:null};
  assert.equal(reviewTrips(s,[undated],d).state,'pending');

@@ -2925,6 +2925,11 @@ function bindPortalEvents() {
     const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-open-vehicle-doc],[data-doc-driver],[data-open-document-id],[data-edit-document-id],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password],[data-bolt-activity-sync],[data-cartrack-sync],[data-bolt-sync]");
     if (!target) return;
 
+    if(target.dataset.nativeShiftAdminClose && currentUser().role==='admin'){
+      const note=window.prompt('Encerrar este turno agora para libertar a viatura? A hora de agora não confirma a saída real. Indica o motivo (8 a 500 caracteres):');
+      if(note!==null)return nativeShiftPortal.adminClose(target.dataset.nativeShiftAdminClose,note);
+      return;
+    }
     if(target.dataset.nativeShiftRefresh!==undefined)return nativeShiftPortal.load();
     if(target.dataset.nativeShiftLookup!==undefined)return nativeShiftPortal.lookup(document.querySelector('#nativeShiftQr')?.value);
     if(target.dataset.nativeShiftStart!==undefined)return nativeShiftPortal.submit('start');

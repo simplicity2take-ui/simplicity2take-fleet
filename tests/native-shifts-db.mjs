@@ -2,7 +2,7 @@ import { PGlite } from '../tools/driver-lifecycle-tests/node_modules/@electric-s
 import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const db=new PGlite();
-const p1='10000000-0000-4000-8000-000000000001',p2='10000000-0000-4000-8000-000000000002';
+const p1='10000000-0000-4000-8000-000000000001',p2='10000000-0000-4000-8000-000000000002',admin='10000000-0000-4000-8000-000000000003';
 const d1='20000000-0000-4000-8000-000000000001',d2='20000000-0000-4000-8000-000000000002';
 const v1='30000000-0000-4000-8000-000000000001';
 const rq=n=>`40000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -17,7 +17,7 @@ try{
  CREATE TABLE vehicles(id uuid PRIMARY KEY,qr_token text UNIQUE,plate text,brand text,model text,status text);
  GRANT SELECT ON drivers,profiles TO authenticated;
  CREATE FUNCTION public.is_admin() RETURNS boolean LANGUAGE sql SECURITY DEFINER SET search_path='' AS $$ SELECT EXISTS(SELECT 1 FROM public.profiles WHERE id=auth.uid() AND role='admin' AND status='Ativo') $$;
- INSERT INTO profiles VALUES('${p1}','driver','Ativo'),('${p2}','driver','Ativo');
+ INSERT INTO profiles VALUES('${p1}','driver','Ativo'),('${p2}','driver','Ativo'),('${admin}','admin','Ativo');
  INSERT INTO drivers VALUES('${d1}','${p1}','Test one','Ativo'),('${d2}','${p2}','Test two','Ativo');
  INSERT INTO vehicles VALUES('${v1}','${'a'.repeat(32)}','AA-00-AA','Test','Car','Ativo'),('30000000-0000-4000-8000-000000000002','${'b'.repeat(32)}','BB-00-BB','Test','Car','Ativo');`);
  await db.exec(await readFile(new URL('../supabase/sql/native-driver-shifts.sql',import.meta.url),'utf8'));
@@ -42,10 +42,23 @@ try{
  assert.deepEqual((await first('select public.fleet_shift_end($1,$2) as result',[start.id,rq(5)])).result,ended);
  await rejected('select public.fleet_shift_end($1,$2)',[start.id,rq(6)],/já está terminado/);
  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[p2]);
- assert.equal((await first('select public.fleet_shift_start($1,$2) as result',['a'.repeat(32),rq(7)])).result.driver_id,d2);
+ const secondShift=(await first('select public.fleet_shift_start($1,$2) as result',['a'.repeat(32),rq(7)])).result;
+ assert.equal(secondShift.driver_id,d2);
  await db.exec('RESET ROLE');await db.query("update profiles set status='Inativo' where id=$1",[p2]);
  await db.exec('SET ROLE authenticated');
  await rejected('select public.fleet_shift_vehicle($1)',['a'.repeat(32)],/inativa/);
  assert.equal((await db.query('select * from driver_shift_sessions')).rows.length,0);
+ await db.query("select set_config('request.jwt.claim.sub',$1,false)",[p1]);
+ await rejected('select public.fleet_shift_admin_close($1,$2,$3)',[secondShift.id,rq(8),'Synthetic explanation'],/Administrador/);
+ await db.query("select set_config('request.jwt.claim.sub',$1,false)",[admin]);
+ assert.equal((await db.query('select * from driver_shift_sessions')).rows.length,2);
+ await rejected('select public.fleet_shift_admin_close($1,$2,$3)',[secondShift.id,rq(8),'short'],/motivo/);
+ const closed=(await first('select public.fleet_shift_admin_close($1,$2,$3) as result',[secondShift.id,rq(8),'Synthetic explanation'])).result;
+ assert.equal(closed.driver_id,d2);assert.equal(closed.started_at,secondShift.started_at);
+ assert.equal(closed.closure_kind,'admin');assert.equal(closed.closed_by,admin);
+ assert.equal(closed.trip_review.state,'review');assert.equal(closed.cartrack_review.state,'pending');
+ assert.deepEqual((await first('select public.fleet_shift_admin_close($1,$2,$3) as result',[secondShift.id,rq(8),'Synthetic explanation'])).result,closed);
+ await db.query("select set_config('request.jwt.claim.sub',$1,false)",[p1]);
+ assert.equal((await first('select public.fleet_shift_start($1,$2) as result',['a'.repeat(32),rq(9)])).result.driver_id,d1);
  console.log('PASS native shift database: authentication, QR allowlist, RLS isolation, server time, idempotency, exclusive driver/vehicle, handover and inactive accounts');
 }finally{await db.close();}

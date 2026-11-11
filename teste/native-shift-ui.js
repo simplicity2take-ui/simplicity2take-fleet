@@ -4,7 +4,7 @@
    let rows=[],selected=null,error='',busy=false,loaded=false,loadVersion=0;
    const h=escapeHtml,date=value=>value?new Date(value).toLocaleString('pt-PT',{timeZone:'Europe/Lisbon'}):'Em curso';
    const active=()=>rows.find(r=>!r.ended_at);
-   const notices={shift_duration_review:'Duração do turno a rever',trip_vehicle_mismatch:'Viatura diferente nas viagens',trip_driver_mismatch:'Outro motorista nas viagens da viatura',trip_driver_unconfirmed:'Motorista de viagem por confirmar',trip_crosses_shift_boundary:'Viagem atravessa o limite do turno',undated_driver_trips:'Viagens sem hora confirmada',partial_trip_history:'Histórico de viagens parcial',platform_coverage_unconfirmed:'Cobertura Uber/Bolt por confirmar',open_shift_overdue:'Turno aberto há mais de 18 horas'};
+   const notices={admin_closure_requires_review:'Encerramento administrativo: saída real por confirmar',trip_identity_conflict:'Identificadores do motorista em conflito',trip_vehicle_identity_conflict:'Identificadores da viatura em conflito',shift_duration_review:'Duração do turno a rever',trip_vehicle_mismatch:'Viatura diferente nas viagens',trip_driver_mismatch:'Outro motorista nas viagens da viatura',trip_driver_unconfirmed:'Motorista de viagem por confirmar',trip_crosses_shift_boundary:'Viagem atravessa o limite do turno',undated_driver_trips:'Viagens sem hora confirmada',partial_trip_history:'Histórico de viagens parcial',platform_coverage_unconfirmed:'Cobertura Uber/Bolt por confirmar',open_shift_overdue:'Turno aberto há mais de 18 horas'};
    function checks(row){
      const review=row.trip_review||{},km=row.cartrack_review||{};
      const flags=(review.flags||[]).map(f=>notices[f]||'Dados por conferir');
@@ -48,6 +48,18 @@
      }catch{if(getUser()?.id===user.id){await load();error='O pedido não foi confirmado. Atualiza os turnos antes de tentar novamente. Pode existir um turno já aberto ou a viatura estar ocupada.';}}
      finally{busy=false;changed();}
    }
+   async function adminClose(shiftId,note){
+     const user=getUser();if(busy||user?.role!=='admin')return;
+     if(!note||note.trim().length<8||note.trim().length>500){error='Indica um motivo entre 8 e 500 caracteres.';changed();return;}
+     const pending=request('admin_close',null,shiftId);busy=true;error='';changed();
+     try{
+       const {data,error:e}=await client.rpc('fleet_shift_admin_close',{p_shift_id:shiftId,p_request_id:pending.id,p_note:note.trim()});
+       if(e||!data?.id)throw Error('not_confirmed');
+       try{sessionStorage.removeItem(pending.key);}catch{}
+       if(getUser()?.id===user.id)await load();
+     }catch{if(getUser()?.id===user.id){await load();error='Encerramento não confirmado. Confirma os registos apresentados antes de repetir.';}}
+     finally{busy=false;changed();}
+   }
    function render(){
      const open=active();
      const overdue=open&&Date.now()-Date.parse(open.started_at)>18*3600000;
@@ -60,11 +72,11 @@
        <p class="section-copy">A hora é confirmada pelo servidor. Se a ligação falhar, atualiza para confirmar se o pedido ficou registado. Não introduzas quilómetros manualmente.</p></section>
        <section class="panel"><h2>Os meus últimos turnos</h2>${history()}</section>`;
    }
-   function history(){return `<div class="table-wrap"><table><thead><tr><th>Motorista / viatura</th><th>Entrada</th><th>Saída</th><th>Conferência automática</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${h(r.driver_name)}<br><strong>${h(r.vehicle_plate)}</strong></td><td>${h(date(r.started_at))}</td><td>${h(date(r.ended_at))}</td><td>${checks(r)}</td></tr>`).join('')||'<tr><td colspan="4">Sem turnos carregados.</td></tr>'}</tbody></table></div>`;}
+   function history(){return `<div class="table-wrap"><table><thead><tr><th>Motorista / viatura</th><th>Entrada</th><th>Saída</th><th>Conferência automática</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${h(r.driver_name)}<br><strong>${h(r.vehicle_plate)}</strong></td><td>${h(date(r.started_at))}</td><td>${h(date(r.ended_at))}${r.closure_kind==='admin'?`<p class="section-copy">Encerramento administrativo; não confirma a saída real.<br>${h(r.closure_note||'')}</p>`:''}</td><td>${checks(r)}${getUser()?.role==='admin'&&!r.ended_at?`<button class="secondary-button" type="button" data-native-shift-admin-close="${h(r.id)}" ${busy?'disabled':''}>Encerrar com motivo</button>`:''}</td></tr>`).join('')||'<tr><td colspan="4">Sem turnos carregados.</td></tr>'}</tbody></table></div>`;}
    function adminPanel(){return `<article class="panel"><h2>Turnos registados no Fleet</h2><p class="section-copy">Últimos 100 turnos da aplicação. Conferência automática de viagens Uber/Bolt e leituras Cartrack; dados incompletos ficam por confirmar. Os registos do formulário Google mantêm-se separados.</p><button class="secondary-button" type="button" data-native-shift-refresh>Atualizar turnos Fleet</button>${error?`<p role="alert">${h(error)}</p>`:''}${history()}</article>`;}
    function clear(){loadVersion++;rows=[];selected=null;error='';busy=false;loaded=false;}
    if(typeof root.setInterval==='function')root.setInterval(()=>{if(!busy&&getUser()?.id&&visible()&&root.document?.visibilityState==='visible')void load();},60000);
-   return {load,lookup,submit,render,adminPanel,clear};
+   return {load,lookup,submit,adminClose,render,adminPanel,clear};
  }
  root.NativeShiftPortal={create};
 })(globalThis);

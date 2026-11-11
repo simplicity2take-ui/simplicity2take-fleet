@@ -8,6 +8,7 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
    rows=[{id:'s',driver_name:'Synthetic',driver_id:'d',vehicle_id:'v',vehicle_plate:'AA-00-AA',started_at:'2026-11-10T08:00:00Z',ended_at:null}];
    if(failAfterStart)throw Error('lost response');return {data:rows[0]};
   }
+  if(name==='fleet_shift_admin_close'){rows[0]={...rows[0],ended_at:'2026-11-10T16:00:00Z',closure_kind:'admin',closure_note:args.p_note};return {data:rows[0]};}
   rows[0]={...rows[0],ended_at:'2026-11-10T16:00:00Z'};return {data:rows[0]};
  }};
  const c={console,URL,Date,Number,JSON,crypto:{randomUUID:()=>String(++counter)},navigator:{onLine:true},sessionStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},window:{location:{origin:'https://fleet.example.test'}}};
@@ -25,6 +26,13 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
  assert.deepEqual(Object.keys(calls.find(x=>x.name==='fleet_shift_end').args).sort(),['p_request_id','p_shift_id']);
  c.navigator.onLine=false;const n=calls.length;await portal.submit('start');assert.equal(calls.length,n);assert.ok(portal.render().includes('Sem ligação'));
  c.navigator.onLine=true;failAfterStart=true;await portal.submit('start');assert.ok(portal.render().includes('Turno em curso'));assert.equal(rows.length,1);
+ const beforeAdmin=calls.length;await portal.adminClose('s','Synthetic explanation');assert.equal(calls.length,beforeAdmin);
+ selectedUser={id:'admin',role:'admin'};await portal.load();assert.ok(portal.adminPanel().includes('Encerrar com motivo'));
+ await portal.adminClose('s','short');assert.equal(calls.length,beforeAdmin);
+ await portal.adminClose('s','Synthetic explanation <script>');
+ assert.ok(portal.adminPanel().includes('Encerramento administrativo'));
+ assert.ok(portal.adminPanel().includes('&lt;script&gt;'));
+ assert.deepEqual(Object.keys(calls.find(x=>x.name==='fleet_shift_admin_close').args).sort(),['p_note','p_request_id','p_shift_id']);
  portal.clear();selectedUser=null;assert.ok(!portal.render().includes('AA-00-AA'));
  console.log('PASS driver shift UI: safe QR lookup, escaping, duplicate-click prevention, server-only arguments, pending mileage, offline rejection, lost-response recovery and logout clear');
 })().catch(e=>{console.error(e);process.exitCode=1});

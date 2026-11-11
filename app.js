@@ -740,6 +740,7 @@ async function logout() {
   state.sessionUserId = null;
   state.profile = null;
   state.boltOnlineRead = null;
+  state.shiftMileage = null;
   state.shiftRegister = null;
   state.shiftRegisterDay = null;
   state.shiftRegisterFilter = null;
@@ -1411,6 +1412,71 @@ async function loadUberRideHistory() {
 }
 
 
+function renderShiftMileage() {
+  const history = state.shiftMileage;
+  const normalize = value => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const query = normalize(history?.filter);
+  const sessions = history?.events ? ShiftMileage.sessions(history.events).filter(session => {
+    const row=session.entry||session.exit;
+    return [session.entry,session.exit].some(event=>{const at=ShiftMileage.timestamp(event?.registered_at);return at!==null&&at>=history.dayStart&&at<history.dayEnd;})
+      && (!query || normalize(row.driver_name).includes(query) || normalize(row.vehicle_plate).includes(query));
+  }) : [];
+  const date = value => value===null||value===undefined ? "Sem registo" : new Date(value).toLocaleString("pt-PT",{timeZone:"Europe/Lisbon"});
+  const reading = value => value ? `${value.km.toFixed(2)} km<br><small>${escapeHtml(date(value.at))} · desvio ${Math.round(value.gapSeconds)} s</small>` : "Leitura por confirmar";
+  const reason = value => ({partial_history:"Histórico parcial",incomplete_shift:"Rever entrada/saída ou associação",missing_reading:"Falta leitura próxima",inconsistent_readings:"Leituras inconsistentes"})[value]||"";
+  return `<article class="panel"><h2>Quilómetros Cartrack dos turnos</h2>
+    <p class="section-copy">Usa o dia e a pesquisa dos registos de turno acima. Junta apenas entradas e saídas declaradas do mesmo motorista e viatura, incluindo turnos que atravessam a meia-noite. Leituras de odómetro no início/fim da ignição, até 15 minutos da submissão do formulário. Mostra a hora real e o desvio de cada leitura. A diferença é a distância entre leituras, não uma medição exata de todo o turno. Não usa quilómetros dos formulários nem trajetos privados.</p>
+    <button class="secondary-button" type="button" data-shift-mileage ${history?.loading?"disabled":""}>${history?.loading?"A consultar…":"Consultar quilómetros Cartrack dos turnos"}</button>
+    ${history?.error?`<p role="alert">${escapeHtml(history.error)}</p>`:""}
+    ${history?.events?`<p class="section-copy">${sessions.length} turnos ou registos incompletos apresentados para ${escapeHtml(history.day)}. ${history.partial?"Consulta parcial: não são calculadas distâncias.":"Todas as páginas recebidas."} Uma entrada ou saída em falta não é preenchida automaticamente.</p>
+      <div class="table-wrap"><table><thead><tr><th>Motorista / viatura</th><th>Entrada declarada</th><th>Saída declarada</th><th>Odómetro inicial Cartrack</th><th>Odómetro final Cartrack</th><th>Distância entre leituras</th></tr></thead><tbody>${sessions.map(session=>{
+        const row=session.entry||session.exit,result=ShiftMileage.mileage(session,history.trips,history.partial);
+        return `<tr><td>${escapeHtml(row.driver_name)}<br><strong>${escapeHtml(row.vehicle_plate)}</strong></td><td>${escapeHtml(date(session.entry?.registered_at))}</td><td>${escapeHtml(date(session.exit?.registered_at))}</td><td>${reading(result.start)}</td><td>${reading(result.end)}</td><td>${result.distance===null?escapeHtml(reason(result.reason)):`${result.distance.toFixed(2)} km`}</td></tr>`;
+      }).join("")||'<tr><td colspan="6">Sem registos de turno para este dia e pesquisa.</td></tr>'}</tbody></table></div>`:""}
+  </article>`;
+}
+
+async function loadShiftMileage() {
+  if(state.profile?.role!=="admin"||state.shiftMileage?.loading)return;
+  const day=document.querySelector("#shiftRegisterDay")?.value||"";
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||day>localDay(Date.now())||localDay(reportMidnight(day))!==day){showToast("Escolhe um dia válido até hoje.");return;}
+  const dayStart=reportMidnight(day),dayEnd=reportMidnight(reportDayShift(day,1));
+  const start=reportMidnight(reportDayShift(day,-2)),end=Math.min(Date.now(),reportMidnight(reportDayShift(day,2)));
+  const filter=document.querySelector("#shiftRegisterFilter")?.value.trim()||"";
+  state.shiftRegisterDay=day;state.shiftRegisterFilter=filter;
+  const request={loading:true,day,filter},userId=state.sessionUserId;
+  state.shiftMileage=request;renderActivity();
+  const current=()=>state.shiftMileage===request&&state.sessionUserId===userId&&state.profile?.role==="admin";
+  try {
+    const events=[],trips=[];let partial=false,total=null;
+    while(events.length<5000){
+      const result=await supabaseClient.from("vehicle_shift_events").select("*",{count:"exact"})
+        .gte("registered_at",new Date(start).toISOString()).lt("registered_at",new Date(end).toISOString())
+        .order("registered_at",{ascending:true}).order("id",{ascending:true})
+        .range(events.length,Math.min(events.length+500,5000)-1);
+      if(!current())return;
+      if(result.error)throw new Error("Não foi possível carregar os turnos para esta consulta.");
+      total=result.count??total;
+      if(!result.data?.length)break;
+      events.push(...result.data);
+      if(total!==null&&events.length>=total)break;
+    }
+    partial=total===null?events.length===5000:total>events.length;
+    for(let page=1;page<=10;page++){
+      const {data,error}=await supabaseClient.functions.invoke("cartrack-history",{body:{start:new Date(start).toISOString(),end:new Date(end).toISOString(),page}});
+      if(!current())return;
+      if(error||!data?.success||!Array.isArray(data.trips))throw new Error("Não foi possível obter as leituras históricas Cartrack.");
+      trips.push(...data.trips);
+      const lastPage=data.meta?.last_page==null?NaN:Number(data.meta.last_page);
+      if((Number.isInteger(lastPage)&&lastPage>0&&page>=lastPage)||data.trips.length===0||(!Number.isFinite(lastPage)&&data.trips.length<1000))break;
+      if(page===10)partial=true;
+    }
+    if(current())state.shiftMileage={day,filter,dayStart,dayEnd,events,trips,partial};
+  }catch(error){if(current())state.shiftMileage={day,filter,error:error.message};}
+  if(state.activeView==="activity"&&state.sessionUserId===userId&&state.profile?.role==="admin")renderActivity();
+}
+
+
 function renderShiftRegister() {
   const history = state.shiftRegister;
   const normalize = value => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -1698,7 +1764,7 @@ function renderActivity() {
         <div class="table-wrap"><table><thead><tr><th>Dia</th><th>Viatura</th><th>Primeira leitura</th><th>Última leitura</th><th>Leituras</th><th>Km observados</th></tr></thead>
         <tbody>${cartrackDistance.rows.map(row=>`<tr><td>${escapeHtml(row.day)}</td><td><strong>${escapeHtml(row.registration)}</strong></td><td>${new Date(row.firstAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.firstOdometer.toFixed(1)} km</td><td>${new Date(row.lastAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.lastOdometer.toFixed(1)} km</td><td>${row.count}</td><td>${row.distance === null ? `<span class="tag expiring">${row.invalid ? "Rever odómetro" : "Leituras insuficientes"}</span>` : row.distance.toFixed(1)+" km"}</td></tr>`).join("") || '<tr><td colspan="6">Sem leituras Cartrack neste período.</td></tr>'}</tbody></table></div>
       </article>
-      ${renderBoltOnlineRead()}${renderBoltRideHistory()}${renderUberRideHistory()}${renderShiftRegister()}
+      ${renderBoltOnlineRead()}${renderBoltRideHistory()}${renderUberRideHistory()}${renderShiftRegister()}${renderShiftMileage()}
       ${renderCartrackIgnitionHistory()}
     </section>
   `;
@@ -2929,6 +2995,7 @@ function bindPortalEvents() {
       if ([1, 7, 30].includes(days)) { state.cartrackIgnitionHistory = null; state.cartrackIgnitionDay = ""; state.activityPeriodDays = days; state.activityWeek = null; renderActivity(); }
       return;
     }
+    if (target.dataset.shiftMileage !== undefined) return loadShiftMileage();
     if (target.dataset.shiftRegister !== undefined) return loadShiftRegister();
     if (target.dataset.uberRides !== undefined) return loadUberRideHistory();
     if (target.dataset.boltRides !== undefined) return loadBoltRideHistory();
@@ -2999,6 +3066,7 @@ function bindPortalEvents() {
       state.sessionUserId = null;
       state.profile = null;
   state.boltOnlineRead = null;
+  state.shiftMileage = null;
   state.shiftRegister = null;
   state.shiftRegisterDay = null;
   state.shiftRegisterFilter = null;

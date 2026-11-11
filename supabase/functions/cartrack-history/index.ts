@@ -54,11 +54,17 @@ Deno.serve(async (req) => {
     if (!response.ok) return new Response(JSON.stringify({success:false,upstreamStatus:response.status,error:"A Cartrack não disponibilizou o histórico da ignição nesta consulta."}),{status:502,headers:{...corsHeaders,"Content-Type":"application/json"}});
     const payload = await response.json();
     if (!Array.isArray(payload?.data)) throw new Error("Unexpected response");
+    const odometerKm = (value: unknown): number | null => {
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+      return value / 1000;
+    };
     const trips = payload.data.map((trip:any)=>({
       id:trip.trip_id,
       registration:String(trip.registration || "").trim().toUpperCase(),
       start:trip.start_timestamp ?? null,
       end:trip.end_timestamp ?? null,
+      startOdometerKm:odometerKm(trip.start_odometer),
+      endOdometerKm:odometerKm(trip.end_odometer),
       durationSeconds:trip.trip_duration_seconds == null ? null : Number(trip.trip_duration_seconds),
       duration:trip.trip_duration ?? null
     }));

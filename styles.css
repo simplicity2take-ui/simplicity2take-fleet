@@ -2339,3 +2339,15 @@ textarea:focus {
     align-items: flex-start;
   }
 }
+
+/* Direct access to the main utilisation queries, including small screens. */
+.activity-shortcuts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:0 0 24px; }
+.activity-shortcuts a { display:flex; flex-direction:column; gap:5px; min-height:88px; padding:18px; border:1px solid var(--line); border-radius:16px; background:#fff; color:var(--blue-dark); text-decoration:none; box-shadow:0 4px 14px #0f4c8108; }
+.activity-shortcuts a:hover { border-color:var(--blue); background:#f0f9ff; }
+.activity-shortcuts a:focus-visible { outline:3px solid var(--blue); outline-offset:3px; }
+.activity-shortcuts strong { font-size:1.1rem; }
+.activity-shortcuts span { color:var(--muted); font-size:.85rem; line-height:1.4; }
+.activity-section { scroll-margin-top:24px; }
+.activity-section:target { outline:2px solid var(--blue); outline-offset:4px; }
+@media(max-width:900px) { .activity-shortcuts { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:400px) { .activity-shortcuts { grid-template-columns:1fr; } }

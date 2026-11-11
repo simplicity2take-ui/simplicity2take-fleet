@@ -38,6 +38,13 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
  assert.ok(portal.adminPanel().includes('Encerramento administrativo'));
  assert.ok(portal.adminPanel().includes('&lt;script&gt;'));
  assert.deepEqual(Object.keys(calls.find(x=>x.name==='fleet_shift_admin_close').args).sort(),['p_note','p_request_id','p_shift_id']);
+ rows[0]={...rows[0],cartrack_review:{distance:12.5,start:{at:Date.parse('2026-11-10T08:01:00Z'),km:100,gapSeconds:60},end:{at:Date.parse('2026-11-10T15:59:00Z'),km:112.5,gapSeconds:60}}};
+ await portal.load();const details=portal.adminPanel();
+ assert.ok(details.includes('12.50 km entre leituras Cartrack'));
+ assert.ok(details.includes('Leitura inicial: 10/11/2026, 08:01:00'));
+ assert.ok(details.includes('Leitura final: 10/11/2026, 15:59:00'));
+ assert.ok(details.includes('100 km'));assert.ok(details.includes('112.5 km'));
+ rows[0].cartrack_review.distance=NaN;await portal.load();assert.ok(portal.adminPanel().includes('Quilómetros Cartrack por confirmar'));
  portal.clear();selectedUser=null;assert.ok(!portal.render().includes('AA-00-AA'));
  console.log('PASS driver shift UI: safe QR lookup, escaping, duplicate-click prevention, server-only arguments, pending mileage, offline rejection, lost-response recovery and logout clear');
 })().catch(e=>{console.error(e);process.exitCode=1});

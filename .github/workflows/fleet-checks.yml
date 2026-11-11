@@ -1,0 +1,57 @@
+name: Fleet automated checks
+on:
+  push:
+    paths:
+      - '**/*.js'
+      - '**/*.cjs'
+      - '**/*.mjs'
+      - 'supabase/**/*.ts'
+      - 'supabase/**/*.sql'
+      - 'tools/driver-lifecycle-tests/package*.json'
+      - '.github/workflows/fleet-checks.yml'
+  pull_request:
+    paths:
+      - '**/*.js'
+      - '**/*.cjs'
+      - '**/*.mjs'
+      - 'supabase/**/*.ts'
+      - 'supabase/**/*.sql'
+      - 'tools/driver-lifecycle-tests/package*.json'
+      - '.github/workflows/fleet-checks.yml'
+permissions:
+  contents: read
+concurrency:
+  group: fleet-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  isolated-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Set up Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install locked isolated test runtime
+        run: npm ci --prefix tools/driver-lifecycle-tests
+      - name: Check JavaScript syntax
+        run: |
+          node --check app.js
+          node --check teste/app.js
+          node --check native-shift-ui.js
+      - name: Verify shared shift modules
+        run: |
+          cmp native-shifts.js teste/native-shifts.js
+          cmp native-shift-ui.js teste/native-shift-ui.js
+          cmp native-shifts.js supabase/functions/shift-review/native-shifts.js
+          cmp shift-mileage.js supabase/functions/shift-review/shift-mileage.js
+      - name: Run portal and worker regressions
+        run: node --test tests/*.test.cjs
+      - name: Verify database isolation and shift lifecycle
+        run: node tests/native-shifts-db.mjs
+      - name: Verify platform synchronization lifecycle
+        run: npm test --prefix tools/driver-lifecycle-tests

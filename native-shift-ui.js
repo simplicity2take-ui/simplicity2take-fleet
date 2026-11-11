@@ -8,8 +8,8 @@
    function checks(row){
      const review=row.trip_review||{},km=row.cartrack_review||{};
      const flags=(review.flags||[]).map(f=>notices[f]||'Dados por conferir');
-     const distance=typeof km.distance==='number'?`${km.distance.toFixed(2)} km entre leituras Cartrack`:'Quilómetros Cartrack por confirmar';
-     return `<strong>${h(distance)}</strong>${km.start&&km.end?`<p class="section-copy">Desvio das leituras: ${Math.round(km.start.gapSeconds)} s / ${Math.round(km.end.gapSeconds)} s.</p>`:''}${km.refresh_state==='pending'?'<p class="section-copy">Leituras Cartrack anteriores; atualização pendente.</p>':''}<p class="section-copy">${h(review.state==='review'?'Requer revisão':review.state==='checked_available_data'?'Dados recebidos conferidos':'Conferência automática pendente')}. ${h(flags.join(' · '))}</p>`;
+     const distance=typeof km.distance==='number'&&Number.isFinite(km.distance)&&km.distance>=0?`${km.distance.toFixed(2)} km entre leituras Cartrack`:'Quilómetros Cartrack por confirmar';
+     return `<strong>${h(distance)}</strong>${km.start&&km.end?`<p class="section-copy">Leitura inicial: ${h(date(km.start.at))} · ${h(km.start.km)} km.<br>Leitura final: ${h(date(km.end.at))} · ${h(km.end.km)} km.<br>Desvio face à entrada/saída: ${h(Math.round(km.start.gapSeconds))} s / ${h(Math.round(km.end.gapSeconds))} s.</p>`:''}${km.refresh_state==='pending'?'<p class="section-copy">Leituras Cartrack anteriores; atualização pendente.</p>':''}<p class="section-copy">${h(review.state==='review'?'Requer revisão':review.state==='checked_available_data'?'Dados recebidos conferidos':'Conferência automática pendente')}. ${h(flags.join(' · '))}</p>`;
    }
    async function load(){
      const user=getUser(),version=++loadVersion;if(!user?.id)return;

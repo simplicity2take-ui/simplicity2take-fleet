@@ -740,6 +740,9 @@ async function logout() {
   state.sessionUserId = null;
   state.profile = null;
   state.boltOnlineRead = null;
+  state.shiftRegister = null;
+  state.shiftRegisterDay = null;
+  state.shiftRegisterFilter = null;
   state.uberRideHistory = null;
   state.uberRideDay = null;
   state.uberRideFilter = null;
@@ -1383,6 +1386,59 @@ async function loadUberRideHistory() {
 }
 
 
+function renderShiftRegister() {
+  const history = state.shiftRegister;
+  const normalize = value => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const query = normalize(state.shiftRegisterFilter);
+  const rows = (history?.rides || []).filter(row => !query || normalize(row.driver_name).includes(query) || normalize(row.vehicle_plate).includes(query));
+  const date = value => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString("pt-PT", {timeZone:"Europe/Lisbon"}) : "Rever data na origem";
+  return `<article class="panel"><h2>Registos de entrada e saída de turno</h2>
+    <p class="section-copy">Registos submetidos pelos motoristas no formulário Google. A hora é a submissão, não uma confirmação automática da hora de entrega da viatura. A falta de entrada ou saída não prova ausência de trabalho. Os quilómetros do formulário não são utilizados.</p>
+    <div class="row-actions"><label>Dia dos registos <input id="shiftRegisterDay" type="date" value="${escapeHtml(state.shiftRegisterDay || localDay(Date.now()))}" max="${localDay(Date.now())}"></label><label>Motorista ou matrícula do turno <input id="shiftRegisterFilter" type="search" value="${escapeHtml(state.shiftRegisterFilter || "")}" placeholder="Ex.: Álvaro ou AC-85-ZT"></label><button type="button" class="secondary-button" data-shift-register ${history?.loading ? "disabled" : ""}>${history?.loading ? "A consultar…" : "Consultar turnos"}</button></div>
+    ${history?.error ? `<p role="alert">${escapeHtml(history.error)}</p>` : ""}
+    ${history?.rides ? `<p class="section-copy">${rows.length} registos apresentados. ${history.partial ? "Resultado parcial: existem mais registos." : "Todas as páginas recebidas."} O histórico é uma cópia importada do Google Drive; esta consulta não atualiza o ficheiro de origem.</p><div class="table-wrap"><table><thead><tr><th>Motorista declarado</th><th>Matrícula declarada</th><th>Registo</th><th>Hora de submissão (Lisboa)</th><th>Conferência</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHtml(row.driver_name)}</td><td>${escapeHtml(row.vehicle_plate)}</td><td>${row.event_kind === "entry" ? "Entrada de turno" : row.event_kind === "exit" ? "Saída de turno" : "Rever tipo"}</td><td>${escapeHtml(date(row.registered_at))}</td><td>Linha ${Number(row.source_row)}${row.review_flags?.length ? " · Rever associação ou data" : ""}</td></tr>`).join("") || '<tr><td colspan="5">Sem registos importados para este dia e pesquisa. Não significa que não houve turno.</td></tr>'}</tbody></table></div>` : ""}
+  </article>`;
+}
+
+
+async function loadShiftRegister() {
+  if (state.profile?.role !== "admin" || state.shiftRegister?.loading) return;
+  const day = document.querySelector("#shiftRegisterDay")?.value || "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > localDay(Date.now()) || localDay(reportMidnight(day)) !== day) {
+    showToast("Escolhe um dia válido até hoje."); return;
+  }
+  state.shiftRegisterDay = day;
+  state.shiftRegisterFilter = document.querySelector("#shiftRegisterFilter")?.value.trim() || "";
+  const request = { loading: true, day };
+  const userId = state.sessionUserId;
+  state.shiftRegister = request;
+  renderActivity();
+  const current = () => state.shiftRegister === request && state.sessionUserId === userId && state.profile?.role === "admin";
+  try {
+    const start = new Date(reportMidnight(day)).toISOString();
+    const end = new Date(reportMidnight(reportDayShift(day, 1))).toISOString();
+    const rides = [];
+    let total = null;
+    while (rides.length < 5000) {
+      const result = await supabaseClient.from("vehicle_shift_events").select("*", { count: "exact" })
+        .gte("registered_at", start).lt("registered_at", end)
+        .order("registered_at", { ascending: true }).order("id", { ascending: true })
+        .range(rides.length, Math.min(rides.length + 500, 5000) - 1);
+      if (!current()) return;
+      if (result.error) throw new Error("Não foi possível carregar os registos de turno importados.");
+      total = result.count ?? total;
+      if (!result.data?.length) break;
+      rides.push(...result.data);
+      if (total !== null && rides.length >= total) break;
+    }
+    if (current()) state.shiftRegister = { day, rides, partial: total === null ? rides.length === 5000 : total > rides.length };
+  } catch (error) {
+    if (current()) state.shiftRegister = { day, error: error.message };
+  }
+  if (state.activeView === "activity" && state.sessionUserId === userId && state.profile?.role === "admin") renderActivity();
+}
+
+
 function renderBoltRideHistory() {
   const h=state.boltRideHistory,filter=state.boltRideFilter||"";
   const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -1617,7 +1673,7 @@ function renderActivity() {
         <div class="table-wrap"><table><thead><tr><th>Dia</th><th>Viatura</th><th>Primeira leitura</th><th>Última leitura</th><th>Leituras</th><th>Km observados</th></tr></thead>
         <tbody>${cartrackDistance.rows.map(row=>`<tr><td>${escapeHtml(row.day)}</td><td><strong>${escapeHtml(row.registration)}</strong></td><td>${new Date(row.firstAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.firstOdometer.toFixed(1)} km</td><td>${new Date(row.lastAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.lastOdometer.toFixed(1)} km</td><td>${row.count}</td><td>${row.distance === null ? `<span class="tag expiring">${row.invalid ? "Rever odómetro" : "Leituras insuficientes"}</span>` : row.distance.toFixed(1)+" km"}</td></tr>`).join("") || '<tr><td colspan="6">Sem leituras Cartrack neste período.</td></tr>'}</tbody></table></div>
       </article>
-      ${renderBoltOnlineRead()}${renderBoltRideHistory()}${renderUberRideHistory()}
+      ${renderBoltOnlineRead()}${renderBoltRideHistory()}${renderUberRideHistory()}${renderShiftRegister()}
       ${renderCartrackIgnitionHistory()}
     </section>
   `;
@@ -2837,6 +2893,7 @@ function bindPortalEvents() {
       if ([1, 7, 30].includes(days)) { state.cartrackIgnitionHistory = null; state.cartrackIgnitionDay = ""; state.activityPeriodDays = days; state.activityWeek = null; renderActivity(); }
       return;
     }
+    if (target.dataset.shiftRegister !== undefined) return loadShiftRegister();
     if (target.dataset.uberRides !== undefined) return loadUberRideHistory();
     if (target.dataset.boltRides !== undefined) return loadBoltRideHistory();
     if (target.dataset.boltRidesNext !== undefined) return loadBoltRideHistory(true);
@@ -2906,6 +2963,9 @@ function bindPortalEvents() {
       state.sessionUserId = null;
       state.profile = null;
   state.boltOnlineRead = null;
+  state.shiftRegister = null;
+  state.shiftRegisterDay = null;
+  state.shiftRegisterFilter = null;
   state.uberRideHistory = null;
   state.uberRideDay = null;
   state.uberRideFilter = null;

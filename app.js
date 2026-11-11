@@ -119,6 +119,7 @@ const state = {
   activityPeriodDays: 7,
   activityWeek: "current",
   tripRecords: [],
+  uberTripCount: 0,
   cartrackVehicles: [],
   cartrackSnapshots: []
 };
@@ -192,8 +193,23 @@ function valueOf(row, ...keys) {
   return "";
 }
 
+async function loadPlatformTripRecords(maxRows = 5000) {
+  const rows = [];
+  while (rows.length < maxRows) {
+    const end = Math.min(rows.length + 500, maxRows) - 1;
+    const result = await supabaseClient.from("platform_trip_records").select("*")
+      .in("platform", ["bolt", "uber"])
+      .order("observed_at", { ascending: false }).order("id", { ascending: false })
+      .range(rows.length, end);
+    if (result.error) return { data: null, error: result.error };
+    if (!result.data?.length) break;
+    rows.push(...result.data);
+  }
+  return { data: rows, error: null };
+}
+
 async function loadBackendData() {
-  const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult] = await Promise.all([
+  const [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult, uberTripCountResult] = await Promise.all([
     supabaseClient.from("drivers").select("*"),
     supabaseClient.from("vehicles").select("*"),
     supabaseClient.from("vehicle_assignments").select("*"),
@@ -203,14 +219,16 @@ async function loadBackendData() {
     supabaseClient.from("application_documents").select("*"),
     supabaseClient.from("application_messages").select("*").order("created_at", { ascending: true }),
     supabaseClient.from("platform_activity_events").select("*").eq("platform", "bolt").order("observed_at", { ascending: false }).limit(5000),
-    supabaseClient.from("platform_trip_records").select("*").in("platform", ["bolt", "uber"]).order("observed_at", { ascending: false }).limit(5000),
+    loadPlatformTripRecords(),
     supabaseClient.from("cartrack_vehicles").select("*").order("registration"),
-    supabaseClient.from("cartrack_vehicle_snapshots").select("*").order("observed_at", { ascending: false }).limit(5000)
+    supabaseClient.from("cartrack_vehicle_snapshots").select("*").order("observed_at", { ascending: false }).limit(5000),
+    supabaseClient.from("platform_trip_records").select("id", { count: "exact", head: true }).eq("platform", "uber")
   ]);
 
-  const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult].find(result => result.error)?.error;
+  const firstError = [driversResult, vehiclesResult, assignmentsResult, documentsResult, viewersResult, applicationsResult, applicationDocumentsResult, applicationMessagesResult, activityResult, tripsResult, cartrackVehiclesResult, cartrackSnapshotsResult, uberTripCountResult].find(result => result.error)?.error;
   if (firstError) throw firstError;
 
+  state.uberTripCount = uberTripCountResult.count ?? 0;
   const assignments = assignmentsResult.data || [];
   const viewers = viewersResult.data || [];
   state.drivers = (driversResult.data || []).map(row => ({
@@ -1845,7 +1863,7 @@ function renderSettings() {
             <div class="settings-list">
               <div class="settings-row"><strong>Motoristas Uber no Portal</strong><span>${uberDrivers}</span></div>
               <div class="settings-row"><strong>Viaturas Uber no Portal</strong><span>${uberVehicles}</span></div>
-              <div class="settings-row"><strong>Viagens Uber importadas</strong><span>${uberTripRecords.length}</span></div>
+              <div class="settings-row"><strong>Viagens Uber importadas</strong><span>${state.uberTripCount}</span></div>
               <div class="settings-row"><strong>Último registo de viagem</strong><span>${lastUberTrip ? new Date(lastUberTrip).toLocaleString("pt-PT") : "Ainda sem viagens importadas"}</span></div>
               <div class="settings-row"><strong>Última sincronização</strong><span>${lastUberSync ? new Date(lastUberSync).toLocaleString("pt-PT") : "Ainda não executada"}</span></div>
               <div class="settings-row"><strong>Backend de sincronização</strong><span class="tag active">Preparado</span></div>

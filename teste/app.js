@@ -1240,7 +1240,7 @@ function boltActivitySummary(days = 7, now = Date.now(), week = null) {
   let onlineMinutes = 0, serviceMinutes = 0;
   const grouped = new Map();
   const bucketFor = day => {
-    if(!grouped.has(day)) grouped.set(day,{onlineMinutes:0,serviceMinutes:0,trips:0,distance:0});
+    if(!grouped.has(day)) grouped.set(day,{onlineMinutes:0,serviceMinutes:0,trips:0,distance:0,distanceCount:0});
     return grouped.get(day);
   };
   const byKey = new Map();
@@ -1269,7 +1269,7 @@ function boltActivitySummary(days = 7, now = Date.now(), week = null) {
     const bucket=bucketFor(localDay(trip.finishedAt || trip.acceptedAt || trip.observedAt));
     bucket.trips++;
     const distance=Number(trip.distance);
-    if(Number.isFinite(distance)) bucket.distance+=distance;
+    if(trip.distance != null && trip.distance !== "" && Number.isFinite(distance) && distance >= 0) { bucket.distance+=distance; bucket.distanceCount++; }
   }
   return {events,trips,latestByVehicle,onlineMinutes,serviceMinutes,grouped,range};
 }
@@ -1649,9 +1649,10 @@ function renderActivity() {
     return !status || /(complete|finished|success|done|completed|drop)/.test(status);
   };
   const completedTrips = summary.trips.filter(completed).length;
+  const knownDistances = summary.trips.filter(completed).filter(trip => trip.distance != null && trip.distance !== "" && Number.isFinite(Number(trip.distance)) && Number(trip.distance) >= 0).length;
   const totalDistance = summary.trips.filter(completed).reduce((sum, trip) => {
-    const value = Number(trip.distance);
-    return Number.isFinite(value) ? sum + value : sum;
+    const value = trip.distance == null || trip.distance === "" ? NaN : Number(trip.distance);
+    return Number.isFinite(value) && value >= 0 ? sum + value : sum;
   }, 0);
 
   const cartrackByPlate = new Map((state.cartrackVehicles || []).map(item => [
@@ -1699,7 +1700,7 @@ function renderActivity() {
       ${metric("Leituras Cartrack antigas", staleCartrackRows.length)}
       ${metric("Eventos Bolt", summary.events.length)}
       ${metric("Viagens Bolt", completedTrips)}
-      ${metric("Distância Bolt (km)", totalDistance ? totalDistance.toFixed(1) : "0")}
+      ${metric("Distância Bolt (km)", knownDistances ? totalDistance.toFixed(1) + (knownDistances < completedTrips ? " · Parcial" : "") : "Indisponível")}
     </section>
 
     <section class="content-grid">
@@ -1735,7 +1736,7 @@ function renderActivity() {
           <thead><tr><th>Dia</th><th>Online</th><th>Em serviço</th><th>Viagens</th><th>Distância</th></tr></thead>
           <tbody>
             ${dayRows.map(([day, value]) => `
-              <tr><td><strong>${escapeHtml(day)}</strong></td><td>${(value.onlineMinutes / 60).toFixed(1)} h</td><td>${(value.serviceMinutes / 60).toFixed(1)} h</td><td>${value.trips}</td><td>${value.distance ? value.distance.toFixed(1) : "0"}</td></tr>
+              <tr><td><strong>${escapeHtml(day)}</strong></td><td>${(value.onlineMinutes / 60).toFixed(1)} h</td><td>${(value.serviceMinutes / 60).toFixed(1)} h</td><td>${value.trips}</td><td>${value.distanceCount ? value.distance.toFixed(1) + (value.distanceCount < value.trips ? " · Parcial" : "") : "Indisponível"}</td></tr>
             `).join("") || emptyRow("Ainda não existem dados de atividade Bolt.")}
           </tbody>
         </table></div>

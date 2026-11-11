@@ -56,7 +56,7 @@ jobs:
           cmp native-shifts.js supabase/functions/shift-review/native-shifts.js
           cmp teste/shift-mileage.js supabase/functions/shift-review/shift-mileage.js
       - name: Run portal and worker regressions
-        run: node --test tests/native-shift-ui.test.cjs tests/native-shifts.test.cjs tests/shift-review-worker.test.cjs tests/pilot-shift-mileage.test.cjs
+        run: node --test tests/*.test.cjs
       - name: Verify database isolation and shift lifecycle
         run: node tests/native-shifts-db.mjs
       - name: Verify platform synchronization lifecycle

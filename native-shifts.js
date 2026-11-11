@@ -4,8 +4,8 @@
  const plate=value=>String(value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
  function qrToken(value,origin){
    const text=String(value||'').trim();
-   if(/^[a-f0-9]{32}$/i.test(text))return text;
-   try{const url=new URL(text,origin);if(url.origin!==new URL(origin).origin)return '';const token=url.searchParams.get('vehicle')||'';return /^[a-f0-9]{32}$/i.test(token)?token:'';}catch{return '';}
+   if(/^[a-f0-9]{32}$/i.test(text))return text.toLowerCase();
+   try{const url=new URL(text,origin);if(url.origin!==new URL(origin).origin)return '';const token=url.searchParams.get('vehicle')||'';return /^[a-f0-9]{32}$/i.test(token)?token.toLowerCase():'';}catch{return '';}
  }
  function session(shift){
    const event=(kind,at)=>({driver_id:shift.driver_id,vehicle_id:shift.vehicle_id,driver_name:shift.driver_name,vehicle_plate:shift.vehicle_plate,event_kind:kind,registered_at:at});

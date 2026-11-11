@@ -9,22 +9,25 @@
      const review=row.trip_review||{},km=row.cartrack_review||{};
      const flags=(review.flags||[]).map(f=>notices[f]||'Dados por conferir');
      const distance=typeof km.distance==='number'?`${km.distance.toFixed(2)} km entre leituras Cartrack`:'Quilómetros Cartrack por confirmar';
-     return `<strong>${h(distance)}</strong>${km.start&&km.end?`<p class="section-copy">Desvio das leituras: ${Math.round(km.start.gapSeconds)} s / ${Math.round(km.end.gapSeconds)} s.</p>`:''}<p class="section-copy">${h(review.state==='review'?'Requer revisão':review.state==='checked_available_data'?'Dados recebidos conferidos':'Conferência automática pendente')}. ${h(flags.join(' · '))}</p>`;
+     return `<strong>${h(distance)}</strong>${km.start&&km.end?`<p class="section-copy">Desvio das leituras: ${Math.round(km.start.gapSeconds)} s / ${Math.round(km.end.gapSeconds)} s.</p>`:''}${km.refresh_state==='pending'?'<p class="section-copy">Leituras Cartrack anteriores; atualização pendente.</p>':''}<p class="section-copy">${h(review.state==='review'?'Requer revisão':review.state==='checked_available_data'?'Dados recebidos conferidos':'Conferência automática pendente')}. ${h(flags.join(' · '))}</p>`;
    }
    async function load(){
      const user=getUser(),version=++loadVersion;if(!user?.id)return;
-     const result=await client.from('driver_shift_sessions').select('*').order('started_at',{ascending:false}).limit(user.role==='admin'?100:20);
+     let result;
+     try{result=await client.from('driver_shift_sessions').select('*').order('started_at',{ascending:false}).limit(user.role==='admin'?100:20);}
+     catch{result={error:true};}
      if(getUser()?.id!==user.id||version!==loadVersion)return;
-     if(result.error){error='Não foi possível consultar os turnos. Tenta atualizar novamente.';rows=[];loaded=false;}
+     if(result.error||!Array.isArray(result.data)){error='Não foi possível consultar os turnos. Tenta atualizar novamente.';rows=[];loaded=false;}
      else{rows=result.data||[];loaded=true;error='';}
      changed();
    }
    async function lookup(value){
      if(busy)return;const user=getUser();if(user?.role!=='driver')return;
+     selected=null;
      const token=NativeShifts.qrToken(value,window.location.origin);
      if(!token){error='Lê o QR da viatura ou cola o endereço completo do QR.';changed();return;}
      busy=true;error='';changed();
-     try{const {data,error:e}=await client.rpc('fleet_shift_vehicle',{p_token:token});if(e)throw e;if(getUser()?.id!==user.id)return;selected={...data,token};}
+     try{const {data,error:e}=await client.rpc('fleet_shift_vehicle',{p_token:token});if(e||!data?.id||!data?.plate)throw Error('Invalid vehicle');if(getUser()?.id!==user.id)return;selected={...data,token};}
      catch{if(getUser()?.id===user.id)error='Não foi possível reconhecer a viatura. Confirma o QR e a ligação.';}
      finally{busy=false;changed();}
    }
@@ -63,7 +66,7 @@
    function render(){
      const open=active();
      const overdue=open&&Date.now()-Date.parse(open.started_at)>18*3600000;
-     return `<section class="panel native-shift-panel"><span class="eyebrow">O meu turno</span><h2>${open?'Turno em curso':'Pronto para começar'}</h2>
+     return `<section class="panel native-shift-panel"><span class="eyebrow">O meu turno</span><h2>${!loaded?'Turno por confirmar':open?'Turno em curso':'Pronto para começar'}</h2>
        <p class="section-copy">Regista a entrada e a saída no momento da troca. Os quilómetros são consultados exclusivamente na Cartrack.</p>
        ${error?`<p role="alert">${h(error)}</p>`:''}
        ${open?`<h3>${h(open.vehicle_plate)}</h3><p>Entrada confirmada: <strong>${h(date(open.started_at))}</strong></p>${overdue?'<p role="alert">Este turno está aberto há mais de 18 horas. Confirma a saída com o administrador se não corresponde à situação atual.</p>':''}<button class="primary-button" type="button" data-native-shift-end ${busy?'disabled':''}>${busy?'A confirmar…':'Terminar turno'}</button>`:

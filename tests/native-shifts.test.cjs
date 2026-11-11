@@ -3,6 +3,7 @@ for(const file of ['../native-shifts.js','../teste/native-shifts.js']){
  const {qrToken,session,reviewTrips}=require(file);
  const token='a'.repeat(32),origin='https://fleet.example.test';
  assert.equal(qrToken(origin+'/?vehicle='+token+'&mode=driver',origin),token);
+ assert.equal(qrToken(token.toUpperCase(),origin),token);
  assert.equal(qrToken('https://other.example.test/?vehicle='+token,origin),'');
  assert.equal(qrToken('not-a-qr',origin),'');
  const s={driver_id:'driver-a',vehicle_id:'vehicle-a',vehicle_plate:'AA-00-AA',driver_name:'Test',started_at:'2026-11-10T08:00:00Z',ended_at:'2026-11-10T16:00:00Z'};

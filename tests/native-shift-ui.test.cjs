@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
 (async()=>{
- const store=new Map();let rows=[],calls=[],failAfterStart=false,selectedUser={id:'u',role:'driver'},counter=0;
- const client={from(){const q={select(){return q},order(){return q},limit(){return q},then(resolve){return Promise.resolve({data:rows,error:null}).then(resolve)}};return q},rpc:async(name,args)=>{
+ const store=new Map();let rows=[],calls=[],failAfterStart=false,loadFails=false,selectedUser={id:'u',role:'driver'},counter=0;
+ const client={from(){const q={select(){return q},order(){return q},limit(){return q},then(resolve,reject){return (loadFails?Promise.reject(Error('transport failure')):Promise.resolve({data:rows,error:null})).then(resolve,reject)}};return q},rpc:async(name,args)=>{
   calls.push({name,args});
   if(name==='fleet_shift_vehicle')return {data:{id:'v',plate:'AA-00-AA',brand:'<script>','model':'Test'}};
   if(name==='fleet_shift_start'){
@@ -18,6 +18,11 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
  await portal.load();assert.ok(portal.render().includes('Pronto para começar'));
  await portal.lookup('https://evil.example.test/?vehicle='+('a'.repeat(32)));assert.equal(calls.length,0);
  await portal.lookup('a'.repeat(32));assert.ok(portal.render().includes('&lt;script&gt;'));
+ await portal.lookup('invalid-qr');assert.ok(!portal.render().includes('Iniciar turno'));assert.ok(!portal.render().includes('AA-00-AA'));
+ await portal.lookup('a'.repeat(32));
+ loadFails=true;await portal.load();assert.ok(portal.render().includes('Turno por confirmar'));assert.ok(!portal.render().includes('Pronto para começar'));
+ const beforeOfflineLoad=calls.length;await portal.submit('start');assert.equal(calls.length,beforeOfflineLoad);
+ loadFails=false;await portal.load();
  const a=portal.submit('start'),b=portal.submit('start');await Promise.all([a,b]);
  assert.equal(calls.filter(x=>x.name==='fleet_shift_start').length,1);
  assert.deepEqual(Object.keys(calls.find(x=>x.name==='fleet_shift_start').args).sort(),['p_request_id','p_token']);

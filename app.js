@@ -740,6 +740,9 @@ async function logout() {
   state.sessionUserId = null;
   state.profile = null;
   state.boltOnlineRead = null;
+  state.uberRideHistory = null;
+  state.uberRideDay = null;
+  state.uberRideFilter = null;
   state.boltRideHistory = null;
   state.boltRideDay = null;
   state.boltRideFilter = null;
@@ -1328,6 +1331,83 @@ function cartrackTimestampIsStale(iso, now = Date.now()) {
 }
 
 
+function uberRideRows(rides, drivers, filter = "") {
+  const normalize = value => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const query = normalize(filter);
+  return rides.map(ride => {
+    const driver = drivers.find(item => item.id === ride.driver_id || (ride.platform_driver_uuid && item.uberDriverUuid === ride.platform_driver_uuid));
+    return { ...ride, name: driver?.name || "Motorista não associado", time: ride.finished_at || ride.observed_at };
+  }).filter(ride => !query || normalize(ride.name).includes(query) || normalize(ride.vehicle_plate).includes(query))
+    .sort((a, b) => Date.parse(a.time) - Date.parse(b.time) || String(a.id).localeCompare(String(b.id)));
+}
+
+function uberRidePlateGroups(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = row.driver_id || row.platform_driver_uuid;
+    if (!key || !row.vehicle_plate) continue;
+    if (!groups.has(key)) groups.set(key, { name: row.name, plates: new Set() });
+    groups.get(key).plates.add(row.vehicle_plate);
+  }
+  return [...groups.values()].filter(group => group.plates.size > 1);
+}
+
+function renderUberRideHistory() {
+  const history = state.uberRideHistory;
+  const rows = uberRideRows(history?.rides || [], state.drivers, state.uberRideFilter);
+  const groups = uberRidePlateGroups(rows);
+  const date = value => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }) : "Sem hora";
+  const status = value => ({ completed: "Concluída", rider_cancelled: "Cancelada pelo passageiro", driver_cancelled: "Cancelada pelo motorista" })[value] || value || "Não indicado";
+  return `<article class="panel"><h2>Histórico de viagens Uber</h2>
+    <p class="section-copy">Consulta dos relatórios importados, por dia em hora de Lisboa. A matrícula é a registada em cada viagem; não indica os períodos online sem serviço nem a hora exata da troca de viatura. A hora apresentada é o fim da viagem ou, quando indisponível, a hora registada no relatório.</p>
+    <div class="row-actions"><label>Dia das viagens Uber <input id="uberRideDay" type="date" value="${escapeHtml(state.uberRideDay || localDay(Date.now()))}" max="${localDay(Date.now())}"></label>
+      <label>Motorista ou matrícula Uber <input id="uberRideFilter" type="search" value="${escapeHtml(state.uberRideFilter || "")}" placeholder="Ex.: Álvaro ou 82-ZH-99"></label>
+      <button type="button" class="secondary-button" data-uber-rides ${history?.loading ? "disabled" : ""}>${history?.loading ? "A consultar…" : "Consultar viagens Uber"}</button></div>
+    ${history?.error ? `<p role="alert">${escapeHtml(history.error)}</p>` : ""}
+    ${history?.rides ? `<p class="section-copy">${history.rides.length} registos recebidos; ${rows.length} apresentados. ${history.partial ? "Resultado parcial: escolhe um período com menos registos." : "Todas as páginas recebidas."} Pesquisa aplicada aos registos recebidos.</p>
+      ${groups.length ? `<h3>Motoristas com mais de uma matrícula nos resultados</h3><ul>${groups.map(group => `<li>${escapeHtml(group.name)}: ${[...group.plates].map(escapeHtml).join(", ")}</li>`).join("")}</ul>` : ""}
+      <div class="table-wrap"><table><thead><tr><th>Motorista</th><th>Matrícula na viagem</th><th>Estado</th><th>Hora registada (Lisboa)</th><th>Distância (km)</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.vehicle_plate || "Não indicada")}</td><td>${escapeHtml(status(row.order_status))}</td><td>${escapeHtml(date(row.time))}</td><td>${row.order_status === "completed" && row.ride_distance_km != null && Number.isFinite(Number(row.ride_distance_km)) ? Number(row.ride_distance_km).toFixed(2) : "—"}</td></tr>`).join("") || '<tr><td colspan="5">Sem viagens importadas para este dia e pesquisa. Isto não prova que o motorista esteve offline.</td></tr>'}</tbody></table></div>` : ""}
+  </article>`;
+}
+
+async function loadUberRideHistory() {
+  if (state.profile?.role !== "admin" || state.uberRideHistory?.loading) return;
+  const day = document.querySelector("#uberRideDay")?.value || "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > localDay(Date.now()) || localDay(reportMidnight(day)) !== day) {
+    showToast("Escolhe um dia válido até hoje."); return;
+  }
+  state.uberRideDay = day;
+  state.uberRideFilter = document.querySelector("#uberRideFilter")?.value.trim() || "";
+  const request = { loading: true, day };
+  const userId = state.sessionUserId;
+  state.uberRideHistory = request;
+  renderActivity();
+  const current = () => state.uberRideHistory === request && state.sessionUserId === userId && state.profile?.role === "admin";
+  try {
+    const start = new Date(reportMidnight(day)).toISOString();
+    const end = new Date(reportMidnight(reportDayShift(day, 1))).toISOString();
+    const rides = [];
+    let total = null;
+    while (rides.length < 5000) {
+      const result = await supabaseClient.from("platform_trip_records").select("*", { count: "exact" })
+        .eq("platform", "uber").gte("observed_at", start).lt("observed_at", end)
+        .order("observed_at", { ascending: true }).order("id", { ascending: true })
+        .range(rides.length, Math.min(rides.length + 500, 5000) - 1);
+      if (!current()) return;
+      if (result.error) throw new Error("Não foi possível carregar as viagens Uber importadas.");
+      total = result.count ?? total;
+      if (!result.data?.length) break;
+      rides.push(...result.data);
+      if (total !== null && rides.length >= total) break;
+    }
+    if (current()) state.uberRideHistory = { day, rides, partial: total === null ? rides.length === 5000 : total > rides.length };
+  } catch (error) {
+    if (current()) state.uberRideHistory = { day, error: error.message };
+  }
+  if (state.activeView === "activity" && state.sessionUserId === userId && state.profile?.role === "admin") renderActivity();
+}
+
+
 function renderBoltRideHistory() {
   const h=state.boltRideHistory,filter=state.boltRideFilter||"";
   const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -1562,7 +1642,7 @@ function renderActivity() {
         <div class="table-wrap"><table><thead><tr><th>Dia</th><th>Viatura</th><th>Primeira leitura</th><th>Última leitura</th><th>Leituras</th><th>Km observados</th></tr></thead>
         <tbody>${cartrackDistance.rows.map(row=>`<tr><td>${escapeHtml(row.day)}</td><td><strong>${escapeHtml(row.registration)}</strong></td><td>${new Date(row.firstAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.firstOdometer.toFixed(1)} km</td><td>${new Date(row.lastAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.lastOdometer.toFixed(1)} km</td><td>${row.count}</td><td>${row.distance === null ? `<span class="tag expiring">${row.invalid ? "Rever odómetro" : "Leituras insuficientes"}</span>` : row.distance.toFixed(1)+" km"}</td></tr>`).join("") || '<tr><td colspan="6">Sem leituras Cartrack neste período.</td></tr>'}</tbody></table></div>
       </article>
-      ${renderBoltOnlineRead()}${renderBoltRideHistory()}
+      ${renderBoltOnlineRead()}${renderBoltRideHistory()}${renderUberRideHistory()}
       ${renderCartrackIgnitionHistory()}
     </section>
   `;
@@ -2793,6 +2873,7 @@ function bindPortalEvents() {
       if ([1, 7, 30].includes(days)) { state.cartrackIgnitionHistory = null; state.cartrackIgnitionDay = ""; state.activityPeriodDays = days; state.activityWeek = null; renderActivity(); }
       return;
     }
+    if (target.dataset.uberRides !== undefined) return loadUberRideHistory();
     if (target.dataset.boltRides !== undefined) return loadBoltRideHistory();
     if (target.dataset.boltRidesNext !== undefined) return loadBoltRideHistory(true);
     if (target.dataset.boltConfigCheck !== undefined) return checkBoltConfiguration();
@@ -2861,6 +2942,9 @@ function bindPortalEvents() {
       state.sessionUserId = null;
       state.profile = null;
   state.boltOnlineRead = null;
+  state.uberRideHistory = null;
+  state.uberRideDay = null;
+  state.uberRideFilter = null;
   state.boltRideHistory = null;
   state.boltRideDay = null;
   state.boltRideFilter = null;

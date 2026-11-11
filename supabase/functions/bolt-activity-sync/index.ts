@@ -9,7 +9,7 @@ const corsHeaders = {
   "Content-Type": "application/json"
 };
 const BOLT_TOKEN_URL = "https://oidc.bolt.eu/token";
-const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway";
+const BOLT_API_BASE = "https://node.bolt.eu/fleet-integration-gateway-v2/fleetIntegration/v2";
 const COMPANY_ID = 9360;
 const dbUrl = Deno.env.get("SUPABASE_DB_URL") || "";
 const dbPool = dbUrl ? new Pool(dbUrl, 1) : null;
@@ -68,45 +68,29 @@ async function boltPost(path: string, token: string, payload: Record<string, unk
   }
   return data;
 }
-async function getStateLogs(token: string, startTs: number, endTs: number) {
-  const rows: any[] = [];
-  let offset = 0;
-  for (let page = 0; page < 100; page++) {
-    const response = await boltPost("/getFleetStateLogs", token, {
-      offset, limit: 1000, company_id: COMPANY_ID, start_ts: startTs, end_ts: endTs
-    });
-    const data = response?.data || {};
-    const batch = Array.isArray(data?.state_logs) ? data.state_logs : [];
-    rows.push(...batch);
-    if (!batch.length) break;
-    offset += batch.length;
-    const total = Number(data?.total_rows || 0);
-    if (total > 0 && offset >= total) break;
-    if (batch.length < 1000) break;
-  }
-  return rows;
+async function getRideLogs(token:string,startTs:number,endTs:number) {
+ const rows:any[]=[];
+ for(let page=0,offset=0;page<100;page++){
+  const response=await boltPost("/getRideHistory",token,{company_id:COMPANY_ID,limit:1000,offset,start_datetime:new Date(startTs*1000).toISOString().replace(/\.\d{3}Z$/,"+00:00"),end_datetime:new Date(endTs*1000).toISOString().replace(/\.\d{3}Z$/,"+00:00")});
+  const d=response?.data;
+  if(!Array.isArray(d?.orders)||!Number.isSafeInteger(d?.total)||d.total<0)throw new Error("Resposta inesperada do histórico Bolt V2.");
+  if(!d.orders.length){if(offset<d.total)throw new Error("Histórico Bolt incompleto.");return rows;}
+  rows.push(...d.orders);offset+=d.orders.length;if(offset>=d.total)return rows;
+ }
+ throw new Error("Limite de páginas Bolt excedido; não foi gravado.");
 }
-function normalizeStateEvents(rows: any[]) {
-  return rows.map(row => {
-    const driverUuid = clean(row?.driver_uuid);
-    const vehicleUuid = clean(row?.vehicle_uuid);
-    const createdAt = unixToIso(row?.created);
-    const state = clean(row?.state).toUpperCase() || "UNKNOWN";
-    return {
-      driver_uuid: driverUuid || null,
-      vehicle_uuid: vehicleUuid || null,
-      state,
-      created_at: createdAt,
-      event_key: `bolt:state:${driverUuid}:${vehicleUuid}:${row?.created}:${state}`
-    };
-  }).filter(row => row.created_at && row.event_key);
+function normalizeRideLogs(rows:any[]) {
+ return rows.map(r=>{
+  if(typeof r.order_reference!=="string"||!r.order_reference)throw new Error("Viagem Bolt sem referência.");
+  return {source_trip_id:r.order_reference,driver_uuid:r.driver?.uuid||null,vehicle_uuid:r.vehicle?.uuid||null,vehicle_plate:r.vehicle?.registration_number||null,order_status:r.status==="finished"?"completed":r.status||null,accepted_at:unixToIso(r.driver_accepted_datetime),pickup_at:unixToIso(r.pickup_datetime),finished_at:unixToIso(r.finished_datetime),ride_distance_km:null,observed_at:unixToIso(r.request_created_datetime)};
+ });
 }
-async function save(events: any[]) {
+async function save(trips: any[]) {
   if (!dbPool) throw new Error("SUPABASE_DB_URL indisponível.");
   const connection = await dbPool.connect();
   try {
     const result = await connection.queryObject<any>`
-      select public.sync_bolt_activity(${JSON.stringify(events)}::jsonb, '[]'::jsonb) as result
+      select public.sync_bolt_activity('[]'::jsonb, ${JSON.stringify(trips)}::jsonb) as result
     `;
     return result.rows[0]?.result || {};
   } finally { connection.release(); }
@@ -132,26 +116,10 @@ Deno.serve(async (req: Request) => {
     const endTs = Math.floor(Date.now() / 1000);
     const startTs = endTs - days * 86400;
     const token = await getBoltToken();
-    let stateRows: any[] = [];
-    try {
-      stateRows = await getStateLogs(token, startTs, endTs);
-    } catch (error) {
-      const status = Number(error?.status || 0);
-      if (status === 404) {
-        throw new Error("A API Bolt deste acesso não disponibiliza o histórico de estados da frota.");
-      }
-      throw error;
-    }
-    const events = normalizeStateEvents(stateRows);
-    const dbResult = await save(events);
-    return json({
-      ok: true, source: "bolt", days,
-      range: { start: new Date(startTs * 1000).toISOString(), end: new Date(endTs * 1000).toISOString() },
-      stateLogsReceived: stateRows.length, eventsPrepared: events.length,
-      tripsReceived: 0, tripsPrepared: 0,
-      db: dbResult,
-      tripsEndpoint: "not-requested"
-    });
+    const rides=await getRideLogs(token,startTs,endTs);
+    const trips=normalizeRideLogs(rides);
+    const dbResult=await save(trips);
+    return json({ok:true,source:"bolt",apiVersion:2,days,range:{start:new Date(startTs*1000).toISOString(),end:new Date(endTs*1000).toISOString()},stateLogsReceived:0,eventsPrepared:0,tripsReceived:rides.length,tripsPrepared:trips.length,stateHistoryAvailable:false,db:dbResult,tripsEndpoint:"getRideHistory"});
   } catch (error) {
     console.error("bolt-activity-sync error", error);
     return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 502);

@@ -110,26 +110,35 @@ Deno.serve(async (req: Request) => {
   let trace:Record<string,unknown>|null=null;
   let dataWriteAttempted=false;
   try {
-    const authHeader = req.headers.get("Authorization") || "";
-    const userToken = authHeader.replace(/^Bearer\s+/i, "");
-    if (!userToken) return json({ ok: false, error: "Sessão não encontrada." }, 401);
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const admin = createClient(supabaseUrl, serviceRoleKey);
-    const { data: authData, error: authError } = await admin.auth.getUser(userToken);
-    if (authError || !authData.user) return json({ ok: false, error: "Sessão inválida." }, 401);
-    if ((authData.user.email || "").toLowerCase() !== "simplicity2take@gmail.com") {
-      return json({ ok: false, error: "Apenas o administrador pode sincronizar a atividade Bolt." }, 403);
+    const admin = createClient(supabaseUrl, serviceRoleKey,{auth:{persistSession:false}});
+    const jobKey=req.headers.get("x-cartrack-sync-key");
+    let actorId:string|null=null;
+    const scheduled=Boolean(jobKey);
+    if(jobKey){
+      const allowed=await admin.rpc("verify_cartrack_sync_key",{candidate:jobKey});
+      if(allowed.error||allowed.data!==true)return json({ok:false,error:"Credencial de tarefa inválida."},403);
+    }else{
+      const authHeader = req.headers.get("Authorization") || "";
+      const userToken = authHeader.replace(/^Bearer\s+/i, "");
+      if (!userToken) return json({ ok: false, error: "Sessão não encontrada." }, 401);
+      const { data: authData, error: authError } = await admin.auth.getUser(userToken);
+      if (authError || !authData.user) return json({ ok: false, error: "Sessão inválida." }, 401);
+      if ((authData.user.email || "").toLowerCase() !== "simplicity2take@gmail.com") {
+        return json({ ok: false, error: "Apenas o administrador pode sincronizar a atividade Bolt." }, 403);
+      }
+      const {data:profile,error:profileError}=await admin.from("profiles").select("role,status").eq("id",authData.user.id).maybeSingle();
+      if(profileError||profile?.role!=="admin"||profile?.status!=="Ativo")return json({ok:false,error:"Apenas um administrador ativo pode sincronizar a atividade Bolt."},403);
+      actorId=authData.user.id;
     }
-    const {data:profile,error:profileError}=await admin.from("profiles").select("role,status").eq("id",authData.user.id).maybeSingle();
-    if(profileError||profile?.role!=="admin"||profile?.status!=="Ativo")return json({ok:false,error:"Apenas um administrador ativo pode sincronizar a atividade Bolt."},403);
     let body: any = {};
     try { body = await req.json(); } catch {}
-    const requestedDays = Number(body?.days ?? 7);
+    const requestedDays = scheduled?7:Number(body?.days ?? 7);
     const days = Math.min(31, Math.max(1, Number.isFinite(requestedDays) ? Math.floor(requestedDays) : 7));
     const endTs = Math.floor(Date.now() / 1000);
     const startTs = endTs - days * 86400;
-    trace={request_id:crypto.randomUUID(),actor_id:authData.user.id,platform:"bolt",api_version:2,company_id:COMPANY_ID,
+    trace={request_id:crypto.randomUUID(),actor_id:actorId,actor_type:scheduled?"server_job":"admin",platform:"bolt",api_version:2,company_id:COMPANY_ID,
       requested_start:new Date(startTs*1000).toISOString(),requested_end:new Date(endTs*1000).toISOString(),
       started_at:new Date().toISOString(),coverage_verified:false};
     console.info(JSON.stringify({event:"platform_report_import_started",...trace}));

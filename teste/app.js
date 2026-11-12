@@ -811,6 +811,7 @@ function setView(view) {
   state.activeView = view;
   renderApp();
   if(view==='shift'||view==='activity')void nativeShiftPortal.load();
+  if(view==='activity'&&currentUser().role==='admin')void tripConferencePortal.ensureLoaded();
 }
 
 function renderContent() {

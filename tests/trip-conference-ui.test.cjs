@@ -2,11 +2,11 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 const TripConference=require('../trip-conference.js');
 const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 const tables={drivers:[{id:'d',full_name:'<img src=x>',bolt_driver_uuid:'bd'}],vehicles:[{id:'v',plate:'AA-00-AA',bolt_vehicle_uuid:'bv'}],platform_trip_records:[{id:'t',source_trip_id:'s',platform:'bolt',driver_id:'d',vehicle_id:'v',platform_driver_uuid:'bd',platform_vehicle_uuid:'bv',vehicle_plate:'AA-00-AA',order_status:'completed',accepted_at:'2026-11-10T10:00:00Z',finished_at:'2026-11-10T10:30:00Z'}],vehicle_shift_events:[],driver_shift_sessions:[]};
-function setup(page){
+function setup(page,extras={}){
   let user={id:'admin',role:'admin'},calls=0,changes=0;
   const client={from:table=>{calls++;const q={select(){return q},in(){return q},or(){return q},order(){return q},gte(){return q},lt(){return q},range:async(a,b)=>page?page(table,a,b):{data:(tables[table]||[]).slice(a,b+1),count:(tables[table]||[]).length}};return q;}};
   const context={TripConference,Date,Map,Set,Promise};vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(__dirname,'../trip-conference-ui.js'),'utf8'),context);
-  const portal=context.TripConferencePortal.create({client,getUser:()=>user,escapeHtml,changed:()=>changes++,today:()=> '2026-11-12',getCartrack:()=>[],getRange:day=>day==='2026-11-10'?{start:Date.parse(day+'T00:00:00Z'),end:Date.parse('2026-11-11T00:00:00Z')}:null});
+  const portal=context.TripConferencePortal.create({client,getUser:()=>user,escapeHtml,changed:()=>changes++,today:()=> '2026-11-12',getCartrack:()=>[],getRange:day=>day==='2026-11-10'?{start:Date.parse(day+'T00:00:00Z'),end:Date.parse('2026-11-11T00:00:00Z')}:null,...extras});
   return {portal,setUser:x=>user=x,get calls(){return calls},get changes(){return changes}};
 }
 test('admin-only read view, escaped names, no inferred mileage, invalid dates before queries',async()=>{
@@ -39,4 +39,17 @@ test('service details distinguish missing times and form declarations without ad
   const s=make(false);await s.portal.load({day:'2026-11-10'});const reads=s.calls,html=s.portal.render();
   assert.match(html,/<summary>Ver 1 serviço<\/summary>/);assert.match(html,/Aceitação: Sem registo/);assert.match(html,/Recolha: Sem registo/);assert.match(html,/início do serviço por confirmar/);assert.match(html,/<strong>Formulário<\/strong>/);assert.match(html,/Entrada declarada:/);assert.match(html,/Saída declarada:/);assert.equal(s.calls,reads);
   const pending=make(true);await pending.portal.load({day:'2026-11-10'});const partialHtml=pending.portal.render();assert.match(partialHtml,/Consulta parcial: declaração por confirmar/);assert(!partialHtml.includes('Entrada declarada:'));
+});
+test('opening the conference loads once, throttles re-entry and retries an expired failed read',async()=>{
+  let clock=Date.parse('2026-11-10T12:00:00Z');const extras={now:()=>clock,today:()=> '2026-11-10'};
+  const s=setup(undefined,extras);const work=s.portal.ensureLoaded();s.portal.ensureLoaded();assert.equal(s.calls,5);await work;s.portal.ensureLoaded();assert.equal(s.calls,5);
+  clock+=60000;await s.portal.ensureLoaded();assert.equal(s.calls,10);assert.match(s.portal.render(),/Consulta dos registos:/);
+  const failed=setup(async()=>({data:null,error:true}),extras);await failed.portal.ensureLoaded();await failed.portal.ensureLoaded();assert.equal(failed.calls,5);clock+=60000;await failed.portal.ensureLoaded();assert.equal(failed.calls,10);
+});
+test('automatic day follows Lisbon midnight but an explicitly chosen day/filter is preserved',async()=>{
+  let day='2026-11-10',clock=Date.parse(day+'T23:59:50Z');
+  const s=setup(undefined,{now:()=>clock,today:()=>day,getRange:d=>({start:Date.parse(d+'T00:00:00Z'),end:Date.parse(d+'T00:00:00Z')+86400000})});
+  await s.portal.ensureLoaded();day='2026-11-11';clock+=20000;await s.portal.ensureLoaded();assert.equal(s.calls,10);assert.match(s.portal.render(),/value="2026-11-11"/);
+  await s.portal.load({day:'2026-11-10',filter:'AA00AA'});day='2026-11-12';clock+=86400000;await s.portal.ensureLoaded();assert.match(s.portal.render(),/value="2026-11-10"/);assert.match(s.portal.render(),/value="AA00AA"/);
+  s.portal.clear();await s.portal.ensureLoaded();assert.match(s.portal.render(),/value="2026-11-12"/);
 });

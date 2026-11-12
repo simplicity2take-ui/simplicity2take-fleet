@@ -1,7 +1,7 @@
 (function(root){
   'use strict';
-  function create({client,getUser,escapeHtml,changed,getRange,today,getCartrack}){
-    let version=0,busy=false,error='',result=null,day='',filter='',ownerId=null;
+  function create({client,getUser,escapeHtml,changed,getRange,today,getCartrack,now=()=>Date.now()}){
+    let version=0,busy=false,error='',result=null,day='',filter='',ownerId=null,lastAttempt=null,lastChecked=null,followToday=true;
     const h=escapeHtml,norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
     const date=v=>new Date(v).toLocaleString('pt-PT',{timeZone:'Europe/Lisbon'});
     const shownDate=v=>v===null?'Sem registo':date(v);
@@ -9,7 +9,12 @@
       const services=row.services||[];
       return `<details><summary>Ver ${services.length} ${services.length===1?'serviço':'serviços'}</summary><ol>${services.map(s=>`<li><strong>${s.platform==='uber'?'Uber':'Bolt'}</strong><br>Aceitação: ${h(shownDate(s.acceptedAt))}<br>Recolha: ${h(shownDate(s.pickupAt))}<br>Fim: ${h(shownDate(s.endedAt))}<p class="section-copy">${s.state==='partial'?'Consulta parcial: declaração por confirmar.':s.matches.length?s.acceptedAt===null&&s.pickupAt===null?'Declaração compatível com as horas disponíveis; início do serviço por confirmar.':'Declaração compatível com as horas disponíveis.':'Declaração por confirmar.'}</p>${s.matches.map(m=>`<p class="section-copy"><strong>${m.source==='app'?'Aplicação':'Formulário'}</strong><br>Entrada declarada: ${h(shownDate(m.entry))}<br>Saída declarada: ${h(shownDate(m.exit))}</p>`).join('')}</li>`).join('')}</ol></details>`;
     }
-    function clear(){version++;busy=false;error='';result=null;day='';filter='';ownerId=null;}
+    function clear(){version++;busy=false;error='';result=null;day='';filter='';ownerId=null;lastAttempt=null;lastChecked=null;followToday=true;}
+    function ensureLoaded(){
+      if(ownerId&&ownerId!==getUser()?.id)clear();
+      const targetDay=followToday?today():(day||today());
+      if(getUser()?.role==='admin'&&!busy&&(lastAttempt===null||now()-lastAttempt>=60000||day!==targetDay))return load({day:targetDay,filter,followToday});
+    }
     function render(){
       if(getUser()?.role!=='admin')return '';
       if(ownerId&&ownerId!==getUser()?.id)clear();
@@ -19,7 +24,7 @@
         <p class="section-copy">Serviços concluídos Uber/Bolt cruzados com as declarações de turno. Primeiro e último registo mostram atividade observada; não são horas de entrada e saída.</p>
         <div class="row-actions"><label>Dia em Lisboa <input id="tripConferenceDay" type="date" value="${h(day||today())}" max="${h(today())}"></label><label>Motorista ou matrícula <input id="tripConferenceFilter" type="search" value="${h(filter)}" placeholder="Ex.: Álvaro ou AC-85-ZT"></label><button type="button" class="secondary-button" data-trip-conference ${busy?'disabled':''}>${busy?'A conferir…':'Conferir viagens e turnos'}</button></div>
         ${error?`<p role="alert">${h(error)}</p>`:''}
-        ${result?`<p class="section-copy" role="status">${result.completed} serviços concluídos identificados · ${rows.length} combinações apresentadas. ${result.partial?'Consulta parcial: há dados por receber.':'Todas as páginas da consulta recebidas.'} A cobertura das importações Uber/Bolt continua por confirmar.</p>
+        ${result?`<p class="section-copy" role="status">${result.completed} serviços concluídos identificados · ${rows.length} combinações apresentadas. ${result.partial?'Consulta parcial: há dados por receber.':'Todas as páginas da consulta recebidas.'} Consulta dos registos: ${h(date(lastChecked))}. A cobertura das importações Uber/Bolt continua por confirmar.</p>
           ${result.excludedNonCompleted?`<p class="section-copy">${result.excludedNonCompleted} registos de pedidos, recusas ou cancelamentos não contam como serviços concluídos.</p>`:''}
           ${result.identityPending.length||result.undated||result.invalidTimes?`<p class="section-copy">${result.identityPending.length} serviços/registos com identidade por confirmar; ${result.undated} registos sem horas de serviço suficientes; ${result.invalidTimes} com horas inconsistentes.</p>`:''}
           <div class="table-wrap"><table><thead><tr><th>Motorista</th><th>Matrícula</th><th>Uber</th><th>Bolt</th><th>Primeiro registo de serviço</th><th>Último registo de serviço</th><th>Declarações</th><th>Cartrack</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${h(r.driverName)}</td><td><strong>${h(r.plate)}</strong></td><td>${r.uber}</td><td>${r.bolt}</td><td>${h(date(r.firstObserved))}</td><td>${h(date(r.lastObserved))}</td><td>${r.compatibleDeclarations} serviços com declaração compatível<br>${r.declarationPending} por confirmar${r.missingServiceStart?`<br><small>${r.missingServiceStart} sem hora de início do serviço</small>`:''}${r.missingServiceEnd?`<br><small>${r.missingServiceEnd} sem hora de fim do serviço</small>`:''}${serviceDetails(r)}</td><td>${r.cartrackMatches===1?'<a href="#activity-cartrack">Consultar leituras Cartrack</a>':r.cartrackMatches>1?'Correspondência Cartrack por confirmar':'Sem leituras na lista sincronizada'}<br><small>Quilómetros por turno na consulta Cartrack</small></td></tr>`).join('')||'<tr><td colspan="8">Sem serviços concluídos identificados nesta consulta e pesquisa. A ausência de registos não prova inatividade.</td></tr>'}</tbody></table></div>
@@ -30,7 +35,7 @@
       const user=getUser();if(ownerId&&ownerId!==user?.id)clear();if(user?.role!=='admin'||!user.id||busy)return;
       const period=getRange(options.day);
       if(!period){error='Escolhe um dia válido até hoje.';changed();return;}
-      ownerId=user.id;const epoch=++version;day=options.day;filter=String(options.filter||'').slice(0,200);busy=true;error='';result=null;changed();
+      ownerId=user.id;const epoch=++version;day=options.day;filter=String(options.filter||'').slice(0,200);followToday=options.followToday===true;lastAttempt=now();lastChecked=null;busy=true;error='';result=null;changed();
       const current=()=>version===epoch&&getUser()?.id===user.id&&getUser()?.role==='admin';
       async function read(make){
         const rows=[],ids=new Set();let expected=null,partial=false;
@@ -60,10 +65,11 @@
         ]);
         if(!current())return;
         result=root.TripConference.summarize({trips:trips.rows,events:events.rows,nativeSessions:native.rows,drivers:drivers.rows,vehicles:vehicles.rows,cartrack:getCartrack(),start:period.start,end:period.end,partial:[trips,events,native,drivers,vehicles].some(p=>p.partial)});
+        lastChecked=now();
       }catch{if(current())error='Não foi possível conferir os dados. Atualiza a consulta para tentar novamente.';}
       finally{if(current()){busy=false;changed();}}
     }
-    return {render,load,clear};
+    return {render,load,clear,ensureLoaded};
   }
   root.TripConferencePortal={create};
 })(typeof globalThis==='undefined'?this:globalThis);

@@ -16,19 +16,25 @@ function setup(file,page){
     selectors:{pageTitle:{},content:{},appShell:{classList:{add(){}}},loginScreen:{classList:{remove(){}}}},
     document:{querySelector:s=>inputs[s]||null,addEventListener:(name,fn)=>handlers[name]=fn},
     escapeHtml:esc,heading:()=>'',metric:()=>'',emptyRow:()=>'',supabaseClient:client,
-    nativeShiftPortal:{adminPanel:()=>'',clear(){}},boltActivitySummary:()=>({trips:[],events:[],grouped:new Map(),latestByVehicle:new Map()}),
+    nativeShiftPortal:{adminPanel:()=>'',clear(){},load:async()=>{}},boltActivitySummary:()=>({trips:[],events:[],grouped:new Map(),latestByVehicle:new Map()}),
     isVehicleQrMode:()=>false,closeDocumentPreview:null,documentBlobCache:new Map()};
   c.currentUser=()=>c.state.profile;c.window=c;vm.createContext(c);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../trip-conference-ui.js'),'utf8'),c);
   vm.runInContext(source.slice(source.indexOf('function localDay('),source.indexOf('function activityReportRange(')),c);
   vm.runInContext(source.slice(source.indexOf('const tripConferencePortal ='),source.indexOf('async function loadNativeShiftAccess(')),c);
   vm.runInContext(source.slice(source.indexOf('function cartrackDistanceSummary('),source.indexOf('\nasync function syncCartrack(')),c);
+  c.navByRole={admin:[['activity'],['dashboard']],driver:[['vehicles']]};c.renderApp=()=>{if(c.state.activeView==='activity')c.renderActivity();};
+  vm.runInContext(source.slice(source.indexOf('function setView('),source.indexOf('function renderContent(')),c);
   vm.runInContext(source.slice(source.indexOf('function bindPortalEvents()'),source.indexOf('\ndocument.addEventListener("DOMContentLoaded"')),c);
   c.bindPortalEvents();
   const click=()=>handlers.click({target:{closest:selector=>{assert(selector.includes('button'));return {dataset:{tripConference:''}}}}});
   return {c,queries,inputs,click,signOut:()=>authChanged('SIGNED_OUT'),render:()=>vm.runInContext('tripConferencePortal.render()',c)};
 }
 for(const file of ['app.js','teste/app.js']){
+  test(file+': entering Utilização triggers the real automatic conference load once',async()=>{
+    const s=setup(file);s.c.setView('activity');await new Promise(resolve=>setImmediate(resolve));assert.equal(s.queries.length,5);assert.match(s.c.selectors.content.innerHTML,/serviços concluídos identificados/);
+    s.c.setView('dashboard');s.c.setView('activity');await new Promise(resolve=>setImmediate(resolve));assert.equal(s.queries.length,5);
+  });
   test(file+': actual conference button renders combined data and applies plate search',async()=>{
     const s=setup(file);s.c.renderActivity();assert.match(s.c.selectors.content.innerHTML,/href="#activity-conference"/);
     s.inputs['#tripConferenceFilter'].value='AA00AA';await s.click();assert.match(s.c.selectors.content.innerHTML,/Motorista sintético/);assert.match(s.c.selectors.content.innerHTML,/1 serviços concluídos identificados/);

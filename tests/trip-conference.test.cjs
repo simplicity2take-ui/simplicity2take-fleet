@@ -46,3 +46,11 @@ test('excludes observations outside the selected day and never changes inputs',(
   assert.equal(run({trips:[{...trip,accepted_at:'2026-11-09T11:00:00Z',finished_at:'2026-11-09T11:30:00Z'}]}).completed,0);
   assert.equal(run({trips:[{...trip,accepted_at:'2026-11-09T11:00:00Z',finished_at:'2026-11-09T11:30:00Z',observed_at:'2026-11-10T12:00:00Z'}]}).completed,0);
 });
+test('service details retain original times and every compatible source without inventing missing starts',()=>{
+  const native={id:'native',driver_id:'d1',vehicle_id:'v1',started_at:events[0].registered_at,ended_at:events[1].registered_at};
+  const r=run({nativeSessions:[native]}),s=r.groups[0].services[0];
+  assert.equal(s.acceptedAt,Date.parse(trip.accepted_at));assert.equal(s.pickupAt,null);assert.equal(s.endedAt,Date.parse(trip.finished_at));
+  assert.deepEqual(s.matches.map(m=>m.source).sort(),['app','form']);assert.equal(r.groups[0].compatibleDeclarations,1);
+  const point=run({trips:[{...trip,accepted_at:null}]}).groups[0].services[0];assert.equal(point.acceptedAt,null);assert.equal(point.pickupAt,null);assert.equal(point.matches.length,1);
+  const partial=run({partial:true}).groups[0].services[0];assert.equal(partial.state,'partial');assert.deepEqual(partial.matches,[]);
+});

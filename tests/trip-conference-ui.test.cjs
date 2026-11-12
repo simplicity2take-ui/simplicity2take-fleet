@@ -32,3 +32,11 @@ test('root and test portals load identical modules before app initialization',()
   for(const file of ['trip-conference.js','trip-conference-ui.js'])assert.equal(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),fs.readFileSync(path.join(__dirname,'../teste',file),'utf8'));
   for(const prefix of ['','teste/']){const html=fs.readFileSync(path.join(__dirname,'..',prefix,'index.html'),'utf8');assert(html.indexOf('trip-conference.js')<html.indexOf('app.js?'));assert(html.indexOf('trip-conference-ui.js')<html.indexOf('app.js?'));}
 });
+test('service details distinguish missing times and form declarations without additional reads',async()=>{
+  const events=[{id:'entry',driver_id:'d',vehicle_id:'v',vehicle_plate:'AA-00-AA',event_kind:'entry',registered_at:'2026-11-10T09:00:00Z'},{id:'exit',driver_id:'d',vehicle_id:'v',vehicle_plate:'AA-00-AA',event_kind:'exit',registered_at:'2026-11-10T11:00:00Z'}];
+  const data={...tables,vehicle_shift_events:events,platform_trip_records:[{...tables.platform_trip_records[0],accepted_at:null}]};
+  const make=partial=>setup(async(table,a,b)=>({data:data[table].slice(a,b+1),count:partial&&table==='vehicles'?null:data[table].length}));
+  const s=make(false);await s.portal.load({day:'2026-11-10'});const reads=s.calls,html=s.portal.render();
+  assert.match(html,/<summary>Ver 1 serviço<\/summary>/);assert.match(html,/Aceitação: Sem registo/);assert.match(html,/Recolha: Sem registo/);assert.match(html,/início do serviço por confirmar/);assert.match(html,/<strong>Formulário<\/strong>/);assert.match(html,/Entrada declarada:/);assert.match(html,/Saída declarada:/);assert.equal(s.calls,reads);
+  const pending=make(true);await pending.portal.load({day:'2026-11-10'});const partialHtml=pending.portal.render();assert.match(partialHtml,/Consulta parcial: declaração por confirmar/);assert(!partialHtml.includes('Entrada declarada:'));
+});

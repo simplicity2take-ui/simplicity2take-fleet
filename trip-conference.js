@@ -27,14 +27,14 @@
   }
   function summarize({trips=[],drivers=[],vehicles=[],events=[],nativeSessions=[],cartrack=[],start,end,partial=false}){
     if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)throw Error('invalid_period');
-    const declarations=shifts.sessions(events);
+    const declarations=shifts.sessions(events).map(s=>({...s,source:'form'}));
     let excludedTestSessions=0;
     for(const s of nativeSessions){
       if(s.is_test){excludedTestSessions++;continue;}
       const entry={driver_id:s.driver_id,vehicle_id:s.vehicle_id,registered_at:s.started_at};
       const exit=s.ended_at?{...entry,registered_at:s.ended_at}:null;
       const duration=stamp(s.ended_at)-stamp(s.started_at);
-      declarations.push({entry,exit,flags:!exit?['missing_exit']:s.closure_kind==='admin'?['admin_closure_requires_review']:stamp(s.started_at)===null||stamp(s.ended_at)===null||duration<=0||duration>36*3600000?['invalid_or_long_shift']:[]});
+      declarations.push({entry,exit,source:'app',flags:!exit?['missing_exit']:s.closure_kind==='admin'?['admin_closure_requires_review']:stamp(s.started_at)===null||stamp(s.ended_at)===null||duration<=0||duration>36*3600000?['invalid_or_long_shift']:[]});
     }
     // Native and form declarations are one review set; conflicting sources cannot validate each other.
     for(const s of declarations){
@@ -72,15 +72,23 @@
       const serviceEnd=stamp(t.finished_at)??stamp(t.dropoff_at);
       if(serviceStart!==null&&serviceEnd!==null&&serviceEnd<serviceStart){result.invalidTimes++;continue;}
       const groupKey=driver.id+'|'+vehicle.id;
-      if(!groups.has(groupKey))groups.set(groupKey,{driverId:driver.id,driverName:String(driver.full_name||'Motorista identificado'),vehicleId:vehicle.id,plate:vehicle.plate,uber:0,bolt:0,firstObserved:first,lastObserved:last,missingServiceStart:0,missingServiceEnd:0,compatibleDeclarations:0,declarationPending:0,cartrackMatches:cartrack.filter(c=>plate(c.registration)===plate(vehicle.plate)).length});
+      if(!groups.has(groupKey))groups.set(groupKey,{driverId:driver.id,driverName:String(driver.full_name||'Motorista identificado'),vehicleId:vehicle.id,plate:vehicle.plate,uber:0,bolt:0,firstObserved:first,lastObserved:last,missingServiceStart:0,missingServiceEnd:0,compatibleDeclarations:0,declarationPending:0,services:[],cartrackMatches:cartrack.filter(c=>plate(c.registration)===plate(vehicle.plate)).length});
       const g=groups.get(groupKey);g[t.platform]++;result.completed++;
       g.firstObserved=Math.min(g.firstObserved,first);g.lastObserved=Math.max(g.lastObserved,last);
       if(serviceStart===null)g.missingServiceStart++;
       if(serviceEnd===null)g.missingServiceEnd++;
-      const compatible=declarations.some(s=>s.entry&&s.exit&&!s.flags.length&&s.entry.driver_id===driver.id&&s.entry.vehicle_id===vehicle.id&&stamp(s.entry.registered_at)<=first+300000&&stamp(s.exit.registered_at)>=last-300000);
-      g[compatible?'compatibleDeclarations':'declarationPending']++;
+      const matching=declarations.filter(s=>s.entry&&s.exit&&!s.flags.length&&s.entry.driver_id===driver.id&&s.entry.vehicle_id===vehicle.id&&stamp(s.entry.registered_at)<=first+300000&&stamp(s.exit.registered_at)>=last-300000);
+      const matches=[...new Map(matching.map(s=>{
+        const m={source:s.source,entry:stamp(s.entry.registered_at),exit:stamp(s.exit.registered_at)};
+        return [m.source+'|'+m.entry+'|'+m.exit,m];
+      })).values()];
+      g.services.push({platform:t.platform,acceptedAt:stamp(t.accepted_at),pickupAt:stamp(t.pickup_at),endedAt:serviceEnd,firstObserved:first,matches,state:matches.length?'compatible':'pending'});
+      g[matching.length?'compatibleDeclarations':'declarationPending']++;
     }
-    if(result.partial)for(const g of groups.values()){g.declarationPending+=g.compatibleDeclarations;g.compatibleDeclarations=0;}
+    for(const g of groups.values()){
+      g.services.sort((a,b)=>a.firstObserved-b.firstObserved||a.platform.localeCompare(b.platform));
+      if(result.partial){g.declarationPending+=g.compatibleDeclarations;g.compatibleDeclarations=0;for(const s of g.services){s.matches=[];s.state='partial';}}
+    }
     result.groups=[...groups.values()].sort((a,b)=>a.driverName.localeCompare(b.driverName,'pt')||a.plate.localeCompare(b.plate));
     return result;
   }

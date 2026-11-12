@@ -176,6 +176,12 @@ const selectors = {
 };
 
 const nativeShiftPortal = window.NativeShiftPortal.create({client:supabaseClient,getUser:currentUser,escapeHtml,visible:()=>state.activeView==='shift'||state.activeView==='activity',changed:()=>{if(state.profile && (state.activeView==='shift'||state.activeView==='activity'))renderApp();}});
+const tripConferencePortal = window.TripConferencePortal.create({
+  client:supabaseClient,getUser:()=>state.profile,escapeHtml,
+  today:()=>localDay(Date.now()),getCartrack:()=>state.cartrackVehicles||[],
+  getRange:day=>/^\d{4}-\d{2}-\d{2}$/.test(day||'')&&day<=localDay(Date.now())&&localDay(reportMidnight(day))===day?{start:reportMidnight(day),end:reportMidnight(reportDayShift(day,1))}:null,
+  changed:()=>{if(state.profile?.role==='admin'&&state.activeView==='activity')renderActivity();}
+});
 async function loadNativeShiftAccess() {
   const userId=state.sessionUserId;
   state.nativeShiftAvailable=false;
@@ -756,6 +762,7 @@ async function logout() {
   documentBlobCache.clear();
   state.sessionUserId = null;
   nativeShiftPortal.clear();
+  tripConferencePortal.clear();
   state.nativeShiftAvailable=false;
   state.profile = null;
   state.boltOnlineRead = null;
@@ -1735,6 +1742,7 @@ function renderActivity() {
     ${heading("Utilização da frota", "Cartrack: última leitura e quilometragem registada. Bolt: atividade e viagens no período selecionado.", `<div class="row-actions"><button class="${week === "current" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="current">Semana atual</button><button class="${week === "previous" ? "primary-button" : "secondary-button"}" type="button" data-activity-week="previous">Semana anterior</button><button class="${!week && periodDays === 1 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="1">24 horas</button><button class="${!week && periodDays === 7 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="7">7 dias</button><button class="${!week && periodDays === 30 ? "primary-button" : "secondary-button"}" type="button" data-activity-days="30">30 dias</button><button class="secondary-button" type="button" data-bolt-activity-sync>Atualizar Bolt</button></div>`)}
 
     <nav class="activity-shortcuts" aria-label="Consultas de utilização">
+      <a href="#activity-conference"><strong>Conferência</strong><span>Motoristas, matrículas e serviços</span></a>
       <a href="#activity-turns"><strong>Turnos</strong><span>Entradas, saídas e quilómetros</span></a>
       <a href="#activity-uber"><strong>Uber</strong><span>Viagens e matrículas importadas</span></a>
       <a href="#activity-bolt"><strong>Bolt</strong><span>Atividade e viagens da plataforma</span></a>
@@ -1795,7 +1803,7 @@ function renderActivity() {
         <div class="table-wrap"><table><thead><tr><th>Dia</th><th>Viatura</th><th>Primeira leitura</th><th>Última leitura</th><th>Leituras</th><th>Km observados</th></tr></thead>
         <tbody>${cartrackDistance.rows.map(row=>`<tr><td>${escapeHtml(row.day)}</td><td><strong>${escapeHtml(row.registration)}</strong></td><td>${new Date(row.firstAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.firstOdometer.toFixed(1)} km</td><td>${new Date(row.lastAt).toLocaleTimeString("pt-PT",{timeZone:"Europe/Lisbon"})}<br>${row.lastOdometer.toFixed(1)} km</td><td>${row.count}</td><td>${row.distance === null ? `<span class="tag expiring">${row.invalid ? "Rever odómetro" : "Leituras insuficientes"}</span>` : row.distance.toFixed(1)+" km"}</td></tr>`).join("") || '<tr><td colspan="6">Sem leituras Cartrack neste período.</td></tr>'}</tbody></table></div>
       </article>
-      ${nativeShiftPortal.adminPanel()}${renderBoltOnlineRead()}${renderBoltRideHistory()}${renderUberRideHistory()}${renderShiftRegister()}${renderShiftMileage()}
+      ${tripConferencePortal.render()}${nativeShiftPortal.adminPanel()}${renderBoltOnlineRead()}${renderBoltRideHistory()}${renderUberRideHistory()}${renderShiftRegister()}${renderShiftMileage()}
       ${renderCartrackIgnitionHistory()}
     </section>
   `;
@@ -2974,6 +2982,7 @@ function bindPortalEvents() {
       return;
     }
     if(target.dataset.nativeShiftRefresh!==undefined)return nativeShiftPortal.load();
+    if(target.dataset.tripConference!==undefined)return tripConferencePortal.load({day:document.querySelector('#tripConferenceDay')?.value,filter:document.querySelector('#tripConferenceFilter')?.value});
     if(target.dataset.nativeShiftLookup!==undefined)return nativeShiftPortal.lookup(document.querySelector('#nativeShiftQr')?.value);
     if(target.dataset.nativeShiftStart!==undefined)return nativeShiftPortal.submit('start');
     if(target.dataset.nativeShiftEnd!==undefined)return nativeShiftPortal.submit('end');
@@ -3105,6 +3114,7 @@ function bindPortalEvents() {
       documentBlobCache.clear();
       state.sessionUserId = null;
       nativeShiftPortal.clear();
+      tripConferencePortal.clear();
   state.nativeShiftAvailable=false;
   state.profile = null;
   state.boltOnlineRead = null;

@@ -62,3 +62,5 @@ jobs:
       - name: Verify platform synchronization lifecycle
         run: npm test --prefix tools/driver-lifecycle-tests
 
+      - name: Verify Bolt history preservation
+        run: node tests/bolt-trip-history-db.mjs

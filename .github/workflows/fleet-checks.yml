@@ -61,3 +61,5 @@ jobs:
         run: node tests/native-shifts-db.mjs
       - name: Verify platform synchronization lifecycle
         run: npm test --prefix tools/driver-lifecycle-tests
+      - name: Verify Bolt history preservation
+        run: node tests/bolt-trip-history-db.mjs

@@ -450,9 +450,11 @@ function driverDocuments() {
   const driverId = currentUser().driverId;
   const assignedVehicleIds = new Set(driverVehicles().map(vehicle => vehicle.id));
   return state.documents.filter(doc =>
-    (Boolean(driverId) && doc.driverId === driverId) ||
-    (Boolean(doc.vehicleId) && assignedVehicleIds.has(doc.vehicleId)) ||
-    (Boolean(driverId) && !doc.driverId && (doc.viewerDriverIds || []).includes(driverId))
+    alertLevel(doc) !== "Expirado" && (
+      (Boolean(driverId) && doc.driverId === driverId) ||
+      (Boolean(doc.vehicleId) && assignedVehicleIds.has(doc.vehicleId)) ||
+      (Boolean(driverId) && !doc.driverId && (doc.viewerDriverIds || []).includes(driverId))
+    )
   );
 }
 

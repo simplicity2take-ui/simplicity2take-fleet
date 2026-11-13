@@ -53,7 +53,7 @@ Deno.serve(async (request) => {
     const { data: document, error: documentError } =
       await supabase
         .from("documents")
-        .select("id,name,original_file_name,mime_type,drive_file_id")
+        .select("id,name,original_file_name,mime_type,drive_file_id,expiry_date")
         .eq("id", documentId)
         .maybeSingle();
 
@@ -63,6 +63,19 @@ Deno.serve(async (request) => {
       return json({
         error: "Documento não autorizado ou sem ficheiro."
       }, 404);
+    }
+
+    // Keep the administrator able to inspect and replace expired documents.
+    // Drivers must not receive expired document bytes, even through a direct API call.
+    const todayLisbon = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    if (document.expiry_date && document.expiry_date < todayLisbon) {
+      const { data: isAdmin, error: adminError } = await supabase.rpc("s2t_is_admin");
+      if (adminError) throw adminError;
+      if (isAdmin !== true) {
+        return json({ error: "Documento expirado. Contacte o administrador." }, 403);
+      }
     }
 
     const appsScriptUrl = Deno.env.get("GOOGLE_APPS_SCRIPT_URL");

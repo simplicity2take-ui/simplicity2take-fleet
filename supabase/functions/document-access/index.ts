@@ -67,9 +67,11 @@ Deno.serve(async (request) => {
 
     // Keep the administrator able to inspect and replace expired documents.
     // Drivers must not receive expired document bytes, even through a direct API call.
-    const todayLisbon = new Intl.DateTimeFormat("en-CA", {
+    const parts = new Intl.DateTimeFormat("en-GB", {
       timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit",
-    }).format(new Date());
+    }).formatToParts(new Date());
+    const datePart = (type: string) => parts.find(part => part.type === type)?.value;
+    const todayLisbon = `${datePart("year")}-${datePart("month")}-${datePart("day")}`;
     if (document.expiry_date && document.expiry_date < todayLisbon) {
       const { data: isAdmin, error: adminError } = await supabase.rpc("s2t_is_admin");
       if (adminError) throw adminError;

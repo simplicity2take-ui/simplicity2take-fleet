@@ -59,6 +59,34 @@ Deno.serve(async (request) => {
 
     if (documentError) throw documentError;
 
+    // Enforce document validity server-side; an expired file must never be
+    // delivered to a driver, even if they bypass the UI.
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileError) throw profileError;
+    const isAdmin = profile?.role === "admin";
+
+    if (!isAdmin) {
+      const { data: validity, error: validityError } = await supabase
+        .from("documents")
+        .select("expiry_date")
+        .eq("id", documentId)
+        .maybeSingle();
+
+      if (validityError) throw validityError;
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Lisbon",
+        year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(new Date());
+      if (validity?.expiry_date && validity.expiry_date < today) {
+        return json({ error: "Documento expirado. Contacte o administrador." }, 403);
+      }
+    }
+
     if (!document?.drive_file_id) {
       return json({
         error: "Documento não autorizado ou sem ficheiro."

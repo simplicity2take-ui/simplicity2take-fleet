@@ -21,7 +21,7 @@ async function check(expiry, admin, date) {
   };
   const fn = vm.runInNewContext('(async () => { ' + guard + ' return { status: 200 }; })', context);
   const result = await fn();
-  return { status: result.status, rpcCalls };
+  return JSON.parse(JSON.stringify({ status: result.status, rpcCalls }));
 }
 
 test('driver is denied expired document bytes', async () => {

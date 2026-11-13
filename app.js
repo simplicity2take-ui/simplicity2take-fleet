@@ -142,7 +142,7 @@ const documentTypes = [
   "Contrato",
   "Outros"
 ];
-const vehicleDocumentTypes = ["DUA", "Seguro", "Carta Verde", "IPO"];
+const vehicleDocumentTypes = ["DUA", "Carta Verde", "Inspeção (INSP)", "Condições Particulares", "Licença TVDE", "Outros"];
 
 const navByRole = {
   admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["activity", "Utilização", "UT"], ["documents", "Documentos da Empresa", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],

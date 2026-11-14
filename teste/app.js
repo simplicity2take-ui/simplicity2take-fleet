@@ -2599,6 +2599,12 @@ async function saveDocument(values, viewerDriverIds, id) {
   if (context === "driver" && !finalDriverId) {
     throw new Error("Selecione o motorista.");
   }
+  if (context === "vehicle" && !state.vehicles.some(vehicle => vehicle.id === finalVehicleId)) {
+    throw new Error("A viatura selecionada não existe na lista atual.");
+  }
+  if (context === "driver" && !state.drivers.some(driver => driver.id === finalDriverId)) {
+    throw new Error("O motorista selecionado não existe na lista atual.");
+  }
 
   let driveData = existing ? {
     fileId: existing.driveFileId,
@@ -2612,10 +2618,10 @@ async function saveDocument(values, viewerDriverIds, id) {
     const base64 = await fileToBase64(file);
     const folderType = context === "vehicle" ? "vehicles" : context === "driver" ? "drivers" : "documents";
     const folderName = context === "vehicle"
-      ? (state.vehicles.find(vehicle => vehicle.id === values.vehicleId)?.plate || "Sem viatura")
+      ? (state.vehicles.find(vehicle => vehicle.id === finalVehicleId)?.plate || "")
       : context === "driver"
-        ? (state.drivers.find(driver => driver.id === values.driverId)?.name || "Sem motorista")
-        : "Empresa";
+        ? (state.drivers.find(driver => driver.id === finalDriverId)?.name || "")
+        : "";
 
     const { data, error } = await supabaseClient.functions.invoke("drive-upload", {
       body: {

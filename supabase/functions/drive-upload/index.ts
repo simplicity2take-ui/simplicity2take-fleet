@@ -130,12 +130,21 @@ Deno.serve(async request => {
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
     if (profile?.role !== "admin") return json({ ok: false, error: "Apenas o administrador pode carregar documentos." }, 403);
 
-    const body = await request.json();
-    const fileName = String(body.fileName || "").trim();
-    const mimeType = String(body.mimeType || "application/octet-stream");
-    const base64 = String(body.base64 || "");
-    const folderType = String(body.folderType || "documents");
-    const folderName = String(body.folderName || "").trim();
+    let body: Record<string, unknown>;
+    try {
+      const parsed = await request.json();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return json({ ok: false, error: "Pedido JSON inválido." }, 400);
+      }
+      body = parsed as Record<string, unknown>;
+    } catch {
+      return json({ ok: false, error: "Pedido JSON inválido." }, 400);
+    }
+    const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";
+    const mimeType = typeof body.mimeType === "string" ? body.mimeType : "";
+    const base64 = typeof body.base64 === "string" ? body.base64 : "";
+    const folderType = typeof body.folderType === "string" ? body.folderType : "";
+    const folderName = typeof body.folderName === "string" ? body.folderName.trim() : "";
 
     if (!fileName || !base64) return json({ ok: false, error: "Ficheiro em falta." }, 400);
     if (!["application/pdf", "image/jpeg", "image/png"].includes(mimeType)) {

@@ -59,10 +59,20 @@ async function driveAccessToken(serviceAccount: { client_email: string; private_
   return result.access_token;
 }
 
+function lisbonToday(): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const value = (type: string) => parts.find(item => item.type === type)?.value || "";
+  return [value("year"), value("month"), value("day")].join("-");
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: cors });
   }
+
+  if (request.method !== "POST") return json({ error: "Método não permitido." }, 405);
 
   try {
     const auth = request.headers.get("Authorization");
@@ -132,23 +142,13 @@ Deno.serve(async (request) => {
           .eq("vehicle_id", document.vehicle_id)
           .eq("driver_id", driver.id);
         if (assignmentError) throw assignmentError;
-        const todayParts = new Intl.DateTimeFormat("en-GB", {
-          timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit",
-        }).formatToParts(new Date());
-        const part = (type: string) => todayParts.find(item => item.type === type)?.value || "";
-        const todayLocal = [part("year"), part("month"), part("day")].join("-");
+        const todayLocal = lisbonToday();
         const assigned = (assignments || []).some(item =>
           item.active_from <= todayLocal && (!item.active_until || item.active_until >= todayLocal)
         );
         if (!assigned) return json({ error: "Viatura não atribuída ao motorista." }, 403);
       }
-      const lisbonDateParts = new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Europe/Lisbon",
-        year: "numeric", month: "2-digit", day: "2-digit",
-      }).formatToParts(new Date());
-      const datePart = (type: string) =>
-        lisbonDateParts.find(part => part.type === type)?.value || "";
-      const today = [datePart("year"), datePart("month"), datePart("day")].join("-");
+      const today = lisbonToday();
       if (document.expiry_date && document.expiry_date < today) {
         return json({ error: "Documento expirado. Contacte o administrador." }, 403);
       }

@@ -76,7 +76,7 @@ async function driveRequest(token: string, url: string, init: RequestInit = {}) 
 async function findFolder(token: string, name: string, parentId: string) {
   const q = [
     "mimeType='application/vnd.google-apps.folder'",
-    `name='${name.replace(/'/g, "\\'")}'`,
+    `name='${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`,
     `'${parentId}' in parents`,
     "trashed=false"
   ].join(" and ");

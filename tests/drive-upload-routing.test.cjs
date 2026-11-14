@@ -9,6 +9,13 @@ assert(source.includes('vehicles: "Veículos"'), 'Vehicle uploads must use Veíc
 assert(source.includes('documents: "Empresa"'), 'Company uploads must use Empresa');
 assert(source.includes('if (!topFolderName)'), 'Unknown folder types must be rejected');
 assert(source.includes('Conteúdo do ficheiro inválido.'), 'Malformed base64 must be rejected');
+assert(source.includes('Nome do ficheiro inválido.'), 'Unsafe upload filenames must be rejected');
+assert(source.includes('Nome da pasta inválido.'), 'Unsafe destination folder names must be rejected');
+assert(source.includes('fileName.length > 180'), 'File names must have a length limit');
+assert(source.includes('folderName.length > 180'), 'Folder names must have a length limit');
+assert(source.includes('fileName.includes("/")') && source.includes('fileName.includes("\\\\")'), 'File names must reject path separators');
+assert(source.includes('folderName.includes("/")'), 'Folder names must reject slash separators');
+assert(source.indexOf('Nome do ficheiro inválido.') < source.indexOf('googleAccessToken(serviceAccount)'), 'Reject invalid names before Google authorization');
 assert(source.includes('O conteúdo não corresponde ao formato declarado.'), 'MIME and file signature must match');
 assert(source.includes('const isPdf =') && source.includes('const isJpeg =') && source.includes('const isPng ='), 'PDF JPEG PNG magic bytes must be verified');
 assert(source.indexOf('const isPdf =') < source.indexOf('googleAccessToken(serviceAccount)'), 'Check file signature before Google authorization');

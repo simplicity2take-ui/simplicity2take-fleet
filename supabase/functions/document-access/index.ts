@@ -112,7 +112,7 @@ Deno.serve(async (request) => {
     const { data: document, error: documentError } =
       await supabase
         .from("documents")
-        .select("id,name,original_file_name,mime_type,drive_file_id,vehicle_id,expiry_date")
+        .select("id,name,original_file_name,mime_type,drive_file_id,vehicle_id,driver_id,expiry_date")
         .eq("id", documentId)
         .maybeSingle();
 
@@ -136,14 +136,15 @@ Deno.serve(async (request) => {
       if (profile?.role !== "driver" || !document) {
         return json({ error: "Documento não autorizado." }, 403);
       }
+      const { data: driver, error: driverError } = await supabase
+        .from("drivers")
+        .select("id")
+        .eq("profile_id", user.id)
+        .maybeSingle();
+      if (driverError) throw driverError;
+      if (!driver) return json({ error: "Motorista não autorizado." }, 403);
+
       if (document.vehicle_id) {
-        const { data: driver, error: driverError } = await supabase
-          .from("drivers")
-          .select("id")
-          .eq("profile_id", user.id)
-          .maybeSingle();
-        if (driverError) throw driverError;
-        if (!driver) return json({ error: "Motorista não autorizado." }, 403);
         const { data: assignments, error: assignmentError } = await supabase
           .from("vehicle_assignments")
           .select("active_from,active_until")
@@ -155,6 +156,20 @@ Deno.serve(async (request) => {
           item.active_from <= todayLocal && (!item.active_until || item.active_until >= todayLocal)
         );
         if (!assigned) return json({ error: "Viatura não atribuída ao motorista." }, 403);
+      } else if (document.driver_id) {
+        if (document.driver_id !== driver.id) {
+          return json({ error: "Documento não autorizado." }, 403);
+        }
+      } else {
+        const { data: viewer, error: viewerError } = await supabase
+          .from("document_viewers")
+          .select("document_id")
+          .eq("document_id", document.id)
+          .eq("driver_id", driver.id)
+          .eq("can_view", true)
+          .maybeSingle();
+        if (viewerError) throw viewerError;
+        if (!viewer) return json({ error: "Documento não autorizado." }, 403);
       }
       const today = lisbonToday();
       if (document.expiry_date && document.expiry_date < today) {

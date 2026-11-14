@@ -2639,9 +2639,9 @@ async function saveDocument(values, viewerDriverIds, id) {
     const base64 = await fileToBase64(file);
     const folderType = context === "vehicle" ? "vehicles" : context === "driver" ? "drivers" : "documents";
     const folderName = context === "vehicle"
-      ? (state.vehicles.find(vehicle => vehicle.id === values.vehicleId)?.plate || "Sem viatura")
+      ? (state.vehicles.find(vehicle => vehicle.id === finalVehicleId)?.plate || "")
       : context === "driver"
-        ? (state.drivers.find(driver => driver.id === values.driverId)?.name || "Sem motorista")
+        ? (state.drivers.find(driver => driver.id === finalDriverId)?.name || "")
         : "";
 
     const { data, error } = await supabaseClient.functions.invoke("drive-upload", {

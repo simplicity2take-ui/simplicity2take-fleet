@@ -11,6 +11,10 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  }
  chosen={type:'image/jpeg',size:100};await assert.rejects(c.saveDocument({},[],''),/Selecione a viatura/);assert.equal(reads,0);
  c.state.documentContext='driver';await assert.rejects(c.saveDocument({},[],''),/Selecione o motorista/);assert.equal(reads,0);
+ c.state.documentContext='vehicle';
+ await assert.rejects(c.saveDocument({vehicleId:'missing'},[],''),/não existe na lista atual/);assert.equal(reads,0);
+ c.state.documentContext='driver';
+ await assert.rejects(c.saveDocument({driverId:'missing'},[],''),/não existe na lista atual/);assert.equal(reads,0);
  c.state.documentContext='vehicle';await assert.rejects(c.saveDocument({vehicleId:'vehicle'},[],''),/Reached file read/);assert.equal(reads,1);
  console.log(file+': PASS file format/size/empty checks and required association before file read or upload; stale suggestions ignored.');
 }})().catch(e=>{console.error(e);process.exitCode=1});

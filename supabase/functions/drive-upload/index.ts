@@ -68,8 +68,7 @@ async function driveRequest(token: string, url: string, init: RequestInit = {}) 
     }
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Google Drive: ${detail.slice(0, 500)}`);
+    throw new Error(`Google Drive HTTP ${response.status}`);
   }
   return response;
 }

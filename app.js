@@ -2626,6 +2626,12 @@ async function saveDocument(values, viewerDriverIds, id) {
   if (context === "driver" && !finalDriverId) {
     throw new Error("Selecione o motorista.");
   }
+  if (context === "vehicle" && !state.vehicles.some(vehicle => vehicle.id === finalVehicleId)) {
+    throw new Error("A viatura selecionada não existe na lista atual.");
+  }
+  if (context === "driver" && !state.drivers.some(driver => driver.id === finalDriverId)) {
+    throw new Error("O motorista selecionado não existe na lista atual.");
+  }
 
   let driveData = existing ? {
     fileId: existing.driveFileId,

@@ -450,7 +450,7 @@ function driverDocuments() {
   const driverId = currentUser().driverId;
   const assignedVehicleIds = new Set(driverVehicles().map(vehicle => vehicle.id));
   return state.documents.filter(doc =>
-    (doc.expiryDate === "" || daysUntil(doc.expiryDate) >= 0) && (
+    (!doc.expiryDate || daysUntil(doc.expiryDate) >= 0) && (
       (Boolean(driverId) && doc.driverId === driverId) ||
       (Boolean(doc.vehicleId) && assignedVehicleIds.has(doc.vehicleId)) ||
       (Boolean(driverId) && !doc.driverId && (doc.viewerDriverIds || []).includes(driverId))

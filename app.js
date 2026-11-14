@@ -2642,7 +2642,7 @@ async function saveDocument(values, viewerDriverIds, id) {
       ? (state.vehicles.find(vehicle => vehicle.id === values.vehicleId)?.plate || "Sem viatura")
       : context === "driver"
         ? (state.drivers.find(driver => driver.id === values.driverId)?.name || "Sem motorista")
-        : "Empresa";
+        : "";
 
     const { data, error } = await supabaseClient.functions.invoke("drive-upload", {
       body: {

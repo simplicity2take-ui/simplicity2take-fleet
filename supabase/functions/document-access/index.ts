@@ -78,10 +78,13 @@ Deno.serve(async (request) => {
         .maybeSingle();
 
       if (validityError) throw validityError;
-      const today = new Intl.DateTimeFormat("en-CA", {
+      const lisbonDateParts = new Intl.DateTimeFormat("en-GB", {
         timeZone: "Europe/Lisbon",
         year: "numeric", month: "2-digit", day: "2-digit",
-      }).format(new Date());
+      }).formatToParts(new Date());
+      const datePart = (type: string) =>
+        lisbonDateParts.find(part => part.type === type)?.value || "";
+      const today = [datePart("year"), datePart("month"), datePart("day")].join("-");
       if (validity?.expiry_date && validity.expiry_date < today) {
         return json({ error: "Documento expirado. Contacte o administrador." }, 403);
       }

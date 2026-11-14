@@ -4,7 +4,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
     const s=fs.readFileSync(path.join(__dirname,'..',file),'utf8');
     let role='admin',payload,fetches=0;
     const existing={id:'d1',driverId:'driver1',name:'Carta',type:'Carta de Condução',number:'N123',policyNumber:'P456',issueDate:'2025-01-02',observations:'Manter nota',driveFileId:'file1',fileName:'carta.pdf',fileType:'application/pdf',driveUrl:'url1'};
-    const context={state:{documents:[existing,{id:'d2',driverId:'driver2',name:'Outro motorista'}],documentContext:'driver',sessionUserId:'admin'},currentUser:()=>({role}),escapeHtml:v=>String(v||''),alertLevel:()=> 'OK',driverName:()=> 'Motorista',vehicleName:()=> 'Viatura',emptyCard:msg=>msg,showToast:()=>{},selectors:{modalFields:{querySelector:()=>({files:[]})}},documentBlobCache:new Map([['d1','old-file']]),fetchDocumentBlob:()=>{fetches++;throw Error('Unexpected fetch')}};
+    const context={state:{vehicles:[],drivers:[{id:'driver1',name:'Um'}],documents:[existing,{id:'d2',driverId:'driver2',name:'Outro motorista'}],documentContext:'driver',sessionUserId:'admin'},currentUser:()=>({role}),escapeHtml:v=>String(v||''),alertLevel:()=> 'OK',driverName:()=> 'Motorista',vehicleName:()=> 'Viatura',emptyCard:msg=>msg,showToast:()=>{},selectors:{modalFields:{querySelector:()=>({files:[]})}},documentBlobCache:new Map([['d1','old-file']]),fetchDocumentBlob:()=>{fetches++;throw Error('Unexpected fetch')}};
     context.supabaseClient = { from(table) {
       if (table === 'documents') return { update(value) {
         payload = value;

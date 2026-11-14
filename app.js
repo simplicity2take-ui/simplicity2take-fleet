@@ -142,7 +142,7 @@ const documentTypes = [
   "Contrato",
   "Outros"
 ];
-const vehicleDocumentTypes = ["DUA", "Seguro", "Carta Verde", "IPO"];
+const vehicleDocumentTypes = ["DUA", "Carta Verde", "Inspeção (INSP)", "Condições Particulares", "Licença TVDE", "Outros"];
 
 const navByRole = {
   admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["activity", "Utilização", "UT"], ["documents", "Documentos da Empresa", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
@@ -450,9 +450,11 @@ function driverDocuments() {
   const driverId = currentUser().driverId;
   const assignedVehicleIds = new Set(driverVehicles().map(vehicle => vehicle.id));
   return state.documents.filter(doc =>
-    (Boolean(driverId) && doc.driverId === driverId) ||
-    (Boolean(doc.vehicleId) && assignedVehicleIds.has(doc.vehicleId)) ||
-    (Boolean(driverId) && !doc.driverId && (doc.viewerDriverIds || []).includes(driverId))
+    (!doc.expiryDate || daysUntil(doc.expiryDate) >= 0) && (
+      (Boolean(doc.vehicleId) && assignedVehicleIds.has(doc.vehicleId)) ||
+      (!doc.vehicleId && Boolean(driverId) && doc.driverId === driverId) ||
+      (!doc.vehicleId && Boolean(driverId) && !doc.driverId && (doc.viewerDriverIds || []).includes(driverId))
+    )
   );
 }
 
@@ -2624,6 +2626,12 @@ async function saveDocument(values, viewerDriverIds, id) {
   if (context === "driver" && !finalDriverId) {
     throw new Error("Selecione o motorista.");
   }
+  if (context === "vehicle" && !state.vehicles.some(vehicle => vehicle.id === finalVehicleId)) {
+    throw new Error("A viatura selecionada não existe na lista atual.");
+  }
+  if (context === "driver" && !state.drivers.some(driver => driver.id === finalDriverId)) {
+    throw new Error("O motorista selecionado não existe na lista atual.");
+  }
 
   let driveData = existing ? {
     fileId: existing.driveFileId,
@@ -2637,10 +2645,10 @@ async function saveDocument(values, viewerDriverIds, id) {
     const base64 = await fileToBase64(file);
     const folderType = context === "vehicle" ? "vehicles" : context === "driver" ? "drivers" : "documents";
     const folderName = context === "vehicle"
-      ? (state.vehicles.find(vehicle => vehicle.id === values.vehicleId)?.plate || "Sem viatura")
+      ? (state.vehicles.find(vehicle => vehicle.id === finalVehicleId)?.plate || "")
       : context === "driver"
-        ? (state.drivers.find(driver => driver.id === values.driverId)?.name || "Sem motorista")
-        : "Empresa";
+        ? (state.drivers.find(driver => driver.id === finalDriverId)?.name || "")
+        : "";
 
     const { data, error } = await supabaseClient.functions.invoke("drive-upload", {
       body: {

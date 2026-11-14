@@ -1,7 +1,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
 (async()=>{for(const file of ['app.js','teste/app.js']){
  const s=fs.readFileSync(path.join(__dirname,'..',file),'utf8');let chosen,reads=0;
- const c={state:{documents:[],documentContext:'vehicle',smartPreview:{vehicleId:'stale',driverId:'stale'}},selectors:{modalFields:{querySelector:()=>({files:chosen?[chosen]:[]})}},fileToBase64:async()=>{reads++;throw Error('Reached file read')}};
+ const c={state:{documents:[],vehicles:[{id:'vehicle',plate:'AA-00-AA'}],drivers:[],documentContext:'vehicle',smartPreview:{vehicleId:'stale',driverId:'stale'}},selectors:{modalFields:{querySelector:()=>({files:chosen?[chosen]:[]})}},fileToBase64:async()=>{reads++;throw Error('Reached file read')}};
  vm.createContext(c);
  vm.runInContext(s.slice(s.indexOf('function validateDocumentFile('),s.indexOf('\nlet documentAnalysisRun')),c);
  vm.runInContext(s.slice(s.indexOf('async function saveDocument('),s.indexOf('\nfunction fileToBase64(')),c);
@@ -11,6 +11,10 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  }
  chosen={type:'image/jpeg',size:100};await assert.rejects(c.saveDocument({},[],''),/Selecione a viatura/);assert.equal(reads,0);
  c.state.documentContext='driver';await assert.rejects(c.saveDocument({},[],''),/Selecione o motorista/);assert.equal(reads,0);
+ c.state.documentContext='vehicle';
+ await assert.rejects(c.saveDocument({vehicleId:'missing'},[],''),/não existe na lista atual/);assert.equal(reads,0);
+ c.state.documentContext='driver';
+ await assert.rejects(c.saveDocument({driverId:'missing'},[],''),/não existe na lista atual/);assert.equal(reads,0);
  c.state.documentContext='vehicle';await assert.rejects(c.saveDocument({vehicleId:'vehicle'},[],''),/Reached file read/);assert.equal(reads,1);
  console.log(file+': PASS file format/size/empty checks and required association before file read or upload; stale suggestions ignored.');
 }})().catch(e=>{console.error(e);process.exitCode=1});

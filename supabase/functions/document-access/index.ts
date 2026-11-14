@@ -18,10 +18,61 @@ function base64ToBytes(base64: string) {
   return Uint8Array.from(binary, c => c.charCodeAt(0));
 }
 
+
+function base64Url(bytes: Uint8Array | string): string {
+  const input = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
+  let binary = "";
+  for (const byte of input) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function driveAccessToken(serviceAccount: { client_email: string; private_key: string }): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claim = base64Url(JSON.stringify({
+    iss: serviceAccount.client_email,
+    scope: "https://www.googleapis.com/auth/drive.readonly",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600,
+  }));
+  const pem = serviceAccount.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
+  const privateBytes = base64ToBytes(pem);
+  const key = await crypto.subtle.importKey(
+    "pkcs8", privateBytes, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"],
+  );
+  const unsigned = header + "." + claim;
+  const signature = new Uint8Array(await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned),
+  ));
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: unsigned + "." + base64Url(signature),
+    }),
+  });
+  if (!response.ok) throw new Error("Não foi possível autenticar no Google Drive.");
+  const result = await response.json();
+  if (!result.access_token) throw new Error("Google Drive não devolveu um token.");
+  return result.access_token;
+}
+
+function lisbonToday(): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const value = (type: string) => parts.find(item => item.type === type)?.value || "";
+  return [value("year"), value("month"), value("day")].join("-");
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: cors });
   }
+
+  if (request.method !== "POST") return json({ error: "Método não permitido." }, 405);
 
   try {
     const auth = request.headers.get("Authorization");
@@ -43,65 +94,108 @@ Deno.serve(async (request) => {
       return json({ error: "Sessão inválida." }, 401);
     }
 
-    const body = await request.json();
-    const documentId = String(body.document_id || "").trim();
-
-    if (!documentId) {
-      return json({ error: "document_id é obrigatório." }, 400);
+    let body: Record<string, unknown>;
+    try {
+      const parsed = await request.json();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return json({ error: "Pedido JSON inválido." }, 400);
+      }
+      body = parsed as Record<string, unknown>;
+    } catch {
+      return json({ error: "Pedido JSON inválido." }, 400);
+    }
+    const documentId = typeof body.document_id === "string" ? body.document_id.trim() : "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(documentId)) {
+      return json({ error: "document_id inválido." }, 400);
     }
 
     const { data: document, error: documentError } =
       await supabase
         .from("documents")
-        .select("id,name,original_file_name,mime_type,drive_file_id")
+        .select("id,name,original_file_name,mime_type,drive_file_id,vehicle_id,driver_id,expiry_date")
         .eq("id", documentId)
         .maybeSingle();
 
     if (documentError) throw documentError;
-
     if (!document?.drive_file_id) {
-      return json({
-        error: "Documento não autorizado ou sem ficheiro."
-      }, 404);
+      return json({ error: "Documento não autorizado ou sem ficheiro." }, 404);
     }
 
-    const appsScriptUrl = Deno.env.get("GOOGLE_APPS_SCRIPT_URL");
-    const uploadSecret = Deno.env.get("GOOGLE_UPLOAD_SECRET");
+    // Enforce document validity server-side; an expired file must never be
+    // delivered to a driver, even if they bypass the UI.
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
 
-    if (!appsScriptUrl || !uploadSecret) {
-      return json({
-        error: "Integração Google Drive não configurada no servidor."
-      }, 503);
+    if (profileError) throw profileError;
+    const isAdmin = profile?.role === "admin";
+
+    if (!isAdmin) {
+      if (profile?.role !== "driver" || !document) {
+        return json({ error: "Documento não autorizado." }, 403);
+      }
+      const { data: driver, error: driverError } = await supabase
+        .from("drivers")
+        .select("id")
+        .eq("profile_id", user.id)
+        .maybeSingle();
+      if (driverError) throw driverError;
+      if (!driver) return json({ error: "Motorista não autorizado." }, 403);
+
+      if (document.vehicle_id) {
+        const { data: assignments, error: assignmentError } = await supabase
+          .from("vehicle_assignments")
+          .select("active_from,active_until")
+          .eq("vehicle_id", document.vehicle_id)
+          .eq("driver_id", driver.id);
+        if (assignmentError) throw assignmentError;
+        const todayLocal = lisbonToday();
+        const assigned = (assignments || []).some(item =>
+          item.active_from <= todayLocal && (!item.active_until || item.active_until >= todayLocal)
+        );
+        if (!assigned) return json({ error: "Viatura não atribuída ao motorista." }, 403);
+      } else if (document.driver_id) {
+        if (document.driver_id !== driver.id) {
+          return json({ error: "Documento não autorizado." }, 403);
+        }
+      } else {
+        const { data: viewer, error: viewerError } = await supabase
+          .from("document_viewers")
+          .select("document_id")
+          .eq("document_id", document.id)
+          .eq("driver_id", driver.id)
+          .eq("can_view", true)
+          .maybeSingle();
+        if (viewerError) throw viewerError;
+        if (!viewer) return json({ error: "Documento não autorizado." }, 403);
+      }
+      const today = lisbonToday();
+      if (document.expiry_date && document.expiry_date < today) {
+        return json({ error: "Documento expirado. Contacte o administrador." }, 403);
+      }
     }
 
-    const driveResponse = await fetch(appsScriptUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        action: "download",
-        secret: uploadSecret,
-        fileId: document.drive_file_id,
-      }),
-    });
-
+    // Use the same service account as drive-upload, so new uploads are
+    // immediately readable without a second Google Apps Script integration.
+    const serviceAccountJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON");
+    if (!serviceAccountJson) {
+      return json({ error: "Conta de serviço Google Drive não configurada." }, 503);
+    }
+    const serviceAccount = JSON.parse(serviceAccountJson);
+    const token = await driveAccessToken(serviceAccount);
+    const fileId = encodeURIComponent(document.drive_file_id);
+    const driveResponse = await fetch(
+      "https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media",
+      { headers: { Authorization: "Bearer " + token } },
+    );
     if (!driveResponse.ok) {
-      return json({
-        error: "O Google Apps Script devolveu um erro."
-      }, 502);
+      console.error("Google Drive file retrieval failed", driveResponse.status);
+      return json({ error: "Não foi possível obter o ficheiro do Google Drive." }, 502);
     }
-
-    const result = await driveResponse.json();
-
-    if (!result?.ok || !result?.base64) {
-      return json({
-        error: result?.error ||
-          "Não foi possível obter o documento do Drive."
-      }, 502);
-    }
-
-    const bytes = base64ToBytes(result.base64);
+    const bytes = new Uint8Array(await driveResponse.arrayBuffer());
+    const result = { mimeType: driveResponse.headers.get("content-type") || "", fileName: "" };
     const headers = new Headers(cors);
 
     headers.set(
@@ -116,7 +210,7 @@ Deno.serve(async (request) => {
       document.name ||
       result.fileName ||
       "documento"
-    ).replace(/["\\]/g, "");
+    ).replace(/[\x00-\x1f\x7f"\\]/g, "").slice(0, 180);
 
     headers.set(
       "content-disposition",
@@ -133,11 +227,6 @@ Deno.serve(async (request) => {
   } catch (error) {
     console.error(error);
 
-    return json({
-      error:
-        error instanceof Error
-          ? error.message
-          : "Erro interno."
-    }, 500);
+    return json({ error: "Erro interno ao consultar o documento." }, 500);
   }
 });

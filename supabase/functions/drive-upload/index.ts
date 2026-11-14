@@ -68,8 +68,7 @@ async function driveRequest(token: string, url: string, init: RequestInit = {}) 
     }
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Google Drive: ${detail.slice(0, 500)}`);
+    throw new Error(`Google Drive HTTP ${response.status}`);
   }
   return response;
 }
@@ -77,7 +76,7 @@ async function driveRequest(token: string, url: string, init: RequestInit = {}) 
 async function findFolder(token: string, name: string, parentId: string) {
   const q = [
     "mimeType='application/vnd.google-apps.folder'",
-    `name='${name.replace(/'/g, "\\'")}'`,
+    `name='${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`,
     `'${parentId}' in parents`,
     "trashed=false"
   ].join(" and ");
@@ -130,18 +129,53 @@ Deno.serve(async request => {
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
     if (profile?.role !== "admin") return json({ ok: false, error: "Apenas o administrador pode carregar documentos." }, 403);
 
-    const body = await request.json();
-    const fileName = String(body.fileName || "").trim();
-    const mimeType = String(body.mimeType || "application/octet-stream");
-    const base64 = String(body.base64 || "");
-    const folderType = String(body.folderType || "documents");
-    const folderName = String(body.folderName || "").trim();
+    let body: Record<string, unknown>;
+    try {
+      const parsed = await request.json();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return json({ ok: false, error: "Pedido JSON inválido." }, 400);
+      }
+      body = parsed as Record<string, unknown>;
+    } catch {
+      return json({ ok: false, error: "Pedido JSON inválido." }, 400);
+    }
+    const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";
+    const mimeType = typeof body.mimeType === "string" ? body.mimeType : "";
+    const base64 = typeof body.base64 === "string" ? body.base64 : "";
+    const folderType = typeof body.folderType === "string" ? body.folderType : "";
+    const folderName = typeof body.folderName === "string" ? body.folderName.trim() : "";
 
     if (!fileName || !base64) return json({ ok: false, error: "Ficheiro em falta." }, 400);
+    if (fileName.length > 180 || /[\x00-\x1f\x7f]/.test(fileName) || fileName.includes("/") || fileName.includes("\\")) {
+      return json({ ok: false, error: "Nome do ficheiro inválido." }, 400);
+    }
+    if (folderName.length > 180 || /[\x00-\x1f\x7f]/.test(folderName) || folderName.includes("/")) {
+      return json({ ok: false, error: "Nome da pasta inválido." }, 400);
+    }
     if (!["application/pdf", "image/jpeg", "image/png"].includes(mimeType)) {
       return json({ ok: false, error: "Formato não suportado." }, 400);
     }
     if (base64.length > 15_000_000) return json({ ok: false, error: "Ficheiro demasiado grande." }, 413);
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) {
+      return json({ ok: false, error: "Conteúdo do ficheiro inválido." }, 400);
+    }
+    if (!["drivers", "vehicles", "documents"].includes(folderType)) {
+      return json({ ok: false, error: "Destino do documento inválido." }, 400);
+    }
+    if (folderType !== "documents" && !folderName) {
+      return json({ ok: false, error: "Identificação do motorista ou da viatura em falta." }, 400);
+    }
+
+    const binary = decodeBase64(base64);
+    const isPdf = binary.length >= 5 && binary[0] === 0x25 && binary[1] === 0x50 && binary[2] === 0x44 && binary[3] === 0x46 && binary[4] === 0x2d;
+    const isJpeg = binary.length >= 3 && binary[0] === 0xff && binary[1] === 0xd8 && binary[2] === 0xff;
+    const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+    const isPng = binary.length >= 8 && pngSignature.every((byte, index) => binary[index] === byte);
+    if (!((mimeType === "application/pdf" && isPdf) ||
+      (mimeType === "image/jpeg" && isJpeg) ||
+      (mimeType === "image/png" && isPng))) {
+      return json({ ok: false, error: "O conteúdo não corresponde ao formato declarado." }, 400);
+    }
 
     const rootFolderId = Deno.env.get("GOOGLE_DRIVE_ROOT_FOLDER_ID");
     const serviceAccountJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON");
@@ -152,7 +186,9 @@ Deno.serve(async request => {
     const serviceAccount = JSON.parse(serviceAccountJson);
     const token = await googleAccessToken(serviceAccount);
 
-    const topFolderName = folderType === "drivers" ? "Motoristas" : "Veículos";
+    const folderNames: Record<string, string> = { drivers: "Motoristas", vehicles: "Veículos", documents: "Empresa" };
+    const topFolderName = folderNames[folderType];
+    if (!topFolderName) return json({ ok: false, error: "Destino do documento inválido." }, 400);
     const topFolderId = await ensureFolder(token, topFolderName, rootFolderId);
     const targetFolderId = folderName ? await ensureFolder(token, folderName, topFolderId) : topFolderId;
 
@@ -162,7 +198,6 @@ Deno.serve(async request => {
       parents: [targetFolderId]
     };
     const boundary = "s2t_" + crypto.randomUUID();
-    const binary = decodeBase64(base64);
     const metadataPart = new TextEncoder().encode(
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`
     );
@@ -188,6 +223,6 @@ Deno.serve(async request => {
     });
   } catch (error) {
     console.error(error);
-    return json({ ok: false, error: error?.message || "Erro ao carregar para o Google Drive." }, 500);
+    return json({ ok: false, error: "Erro interno ao carregar o documento." }, 500);
   }
 });

@@ -18,6 +18,47 @@ function base64ToBytes(base64: string) {
   return Uint8Array.from(binary, c => c.charCodeAt(0));
 }
 
+
+function base64Url(bytes: Uint8Array | string): string {
+  const input = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
+  let binary = "";
+  for (const byte of input) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+}
+
+async function driveAccessToken(serviceAccount: { client_email: string; private_key: string }): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claim = base64Url(JSON.stringify({
+    iss: serviceAccount.client_email,
+    scope: "https://www.googleapis.com/auth/drive.readonly",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600,
+  }));
+  const pem = serviceAccount.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\s/g, "");
+  const privateBytes = base64ToBytes(pem);
+  const key = await crypto.subtle.importKey(
+    "pkcs8", privateBytes, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"],
+  );
+  const unsigned = header + "." + claim;
+  const signature = new Uint8Array(await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned),
+  ));
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: unsigned + "." + base64Url(signature),
+    }),
+  });
+  if (!response.ok) throw new Error("Não foi possível autenticar no Google Drive.");
+  const result = await response.json();
+  if (!result.access_token) throw new Error("Google Drive não devolveu um token.");
+  return result.access_token;
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: cors });
@@ -96,43 +137,25 @@ Deno.serve(async (request) => {
       }, 404);
     }
 
-    const appsScriptUrl = Deno.env.get("GOOGLE_APPS_SCRIPT_URL");
-    const uploadSecret = Deno.env.get("GOOGLE_UPLOAD_SECRET");
-
-    if (!appsScriptUrl || !uploadSecret) {
-      return json({
-        error: "Integração Google Drive não configurada no servidor."
-      }, 503);
+    // Use the same service account as drive-upload, so new uploads are
+    // immediately readable without a second Google Apps Script integration.
+    const serviceAccountJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON");
+    if (!serviceAccountJson) {
+      return json({ error: "Conta de serviço Google Drive não configurada." }, 503);
     }
-
-    const driveResponse = await fetch(appsScriptUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        action: "download",
-        secret: uploadSecret,
-        fileId: document.drive_file_id,
-      }),
-    });
-
+    const serviceAccount = JSON.parse(serviceAccountJson);
+    const token = await driveAccessToken(serviceAccount);
+    const fileId = encodeURIComponent(document.drive_file_id);
+    const driveResponse = await fetch(
+      "https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media",
+      { headers: { Authorization: "Bearer " + token } },
+    );
     if (!driveResponse.ok) {
-      return json({
-        error: "O Google Apps Script devolveu um erro."
-      }, 502);
+      console.error("Google Drive file retrieval failed", driveResponse.status);
+      return json({ error: "Não foi possível obter o ficheiro do Google Drive." }, 502);
     }
-
-    const result = await driveResponse.json();
-
-    if (!result?.ok || !result?.base64) {
-      return json({
-        error: result?.error ||
-          "Não foi possível obter o documento do Drive."
-      }, 502);
-    }
-
-    const bytes = base64ToBytes(result.base64);
+    const bytes = new Uint8Array(await driveResponse.arrayBuffer());
+    const result = { mimeType: driveResponse.headers.get("content-type") || "", fileName: "" };
     const headers = new Headers(cors);
 
     headers.set(

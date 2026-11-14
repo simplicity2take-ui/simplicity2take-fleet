@@ -94,7 +94,7 @@ Deno.serve(async (request) => {
     const { data: document, error: documentError } =
       await supabase
         .from("documents")
-        .select("id,name,original_file_name,mime_type,drive_file_id")
+        .select("id,name,original_file_name,mime_type,drive_file_id,vehicle_id,expiry_date")
         .eq("id", documentId)
         .maybeSingle();
 
@@ -112,13 +112,33 @@ Deno.serve(async (request) => {
     const isAdmin = profile?.role === "admin";
 
     if (!isAdmin) {
-      const { data: validity, error: validityError } = await supabase
-        .from("documents")
-        .select("expiry_date")
-        .eq("id", documentId)
-        .maybeSingle();
-
-      if (validityError) throw validityError;
+      if (profile?.role !== "driver" || !document) {
+        return json({ error: "Documento não autorizado." }, 403);
+      }
+      if (document.vehicle_id) {
+        const { data: driver, error: driverError } = await supabase
+          .from("drivers")
+          .select("id")
+          .eq("profile_id", user.id)
+          .maybeSingle();
+        if (driverError) throw driverError;
+        if (!driver) return json({ error: "Motorista não autorizado." }, 403);
+        const { data: assignments, error: assignmentError } = await supabase
+          .from("vehicle_assignments")
+          .select("active_from,active_until")
+          .eq("vehicle_id", document.vehicle_id)
+          .eq("driver_id", driver.id);
+        if (assignmentError) throw assignmentError;
+        const todayParts = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit",
+        }).formatToParts(new Date());
+        const part = (type: string) => todayParts.find(item => item.type === type)?.value || "";
+        const todayLocal = [part("year"), part("month"), part("day")].join("-");
+        const assigned = (assignments || []).some(item =>
+          item.active_from <= todayLocal && (!item.active_until || item.active_until >= todayLocal)
+        );
+        if (!assigned) return json({ error: "Viatura não atribuída ao motorista." }, 403);
+      }
       const lisbonDateParts = new Intl.DateTimeFormat("en-GB", {
         timeZone: "Europe/Lisbon",
         year: "numeric", month: "2-digit", day: "2-digit",
@@ -126,7 +146,7 @@ Deno.serve(async (request) => {
       const datePart = (type: string) =>
         lisbonDateParts.find(part => part.type === type)?.value || "";
       const today = [datePart("year"), datePart("month"), datePart("day")].join("-");
-      if (validity?.expiry_date && validity.expiry_date < today) {
+      if (document.expiry_date && document.expiry_date < today) {
         return json({ error: "Documento expirado. Contacte o administrador." }, 403);
       }
     }

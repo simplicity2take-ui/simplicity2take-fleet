@@ -99,6 +99,9 @@ Deno.serve(async (request) => {
         .maybeSingle();
 
     if (documentError) throw documentError;
+    if (!document?.drive_file_id) {
+      return json({ error: "Documento não autorizado ou sem ficheiro." }, 404);
+    }
 
     // Enforce document validity server-side; an expired file must never be
     // delivered to a driver, even if they bypass the UI.
@@ -149,12 +152,6 @@ Deno.serve(async (request) => {
       if (document.expiry_date && document.expiry_date < today) {
         return json({ error: "Documento expirado. Contacte o administrador." }, 403);
       }
-    }
-
-    if (!document?.drive_file_id) {
-      return json({
-        error: "Documento não autorizado ou sem ficheiro."
-      }, 404);
     }
 
     // Use the same service account as drive-upload, so new uploads are

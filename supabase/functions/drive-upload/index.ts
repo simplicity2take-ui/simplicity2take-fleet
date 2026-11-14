@@ -160,6 +160,17 @@ Deno.serve(async request => {
       return json({ ok: false, error: "Identificação do motorista ou da viatura em falta." }, 400);
     }
 
+    const binary = decodeBase64(base64);
+    const isPdf = binary.length >= 5 && binary[0] === 0x25 && binary[1] === 0x50 && binary[2] === 0x44 && binary[3] === 0x46 && binary[4] === 0x2d;
+    const isJpeg = binary.length >= 3 && binary[0] === 0xff && binary[1] === 0xd8 && binary[2] === 0xff;
+    const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+    const isPng = binary.length >= 8 && pngSignature.every((byte, index) => binary[index] === byte);
+    if (!((mimeType === "application/pdf" && isPdf) ||
+      (mimeType === "image/jpeg" && isJpeg) ||
+      (mimeType === "image/png" && isPng))) {
+      return json({ ok: false, error: "O conteúdo não corresponde ao formato declarado." }, 400);
+    }
+
     const rootFolderId = Deno.env.get("GOOGLE_DRIVE_ROOT_FOLDER_ID");
     const serviceAccountJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON");
     if (!rootFolderId || !serviceAccountJson) {
@@ -181,7 +192,6 @@ Deno.serve(async request => {
       parents: [targetFolderId]
     };
     const boundary = "s2t_" + crypto.randomUUID();
-    const binary = decodeBase64(base64);
     const metadataPart = new TextEncoder().encode(
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`
     );

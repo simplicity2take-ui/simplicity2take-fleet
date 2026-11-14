@@ -151,6 +151,9 @@ Deno.serve(async request => {
       return json({ ok: false, error: "Formato não suportado." }, 400);
     }
     if (base64.length > 15_000_000) return json({ ok: false, error: "Ficheiro demasiado grande." }, 413);
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) {
+      return json({ ok: false, error: "Conteúdo do ficheiro inválido." }, 400);
+    }
     if (!["drivers", "vehicles", "documents"].includes(folderType)) {
       return json({ ok: false, error: "Destino do documento inválido." }, 400);
     }
@@ -205,6 +208,6 @@ Deno.serve(async request => {
     });
   } catch (error) {
     console.error(error);
-    return json({ ok: false, error: error?.message || "Erro ao carregar para o Google Drive." }, 500);
+    return json({ ok: false, error: "Erro interno ao carregar o documento." }, 500);
   }
 });

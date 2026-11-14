@@ -195,7 +195,7 @@ Deno.serve(async (request) => {
       document.name ||
       result.fileName ||
       "documento"
-    ).replace(/[\\x00-\\x1f\\x7f"\\\\]/g, "").slice(0, 180);
+    ).replace(/[\x00-\x1f\x7f"\\]/g, "").slice(0, 180);
 
     headers.set(
       "content-disposition",

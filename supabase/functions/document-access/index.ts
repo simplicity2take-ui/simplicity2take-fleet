@@ -94,11 +94,19 @@ Deno.serve(async (request) => {
       return json({ error: "Sessão inválida." }, 401);
     }
 
-    const body = await request.json();
-    const documentId = String(body.document_id || "").trim();
-
-    if (!documentId) {
-      return json({ error: "document_id é obrigatório." }, 400);
+    let body: Record<string, unknown>;
+    try {
+      const parsed = await request.json();
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return json({ error: "Pedido JSON inválido." }, 400);
+      }
+      body = parsed as Record<string, unknown>;
+    } catch {
+      return json({ error: "Pedido JSON inválido." }, 400);
+    }
+    const documentId = typeof body.document_id === "string" ? body.document_id.trim() : "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(documentId)) {
+      return json({ error: "document_id inválido." }, 400);
     }
 
     const { data: document, error: documentError } =
@@ -204,11 +212,6 @@ Deno.serve(async (request) => {
   } catch (error) {
     console.error(error);
 
-    return json({
-      error:
-        error instanceof Error
-          ? error.message
-          : "Erro interno."
-    }, 500);
+    return json({ error: "Erro interno ao consultar o documento." }, 500);
   }
 });

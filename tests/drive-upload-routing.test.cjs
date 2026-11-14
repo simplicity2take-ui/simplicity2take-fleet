@@ -10,6 +10,8 @@ assert(source.includes('if (!topFolderName)'), 'Unknown folder types must be rej
 assert(source.includes('Conteúdo do ficheiro inválido.'), 'Malformed base64 must be rejected');
 assert(source.includes('Erro interno ao carregar o documento.'), 'Unexpected errors must be generic');
 assert(!source.includes('error: error?.message'), 'Internal error messages must not leak to clients');
+assert(!source.includes('const detail = await response.text()'), 'Raw Google Drive errors must not be logged');
+assert(source.includes('Google Drive HTTP ${response.status}'), 'Only the upstream HTTP status should be retained');
 assert(source.includes('["drivers", "vehicles", "documents"].includes(folderType)'), 'Only known destinations accepted');
 assert(source.includes('folderType !== "documents" && !folderName'), 'Vehicle and driver uploads need a folder identity');
 assert(source.indexOf('["drivers", "vehicles", "documents"].includes(folderType)') < source.indexOf('googleAccessToken(serviceAccount)'), 'Validate destination before contacting Google');

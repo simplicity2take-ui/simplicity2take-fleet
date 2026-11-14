@@ -151,6 +151,12 @@ Deno.serve(async request => {
       return json({ ok: false, error: "Formato não suportado." }, 400);
     }
     if (base64.length > 15_000_000) return json({ ok: false, error: "Ficheiro demasiado grande." }, 413);
+    if (!["drivers", "vehicles", "documents"].includes(folderType)) {
+      return json({ ok: false, error: "Destino do documento inválido." }, 400);
+    }
+    if (folderType !== "documents" && !folderName) {
+      return json({ ok: false, error: "Identificação do motorista ou da viatura em falta." }, 400);
+    }
 
     const rootFolderId = Deno.env.get("GOOGLE_DRIVE_ROOT_FOLDER_ID");
     const serviceAccountJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON");

@@ -152,7 +152,9 @@ Deno.serve(async request => {
     const serviceAccount = JSON.parse(serviceAccountJson);
     const token = await googleAccessToken(serviceAccount);
 
-    const topFolderName = folderType === "drivers" ? "Motoristas" : "Veículos";
+    const folderNames: Record<string, string> = { drivers: "Motoristas", vehicles: "Veículos", documents: "Empresa" };
+    const topFolderName = folderNames[folderType];
+    if (!topFolderName) return json({ ok: false, error: "Destino do documento inválido." }, 400);
     const topFolderId = await ensureFolder(token, topFolderName, rootFolderId);
     const targetFolderId = folderName ? await ensureFolder(token, folderName, topFolderId) : topFolderId;
 

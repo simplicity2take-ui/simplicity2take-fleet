@@ -8,6 +8,10 @@ assert(source.includes('vehicles: "Veículos"'), 'Vehicle uploads must use Veíc
 assert(source.includes('documents: "Empresa"'), 'Company uploads must use Empresa');
 assert(source.includes('if (!topFolderName)'), 'Unknown folder types must be rejected');
 assert(source.includes('Conteúdo do ficheiro inválido.'), 'Malformed base64 must be rejected');
+assert(source.includes('O conteúdo não corresponde ao formato declarado.'), 'MIME and file signature must match');
+assert(source.includes('const isPdf =') && source.includes('const isJpeg =') && source.includes('const isPng ='), 'PDF JPEG PNG magic bytes must be verified');
+assert(source.indexOf('const isPdf =') < source.indexOf('googleAccessToken(serviceAccount)'), 'Check file signature before Google authorization');
+assert(source.match(/const binary = decodeBase64\(base64\)/g)?.length === 1, 'Decode uploaded file only once');
 assert(source.includes('Erro interno ao carregar o documento.'), 'Unexpected errors must be generic');
 assert(!source.includes('error: error?.message'), 'Internal error messages must not leak to clients');
 assert(!source.includes('const detail = await response.text()'), 'Raw Google Drive errors must not be logged');

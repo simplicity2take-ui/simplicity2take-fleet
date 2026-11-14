@@ -7,6 +7,9 @@ assert(source.includes('drivers: "Motoristas"'), 'Driver uploads must use Motori
 assert(source.includes('vehicles: "Veículos"'), 'Vehicle uploads must use Veículos');
 assert(source.includes('documents: "Empresa"'), 'Company uploads must use Empresa');
 assert(source.includes('if (!topFolderName)'), 'Unknown folder types must be rejected');
+assert(source.includes('Conteúdo do ficheiro inválido.'), 'Malformed base64 must be rejected');
+assert(source.includes('Erro interno ao carregar o documento.'), 'Unexpected errors must be generic');
+assert(!source.includes('error: error?.message'), 'Internal error messages must not leak to clients');
 assert(source.includes('["drivers", "vehicles", "documents"].includes(folderType)'), 'Only known destinations accepted');
 assert(source.includes('folderType !== "documents" && !folderName'), 'Vehicle and driver uploads need a folder identity');
 assert(source.indexOf('["drivers", "vehicles", "documents"].includes(folderType)') < source.indexOf('googleAccessToken(serviceAccount)'), 'Validate destination before contacting Google');

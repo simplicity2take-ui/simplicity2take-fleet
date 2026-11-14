@@ -23,7 +23,7 @@ function base64Url(bytes: Uint8Array | string): string {
   const input = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
   let binary = "";
   for (const byte of input) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 async function driveAccessToken(serviceAccount: { client_email: string; private_key: string }): Promise<string> {
@@ -36,7 +36,7 @@ async function driveAccessToken(serviceAccount: { client_email: string; private_
     iat: now,
     exp: now + 3600,
   }));
-  const pem = serviceAccount.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\s/g, "");
+  const pem = serviceAccount.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
   const privateBytes = base64ToBytes(pem);
   const key = await crypto.subtle.importKey(
     "pkcs8", privateBytes, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"],

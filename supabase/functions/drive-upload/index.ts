@@ -146,10 +146,10 @@ Deno.serve(async request => {
     const folderName = typeof body.folderName === "string" ? body.folderName.trim() : "";
 
     if (!fileName || !base64) return json({ ok: false, error: "Ficheiro em falta." }, 400);
-    if (fileName.length > 180 || /[\x00-\x1f\x7f/\\]/.test(fileName)) {
+    if (fileName.length > 180 || /[\x00-\x1f\x7f]/.test(fileName) || fileName.includes("/") || fileName.includes("\\")) {
       return json({ ok: false, error: "Nome do ficheiro inválido." }, 400);
     }
-    if (folderName.length > 180 || /[\x00-\x1f\x7f/]/.test(folderName)) {
+    if (folderName.length > 180 || /[\x00-\x1f\x7f]/.test(folderName) || folderName.includes("/")) {
       return json({ ok: false, error: "Nome da pasta inválido." }, 400);
     }
     if (!["application/pdf", "image/jpeg", "image/png"].includes(mimeType)) {

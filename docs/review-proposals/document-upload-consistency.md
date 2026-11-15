@@ -20,6 +20,11 @@ Em `app.js`, o ficheiro é carregado para o Google Drive antes da operação `do
 - **Limite importante:** eliminar a ligação textual de novos registos não prova que os ficheiros sejam privados: a partilha de cada ficheiro e pasta do Google Drive tem de ser auditada, e um identificador de ficheiro pode permitir reconstruir uma ligação direta. Não há neste PR alterações às ACLs/permissões do Drive nem limpeza dos registos existentes.
 - Antes de qualquer alteração em produção, confirmar permissões de ficheiros e pastas e preparar revisão administrativa dos `drive_web_view_link` legados; não eliminar os URLs ou os ficheiros sem confirmação.
 
+## Prevenção de carregamentos simultâneos no formulário
+O tratamento do envio de formulários passou a usar `state.modalSaveInFlight`, definido **sincronamente antes de ler o formulário e antes de qualquer pedido de rede**. Isto impede que uma segunda submissão do mesmo modal inicie outro carregamento enquanto o primeiro decorre; a mera desativação do botão não era suficiente para garantir essa exclusão.
+
+O bloqueio é libertado tanto após sucesso como perante falha na gravação ou na própria leitura do formulário, permitindo uma nova tentativa explícita do administrador. A proteção foi implementada no portal principal e no portal de testes, com simulações de submissões concorrentes em `tests/document-modal-concurrency.test.cjs`. Não substitui idempotência do servidor, não abrange outras sessões/dispositivos e não impede duplicações após fechar e reabrir uma tentativa.
+
 ## Confirmação dos dados devolvidos pelo Google Drive
 A Edge Function de upload passou a solicitar também `parents` e `size` no resultado de `files.create`. Antes de informar o navegador de que o carregamento teve sucesso, compara o nome, MIME, identificador, pasta principal e número exato de bytes com os valores submetidos. Em caso de divergência ou campos em falta devolve erro genérico (502) e **não confirma o carregamento ao Fleet**.
 

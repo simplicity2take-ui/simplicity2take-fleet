@@ -11,7 +11,7 @@ function harness(portalPath, failurePoint) {
   assert(start >= 0 && end > start, 'Retry logic must remain available in the portal');
   const file = { name: 'insurance.pdf', type: 'application/pdf', size: 120 };
   let selectedFile = file;
-  const events = { uploads: 0, inserts: 0, updates: 0, viewerInserts: 0, recoveries: 0 };
+  const events = { uploads: 0, inserts: 0, updates: 0, viewerInserts: 0, recoveries: 0, insertedPayload: null, updatedPayload: null };
   let committed = false;
   const state = {
     documentContext: 'company', documents: [], vehicles: [], drivers: [],
@@ -20,7 +20,8 @@ function harness(portalPath, failurePoint) {
   const db = {
     from(table) {
       if (table === 'documents') return {
-        insert() {
+        insert(payload) {
+          events.insertedPayload = payload;
           events.inserts++;
           return { select: () => ({ single: async () => {
             if (events.inserts === 1 && failurePoint === 'response-lost') {
@@ -47,7 +48,8 @@ function harness(portalPath, failurePoint) {
             } };
           } };
         },
-        update() {
+        update(payload) {
+          events.updatedPayload = payload;
           events.updates++;
           return { eq: () => ({ select: () => ({ single: async () => ({
             data: { id: 'doc-created-1' }, error: null
@@ -72,7 +74,8 @@ function harness(portalPath, failurePoint) {
         events.uploads++;
         return { data: {
           ok: true, fileId: events.uploads === 1 ? 'validdriveid1234' : 'validdriveid5678',
-          fileName: body.fileName, mimeType: body.mimeType, webViewLink: ''
+          fileName: body.fileName, mimeType: body.mimeType,
+          webViewLink: 'https://drive.google.com/file/d/private-placeholder/view'
         }, error: null };
       }
     }
@@ -90,10 +93,44 @@ function harness(portalPath, failurePoint) {
     };
   `, sandbox, { timeout: 1000 });
   const values = { name: 'Seguro', type: 'Carta Verde', expiryDate: '2027-01-01' };
-  return { ...sandbox.testApi, values, file, events, setFile: nextFile => { selectedFile = nextFile; } };
+  return { ...sandbox.testApi, values, file, events, state, setFile: nextFile => { selectedFile = nextFile; } };
 }
 
 for (const portalPath of ['app.js', 'teste/app.js']) {
+  test(portalPath + ': new Drive uploads do not store a direct view URL', async () => {
+    const h = harness(portalPath);
+    await h.saveDocument(h.values, [], '');
+    assert.equal(h.events.inserts, 1);
+    assert.equal(h.events.insertedPayload.drive_web_view_link, null);
+    assert.equal(h.events.insertedPayload.drive_file_id, 'validdriveid1234');
+  });
+
+  test(portalPath + ': replacing a document clears the legacy direct URL', async () => {
+    const h = harness(portalPath);
+    h.setFile({ name: 'replacement.pdf', type: 'application/pdf', size: 140 });
+    // The existing document keeps its metadata when no file is selected,
+    // but a replacement must never persist its old external link.
+    await h.saveDocument(h.values, [], 'existing-document-1');
+    assert.equal(h.events.updates, 1);
+    assert.equal(h.events.updatedPayload.drive_web_view_link, null);
+  });
+
+  test(portalPath + ': metadata-only edit retains legacy URL without creating a new Drive file', async () => {
+    const h = harness(portalPath);
+    const existing = {
+      id: 'existing-document-1', name: 'Seguro', driveFileId: 'existingDriveFile12345',
+      driveUrl: 'https://drive.google.com/file/d/legacy/view',
+      fileName: 'legacy.pdf', fileType: 'application/pdf'
+    };
+    h.state.documents.push(existing);
+    h.setFile(null);
+    await h.saveDocument(h.values, [], existing.id);
+    assert.equal(h.events.uploads, 0);
+    assert.equal(h.events.updates, 1);
+    assert.equal(h.events.updatedPayload.drive_web_view_link, existing.driveUrl);
+    assert.equal(h.events.updatedPayload.drive_file_id, existing.driveFileId);
+  });
+
   test(portalPath + ': retry after database insert error reuses Drive file', async () => {
     const h = harness(portalPath, 'document');
     await assert.rejects(h.saveDocument(h.values, [], ''), /database unavailable/);

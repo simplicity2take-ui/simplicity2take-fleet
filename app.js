@@ -2236,6 +2236,7 @@ function openModal(type, id = "", options = {}) {
   if (state.modalSaveInFlight) return;
   state.editing = { type, id };
   state.pendingDocumentUpload = null; // A new form must not reuse a previous upload receipt.
+  state.pendingDriveUploadRequest = null; // An ambiguous upload is confined to its original form.
   if (type === "document") {
     const existing = state.documents.find(item => item.id === id);
     state.documentContext = options.scope || (existing?.vehicleId ? "vehicle" : existing?.driverId ? "driver" : "company");
@@ -2715,7 +2716,25 @@ async function saveDocument(values, viewerDriverIds, id) {
     if (reusingUpload) {
       driveData = previousAttempt.driveData;
     } else {
+      // The Drive operation ID is created BEFORE the HTTP call. If its
+      // response is lost, the next click can only look up this operation,
+      // never start a second upload with a new ID.
+      const previousRequest = state.pendingDriveUploadRequest;
+      const sameRequest = matchesPendingDocumentUpload(
+        previousRequest, file, context, finalVehicleId, finalDriverId, id, folderName
+      );
+      if (previousRequest?.uploadAttempted && !sameRequest) {
+        throw new Error("Confirme primeiro o carregamento anterior com o mesmo ficheiro e destino.");
+      }
       const base64 = await fileToBase64(file);
+      const uploadRequest = sameRequest ? previousRequest : {
+        editingId: id, file, context,
+        vehicleId: finalVehicleId, driverId: finalDriverId, folderName,
+        uploadId: crypto.randomUUID(), uploadAttempted: false
+      };
+      const recoverOnly = uploadRequest.uploadAttempted;
+      state.pendingDriveUploadRequest = uploadRequest;
+      uploadRequest.uploadAttempted = true;
       const { data, error } = await supabaseClient.functions.invoke("drive-upload", {
         body: {
           fileName: file.name,
@@ -2723,12 +2742,19 @@ async function saveDocument(values, viewerDriverIds, id) {
           base64,
           folderType,
           folderName,
-          documentType: values.type
+          documentType: values.type,
+          uploadId: uploadRequest.uploadId,
+          recoverOnly
         }
       });
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error || "Falha ao guardar no Google Drive.");
+      if (error) {
+        throw new Error(recoverOnly
+          ? "Não foi possível confirmar o carregamento anterior. Contacte o administrador."
+          : "Não foi possível confirmar o carregamento. Prima Guardar novamente para verificar, sem enviar outra cópia.");
+      }
+      if (!data?.ok) throw new Error(data?.error || "Não foi possível confirmar o carregamento.");
       driveData = data;
+      state.pendingDriveUploadRequest = null;
       state.pendingDocumentUpload = {
         editingId: id, file, context,
         vehicleId: finalVehicleId, driverId: finalDriverId, folderName,

@@ -250,7 +250,8 @@ Deno.serve(async (request) => {
 
     headers.set(
       "content-disposition",
-      'inline; filename="' + safeName + '"'
+      (verifiedType === "application/octet-stream" ? "attachment" : "inline") +
+        '; filename="' + safeName + '"'
     );
 
     headers.set("cache-control", "private, no-store");

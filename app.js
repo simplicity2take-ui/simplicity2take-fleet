@@ -2223,7 +2223,17 @@ function openDriverDocumentModal(driverId, docType = "") {
   state.smartPreview = { vehicleId: "", driverId, scope: "driver" };
 }
 
+function allowAdminModalClose(event) {
+  if (state.modalSaveInFlight) {
+    event?.preventDefault();
+    return false;
+  }
+  return true;
+}
+
 function openModal(type, id = "", options = {}) {
+  // Do not replace the modal while an earlier form is still being saved.
+  if (state.modalSaveInFlight) return;
   state.editing = { type, id };
   state.pendingDocumentUpload = null; // A new form must not reuse a previous upload receipt.
   if (type === "document") {
@@ -3178,11 +3188,16 @@ function bindPortalEvents() {
     if (target.id === "logoutButton") return logout();
     if (target.id === "workWithUsButton") return openRecruitment();
     if (target.id === "backToLoginButton") return closeRecruitment();
-    if (target.id === "closeModal" || target.id === "cancelModal") return selectors.modal?.close();
+    if (target.id === "closeModal" || target.id === "cancelModal") {
+      if (allowAdminModalClose()) selectors.modal?.close();
+      return;
+    }
     if (target.id === "closeQrModal") return document.querySelector("#qrModal")?.close();
     if (target.id === "printQrButton") return printQr();
   });
 
+  // Escape/cancel must not dismiss a form while the save is unresolved.
+  selectors.modal?.addEventListener("cancel", allowAdminModalClose);
   selectors.form?.addEventListener("submit", submitModal);
   selectors.recruiterForm?.addEventListener("submit", async event => {
     event.preventDefault();

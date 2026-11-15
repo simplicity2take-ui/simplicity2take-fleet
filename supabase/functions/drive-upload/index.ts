@@ -155,7 +155,8 @@ Deno.serve(async request => {
     if (!["application/pdf", "image/jpeg", "image/png"].includes(mimeType)) {
       return json({ ok: false, error: "Formato não suportado." }, 400);
     }
-    if (base64.length > 15_000_000) return json({ ok: false, error: "Ficheiro demasiado grande." }, 413);
+    // A 10 MB file needs at most 13,333,336 base64 characters.
+    if (base64.length > 13_333_336) return json({ ok: false, error: "Ficheiro demasiado grande." }, 413);
     if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) {
       return json({ ok: false, error: "Conteúdo do ficheiro inválido." }, 400);
     }

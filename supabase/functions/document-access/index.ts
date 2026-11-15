@@ -238,6 +238,9 @@ Deno.serve(async (request) => {
       (contentType === "image/jpeg" && isJpeg) ||
       (contentType === "image/png" && isPng)
       ? contentType : "application/octet-stream";
+    if (verifiedType === "application/octet-stream") {
+      return json({ error: "Formato do documento não corresponde ao ficheiro." }, 415);
+    }
     headers.set("content-type", verifiedType);
     headers.set("x-content-type-options", "nosniff");
 
@@ -250,8 +253,7 @@ Deno.serve(async (request) => {
 
     headers.set(
       "content-disposition",
-      (verifiedType === "application/octet-stream" ? "attachment" : "inline") +
-        '; filename="' + safeName + '"'
+      'inline; filename="' + safeName + '"'
     );
 
     headers.set("cache-control", "private, no-store");

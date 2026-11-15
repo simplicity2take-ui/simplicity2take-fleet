@@ -23,6 +23,8 @@ const checks = [
   ['Verify JPEG signature', 'const isJpeg = bytes.length'],
   ['Verify PNG signature', 'const isPng = bytes.length'],
   ['Downgrade mismatched file MIME', 'const verifiedType ='],
+  ['Reject mismatched document bytes', 'Formato do documento não corresponde ao ficheiro.'],
+  ['Do not allow download fallback', 'if (verifiedType === "application/octet-stream")'],
   ['Document size cap', 'const maxDocumentBytes = 12 * 1024 * 1024'],
   ['Reject oversized content length', 'declaredLength > maxDocumentBytes'],
   ['Reject oversized actual response', 'totalBytes > maxDocumentBytes'],

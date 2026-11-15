@@ -2534,14 +2534,18 @@ function wireSmartDocsUpload() {
 
 async function submitModal(event) {
   event.preventDefault();
+  // Lock synchronously: disabling a button alone cannot prevent overlapping
+  // form submit events (e.g. repeated Enter presses during an async upload).
+  if (state.modalSaveInFlight) return;
+  state.modalSaveInFlight = true;
   const submitButton = selectors.form.querySelector('button[type="submit"]');
-  submitButton.disabled = true;
-  submitButton.textContent = "A guardar…";
-  const data = new FormData(selectors.form);
-  const values = Object.fromEntries(data.entries());
-  const checked = name => data.getAll(name);
-  const { type, id } = state.editing;
   try {
+    submitButton.disabled = true;
+    submitButton.textContent = "A guardar…";
+    const data = new FormData(selectors.form);
+    const values = Object.fromEntries(data.entries());
+    const checked = name => data.getAll(name);
+    const { type, id } = state.editing;
     if (type === "driver") await saveDriver(values, id);
     if (type === "vehicle") await saveVehicle(values, checked("driverIds"), id);
     if (type === "document") await saveDocument(values, checked("viewerDriverIds"), id);
@@ -2554,6 +2558,7 @@ async function submitModal(event) {
     console.error(error);
     showToast(error?.message || "Não foi possível guardar.");
   } finally {
+    state.modalSaveInFlight = false;
     submitButton.disabled = false;
     submitButton.textContent = "Guardar";
   }

@@ -42,3 +42,5 @@ assert(!appSource.includes(': "Empresa";\n\n    const { data, error } = await su
 console.log('PASS: Google Drive upload destinations are explicit and unknown types rejected.');
 
 assert(source.includes('folderName.includes("\\\\")'), 'Drive folder names must reject backslash separators');
+
+assert(source.includes('binary.length > 10_000_000'), 'Decoded uploads must be capped at 10 MB');

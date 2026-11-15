@@ -10,7 +10,7 @@ assert(source.includes('name.replace(/\\\\/g, "\\\\\\\\").replace(/\'/g, "\\\\\'
 assert(source.includes('vehicles: "Veículos"'), 'Vehicle uploads must use Veículos');
 assert(source.includes('documents: "Empresa"'), 'Company uploads must use Empresa');
 assert(source.includes('files?fields=id,name,mimeType,parents&ignoreDefaultVisibility=true'), 'New Drive folders must ignore domain default visibility');
-assert(source.includes('uploadType=multipart&fields=id,name,mimeType&ignoreDefaultVisibility=true'), 'Uploaded files must ignore domain default visibility');
+assert(source.includes('uploadType=multipart&fields=id,name,mimeType,parents,size&ignoreDefaultVisibility=true'), 'Uploaded files must ignore domain default visibility');
 assert(!source.includes('permissions.create'), 'Upload code must not create sharing grants');
 
 assert(source.includes('if (!topFolderName)'), 'Unknown folder types must be rejected');
@@ -34,6 +34,8 @@ assert(!source.includes('const detail = await response.text()'), 'Raw Google Dri
 assert(source.includes('Google Drive HTTP ${response.status}'), 'Only the upstream HTTP status should be retained');
 assert(source.includes('typeof file.id !== "string"'), 'Upload must validate returned file identifier');
 assert(source.includes('file.mimeType !== mimeType || file.name !== fileName'), 'Upload must reject inconsistent returned file metadata');
+assert(source.includes('file.parents[0] !== targetFolderId'), 'Upload must confirm the exact Drive destination folder');
+assert(source.includes('file.size !== String(binary.byteLength)'), 'Upload must confirm the decoded content size');
 assert(!source.includes('webViewLink'), 'Upload service must not request or expose direct Google Drive links');
 assert(source.includes('O Google Drive não confirmou o identificador do documento.'), 'Missing file identifier must be treated as failure');
 assert(source.includes('["drivers", "vehicles", "documents"].includes(folderType)'), 'Only known destinations accepted');

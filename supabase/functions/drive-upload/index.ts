@@ -74,27 +74,48 @@ async function driveRequest(token: string, url: string, init: RequestInit = {}) 
   return response;
 }
 
+function validDriveFolder(folder: unknown, name: string, parentId: string): folder is { id: string } {
+  if (!folder || typeof folder !== "object") return false;
+  const candidate = folder as Record<string, unknown>;
+  return typeof candidate.id === "string" &&
+    /^[A-Za-z0-9_-]{10,}$/.test(candidate.id) &&
+    candidate.name === name &&
+    candidate.mimeType === "application/vnd.google-apps.folder" &&
+    Array.isArray(candidate.parents) &&
+    candidate.parents.length === 1 &&
+    candidate.parents[0] === parentId;
+}
+
 async function findFolder(token: string, name: string, parentId: string) {
+  const safeName = name.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeParent = parentId.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   const q = [
     "mimeType='application/vnd.google-apps.folder'",
-    `name='${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`,
-    `'${parentId}' in parents`,
+    `name='${safeName}'`,
+    `'${safeParent}' in parents`,
     "trashed=false"
   ].join(" and ");
   const url = "https://www.googleapis.com/drive/v3/files?" + new URLSearchParams({
     q,
-    fields: "files(id,name)",
-    pageSize: "10"
+    fields: "nextPageToken,incompleteSearch,files(id,name,mimeType,parents)",
+    pageSize: "2"
   });
   const response = await driveRequest(token, url);
   const data = await response.json();
-  return data.files?.[0]?.id || null;
+  // Never guess which folder is correct if the Drive list is partial,
+  // ambiguous or inconsistent; stop rather than uploading in the wrong place.
+  if (!data || !Array.isArray(data.files) || data.incompleteSearch ||
+      data.nextPageToken || data.files.length > 1 ||
+      (data.files.length === 1 && !validDriveFolder(data.files[0], name, parentId))) {
+    throw new Error("Google Drive folder lookup ambiguous or invalid.");
+  }
+  return data.files.length === 1 ? data.files[0].id : null;
 }
 
 async function ensureFolder(token: string, name: string, parentId: string) {
   const existing = await findFolder(token, name, parentId);
   if (existing) return existing;
-  const response = await driveRequest(token, "https://www.googleapis.com/drive/v3/files?fields=id,name&ignoreDefaultVisibility=true", {
+  const response = await driveRequest(token, "https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType,parents&ignoreDefaultVisibility=true", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -103,7 +124,11 @@ async function ensureFolder(token: string, name: string, parentId: string) {
       parents: [parentId]
     })
   });
-  return (await response.json()).id;
+  const created = await response.json();
+  if (!validDriveFolder(created, name, parentId)) {
+    throw new Error("Google Drive did not confirm the requested parent folder.");
+  }
+  return created.id;
 }
 
 function decodeBase64(base64: string) {

@@ -9,7 +9,7 @@ const cors = {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...cors, "content-type": "application/json" },
+    headers: { ...cors, "content-type": "application/json", "cache-control": "private, no-store", "x-content-type-options": "nosniff" },
   });
 }
 

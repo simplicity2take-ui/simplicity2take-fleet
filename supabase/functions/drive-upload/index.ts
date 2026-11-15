@@ -128,6 +128,13 @@ async function ensureFolder(token: string, name: string, parentId: string) {
   if (!validDriveFolder(created, name, parentId)) {
     throw new Error("Google Drive did not confirm the requested parent folder.");
   }
+  // A second upload may have created a same-name folder between our initial
+  // lookup and this POST. Re-list before accepting the new destination:
+  // on ambiguity, never send the document into an arbitrary folder.
+  const confirmedId = await findFolder(token, name, parentId);
+  if (confirmedId !== created.id) {
+    throw new Error("Google Drive folder creation could not be verified.");
+  }
   return created.id;
 }
 

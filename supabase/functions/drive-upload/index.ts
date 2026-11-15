@@ -280,7 +280,12 @@ Deno.serve(async request => {
     const folderNames: Record<string, string> = { drivers: "Motoristas", vehicles: "Veículos", documents: "Empresa" };
     const topFolderName = folderNames[folderType];
     if (!topFolderName) return json({ ok: false, error: "Destino do documento inválido." }, 400);
-    const topFolderId = await ensureFolder(token, topFolderName, rootFolderId);
+    const topFolderId = recoverOnly
+      ? await findFolder(token, topFolderName, rootFolderId)
+      : await ensureFolder(token, topFolderName, rootFolderId);
+    if (!topFolderId) {
+      return json({ ok: false, error: "Não foi possível confirmar o carregamento anterior. Contacte o administrador." }, 409);
+    }
     const targetFolderId = folderName
       ? (recoverOnly ? await findFolder(token, folderName, topFolderId) : await ensureFolder(token, folderName, topFolderId))
       : topFolderId;

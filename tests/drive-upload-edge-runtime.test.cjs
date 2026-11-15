@@ -59,7 +59,10 @@ async function run(options = {}) {
     const isUpload = u.pathname.startsWith('/upload/drive/v3/files');
     const isFolder = u.pathname === '/drive/v3/files';
     if (isUpload && init.method === 'POST') {
-      events.fileUploads.push({ url: String(url), size: init.body.byteLength });
+      events.fileUploads.push({
+        url: String(url), size: init.body.byteLength,
+        fixtureMetadata: new TextDecoder().decode(init.body.subarray(0, 400))
+      });
       const data = options.uploadReturn || {
         id: 'UploadedFile1234567890', name: 'seguro.pdf', mimeType: 'application/pdf',
         parents: [target], size: String(Buffer.from(pdf, 'base64').byteLength),
@@ -285,6 +288,8 @@ test('full Edge Function: operation token is stored privately on the uploaded fi
   assert.equal(result.events.uploadLookups.length, 1);
   assert.match(result.events.uploadLookups[0].query, /appProperties has/);
   assert.equal(result.events.fileUploads.length, 1);
+  assert.match(result.events.fileUploads[0].fixtureMetadata,
+    /"appProperties":\{"s2tUploadId":"a6f2fd31-d9ad-477a-9b90-3275be44fc34"\}/);
   assert.equal(result.data.fileId, 'UploadedFile1234567890');
   const upload = await run({ uploadId });
   assert.equal(upload.events.fileUploads.length, 1);

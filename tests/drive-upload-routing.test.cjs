@@ -44,3 +44,5 @@ console.log('PASS: Google Drive upload destinations are explicit and unknown typ
 assert(source.includes('folderName.includes("\\\\")'), 'Drive folder names must reject backslash separators');
 
 assert(source.includes('binary.length > 10_000_000'), 'Decoded uploads must be capped at 10 MB');
+
+assert(source.includes('base64.length > 13_333_336'), 'Encoded request cap must match 10 MB decoded file limit');

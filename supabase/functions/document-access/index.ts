@@ -198,12 +198,14 @@ Deno.serve(async (request) => {
     const result = { mimeType: driveResponse.headers.get("content-type") || "", fileName: "" };
     const headers = new Headers(cors);
 
-    headers.set(
-      "content-type",
-      document.mime_type ||
-        result.mimeType ||
-        "application/octet-stream"
-    );
+    const allowedMimeTypes = ["application/pdf", "image/jpeg", "image/png"];
+    const contentType = allowedMimeTypes.includes(document.mime_type)
+      ? document.mime_type
+      : allowedMimeTypes.includes(result.mimeType)
+        ? result.mimeType
+        : "application/octet-stream";
+    headers.set("content-type", contentType);
+    headers.set("x-content-type-options", "nosniff");
 
     const safeName = String(
       document.original_file_name ||

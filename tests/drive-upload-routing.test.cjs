@@ -10,7 +10,7 @@ assert(source.includes('name.replace(/\\\\/g, "\\\\\\\\").replace(/\'/g, "\\\\\'
 assert(source.includes('vehicles: "Veículos"'), 'Vehicle uploads must use Veículos');
 assert(source.includes('documents: "Empresa"'), 'Company uploads must use Empresa');
 assert(source.includes('files?fields=id,name,mimeType,parents&ignoreDefaultVisibility=true'), 'New Drive folders must ignore domain default visibility');
-assert(source.includes('uploadType=multipart&fields=id,name,mimeType,parents,size&ignoreDefaultVisibility=true'), 'Uploaded files must ignore domain default visibility');
+assert(source.includes('uploadType=multipart&fields=id,name,mimeType,parents,size,appProperties&ignoreDefaultVisibility=true'), 'Uploaded files must ignore domain default visibility');
 assert(!source.includes('permissions.create'), 'Upload code must not create sharing grants');
 
 assert(source.includes('if (!topFolderName)'), 'Unknown folder types must be rejected');
@@ -32,12 +32,16 @@ assert(!source.includes('console.error(error)'), 'Do not log raw upload exceptio
 assert(source.includes('console.error("Drive upload failed unexpectedly.")'), 'Log generic upload failure');
 assert(!source.includes('const detail = await response.text()'), 'Raw Google Drive errors must not be logged');
 assert(source.includes('Google Drive HTTP ${response.status}'), 'Only the upstream HTTP status should be retained');
-assert(source.includes('typeof file.id !== "string"'), 'Upload must validate returned file identifier');
-assert(source.includes('file.mimeType !== mimeType || file.name !== fileName'), 'Upload must reject inconsistent returned file metadata');
-assert(source.includes('file.parents[0] !== targetFolderId'), 'Upload must confirm the exact Drive destination folder');
-assert(source.includes('file.size !== String(binary.byteLength)'), 'Upload must confirm the decoded content size');
+assert(source.includes('verifiedUploadedFile(file, fileName, mimeType, targetFolderId,'), 'Upload must validate returned file identifier and metadata');
+assert(source.includes('item.name === name && item.mimeType === mimeType'), 'Upload must reject inconsistent returned file metadata');
+assert(source.includes('item.parents[0] === parentId'), 'Upload must confirm the exact Drive destination folder');
+assert(source.includes('item.size === String(byteLength)'), 'Upload must confirm the decoded content size');
 assert(!source.includes('webViewLink'), 'Upload service must not request or expose direct Google Drive links');
 assert(source.includes('O Google Drive não confirmou o identificador do documento.'), 'Missing file identifier must be treated as failure');
+assert(source.includes('appProperties has { key=\'s2tUploadId\''), 'Recovery searches Drive private app property');
+assert(source.includes('recoverOnly && !uploadId'), 'Recovery requires a valid upload operation token');
+assert(source.includes('if (recoverOnly)'), 'Recovery cannot trigger a second upload');
+assert(source.includes('appProperties: { s2tUploadId: uploadId }'), 'New Drive files must be tagged with the operation identifier');
 assert(source.includes('["drivers", "vehicles", "documents"].includes(folderType)'), 'Only known destinations accepted');
 assert(source.includes('folderType !== "documents" && !folderName'), 'Vehicle and driver uploads need a folder identity');
 assert(source.indexOf('["drivers", "vehicles", "documents"].includes(folderType)') < source.indexOf('googleAccessToken(serviceAccount)'), 'Validate destination before contacting Google');

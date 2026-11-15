@@ -46,3 +46,7 @@ assert(source.includes('folderName.includes("\\\\")'), 'Drive folder names must 
 assert(source.includes('binary.length > 10_000_000'), 'Decoded uploads must be capped at 10 MB');
 
 assert(source.includes('base64.length > 13_333_336'), 'Encoded request cap must match 10 MB decoded file limit');
+
+assert(source.includes('request.headers.get("content-length")'), 'Check declared request size');
+assert(source.includes('Number(declaredLength) > 18_000_000'), 'Reject clearly oversized request bodies');
+assert(source.indexOf('Number(declaredLength) > 18_000_000') < source.indexOf('await request.json()'), 'Reject oversized requests before JSON parsing');

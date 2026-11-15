@@ -11,7 +11,7 @@ function harness(portalPath, failurePoint) {
   assert(start >= 0 && end > start, 'Retry logic must remain available in the portal');
   const file = { name: 'insurance.pdf', type: 'application/pdf', size: 120 };
   let selectedFile = file;
-  const events = { uploads: 0, inserts: 0, updates: 0, viewerInserts: 0, recoveries: 0, insertedPayload: null, updatedPayload: null };
+  const events = { uploads: 0, driveWrites: 0, uploadCalls: [], inserts: 0, updates: 0, viewerInserts: 0, recoveries: 0, insertedPayload: null, updatedPayload: null };
   let committed = false;
   const state = {
     documentContext: 'company', documents: [], vehicles: [], drivers: [],
@@ -72,10 +72,22 @@ function harness(portalPath, failurePoint) {
     functions: {
       async invoke(_functionName, { body }) {
         events.uploads++;
+        events.uploadCalls.push(body);
+        assert.match(body.uploadId, /^[0-9a-f]{8}-[0-9a-f-]{27}$/i);
+        if (!body.recoverOnly) events.driveWrites++;
+        if (failurePoint === 'upload-response-lost' && events.uploads === 1) {
+          return { data: null, error: new Error('upload response lost') };
+        }
+        if (failurePoint === 'upload-recovery-missing' && events.uploads === 1) {
+          return { data: null, error: new Error('upload response lost') };
+        }
+        if (failurePoint === 'upload-recovery-missing' && body.recoverOnly) {
+          return { data: { ok: false, error: 'Carregamento anterior não localizado.' }, error: null };
+        }
         return { data: {
-          ok: true, fileId: events.uploads === 1 ? 'validdriveid1234' : 'validdriveid5678',
-          fileName: body.fileName, mimeType: body.mimeType,
-          webViewLink: 'https://drive.google.com/file/d/private-placeholder/view'
+          ok: true, fileId: body.recoverOnly || events.driveWrites === 1
+            ? 'validdriveid1234' : 'validdriveid5678',
+          fileName: body.fileName, mimeType: body.mimeType
         }, error: null };
       }
     }
@@ -83,6 +95,7 @@ function harness(portalPath, failurePoint) {
   const sandbox = {
     state, supabaseClient: db, documentBlobCache: new Map(), showToast() {},
     validateDocumentFile() {}, fileToBase64: async () => 'JVBERi0=',
+    crypto: { randomUUID: () => 'd1415f5e-f93a-4b09-a87c-3e2424d882f0' },
     selectors: { modalFields: { querySelector() { return { files: [selectedFile] }; } } }
   };
   vm.createContext(sandbox);
@@ -97,6 +110,42 @@ function harness(portalPath, failurePoint) {
 }
 
 for (const portalPath of ['app.js', 'teste/app.js']) {
+  test(portalPath + ': lost Drive response is reconciled without second upload', async () => {
+    const h = harness(portalPath, 'upload-response-lost');
+    await assert.rejects(h.saveDocument(h.values, [], ''), /Prima Guardar novamente/);
+    assert.equal(h.events.uploads, 1);
+    assert.equal(h.events.driveWrites, 1);
+    assert.equal(h.events.inserts, 0);
+    await h.saveDocument(h.values, [], '');
+    assert.equal(h.events.uploads, 2);
+    assert.equal(h.events.driveWrites, 1, 'Recovery must not create another Drive file');
+    assert.equal(h.events.uploadCalls[0].uploadId, h.events.uploadCalls[1].uploadId);
+    assert.equal(h.events.uploadCalls[0].recoverOnly, false);
+    assert.equal(h.events.uploadCalls[1].recoverOnly, true);
+    assert.equal(h.events.inserts, 1);
+    assert.equal(h.pending(), null);
+  });
+
+  test(portalPath + ': failed Drive recovery must never reupload', async () => {
+    const h = harness(portalPath, 'upload-recovery-missing');
+    await assert.rejects(h.saveDocument(h.values, [], ''), /Prima Guardar novamente/);
+    await assert.rejects(h.saveDocument(h.values, [], ''), /Carregamento anterior não localizado/);
+    assert.equal(h.events.uploads, 2);
+    assert.equal(h.events.driveWrites, 1);
+    assert.equal(h.events.inserts, 0);
+    assert.equal(h.state.pendingDriveUploadRequest?.uploadAttempted, true);
+  });
+
+  test(portalPath + ': changing file after an ambiguous Drive reply is blocked', async () => {
+    const h = harness(portalPath, 'upload-response-lost');
+    await assert.rejects(h.saveDocument(h.values, [], ''), /Prima Guardar novamente/);
+    h.setFile({ name: 'replacement.pdf', type: 'application/pdf', size: 140 });
+    await assert.rejects(h.saveDocument(h.values, [], ''), /Confirme primeiro o carregamento anterior/);
+    assert.equal(h.events.driveWrites, 1);
+    assert.equal(h.events.uploads, 1);
+    assert.equal(h.events.inserts, 0);
+  });
+
   test(portalPath + ': new Drive uploads do not store a direct view URL', async () => {
     const h = harness(portalPath);
     await h.saveDocument(h.values, [], '');

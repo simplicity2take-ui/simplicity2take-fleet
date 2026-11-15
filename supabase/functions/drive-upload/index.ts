@@ -94,7 +94,7 @@ async function findFolder(token: string, name: string, parentId: string) {
 async function ensureFolder(token: string, name: string, parentId: string) {
   const existing = await findFolder(token, name, parentId);
   if (existing) return existing;
-  const response = await driveRequest(token, "https://www.googleapis.com/drive/v3/files?fields=id,name", {
+  const response = await driveRequest(token, "https://www.googleapis.com/drive/v3/files?fields=id,name&ignoreDefaultVisibility=true", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -219,7 +219,7 @@ Deno.serve(async request => {
     payload.set(binary, metadataPart.length);
     payload.set(endPart, metadataPart.length + binary.length);
 
-    const upload = await driveRequest(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType", {
+    const upload = await driveRequest(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType&ignoreDefaultVisibility=true", {
       method: "POST",
       headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
       body: payload

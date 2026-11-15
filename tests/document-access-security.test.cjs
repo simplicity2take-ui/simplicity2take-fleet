@@ -8,6 +8,8 @@ const checks = [
   ['Malformed JSON rejected', 'Pedido JSON inválido.'],
   ['Document identifier validated', 'document_id inválido.'],
   ['User session checked', 'supabase.auth.getUser()'],
+  ['Profile status checked', 'profile?.status !== "Ativo"'],
+  ['Driver status checked', 'driver.status !== "Ativo"'],
   ['Document fetched under user RLS', '.from("documents")'],
   ['Vehicle assignment enforced', 'if (!assigned)'],
   ['Driver ownership enforced', 'document.driver_id !== driver.id'],

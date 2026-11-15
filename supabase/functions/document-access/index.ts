@@ -71,15 +71,15 @@ function lisbonToday(): string {
 // ASCII fallback for browsers and HTTP header implementations that require it.
 function safeInlineContentDisposition(rawName: unknown): string {
   const cleaned = Array.from(
-    String(rawName || "documento").replace(/[\\x00-\\x1f\\x7f"\\\\]/g, "")
-  ).filter(char => !/^[\\uD800-\\uDFFF]$/.test(char))
+    String(rawName || "documento").replace(/[\x00-\x1f\x7f"\\]/g, "")
+  ).filter(char => !/^[\uD800-\uDFFF]$/.test(char))
     .slice(0, 180).join("").trim() || "documento";
   const fallback = cleaned.normalize("NFKD")
-    .replace(/[\\u0300-\\u036f]/g, "")
-    .replace(/[^\\x20-\\x7e]/g, "_") || "documento";
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7e]/g, "_") || "documento";
   const encoded = encodeURIComponent(cleaned).replace(/[!'()*]/g, char =>
     "%" + char.charCodeAt(0).toString(16).toUpperCase());
-  return 'inline; filename="' + fallback + '"; filename*=UTF-8\\'\\'' + encoded;
+  return 'inline; filename="' + fallback + '"; filename*=UTF-8' + "''" + encoded;
 }
 
 Deno.serve(async (request) => {

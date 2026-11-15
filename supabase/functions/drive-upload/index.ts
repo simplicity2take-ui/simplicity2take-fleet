@@ -244,7 +244,7 @@ Deno.serve(async request => {
     payload.set(binary, metadataPart.length);
     payload.set(endPart, metadataPart.length + binary.length);
 
-    const upload = await driveRequest(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType&ignoreDefaultVisibility=true", {
+    const upload = await driveRequest(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,parents,size&ignoreDefaultVisibility=true", {
       method: "POST",
       headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
       body: payload
@@ -255,7 +255,12 @@ Deno.serve(async request => {
       return json({ ok: false, error: "O Google Drive não confirmou o identificador do documento." }, 502);
     }
 
-    if (file.mimeType !== mimeType || file.name !== fileName) {
+    // A successful HTTP upload is not sufficient: only register the file when
+    // Google confirms its exact destination and decoded byte length.
+    if (file.mimeType !== mimeType || file.name !== fileName ||
+        !Array.isArray(file.parents) || file.parents.length !== 1 ||
+        file.parents[0] !== targetFolderId ||
+        file.size !== String(binary.byteLength)) {
       console.error("Google Drive upload returned inconsistent file metadata.");
       return json({ ok: false, error: "O Google Drive devolveu dados inconsistentes do documento." }, 502);
     }

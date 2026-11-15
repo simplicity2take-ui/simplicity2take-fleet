@@ -2225,7 +2225,7 @@ function openDriverDocumentModal(driverId, docType = "") {
 
 function openModal(type, id = "", options = {}) {
   state.editing = { type, id };
-  pendingDocumentSave = null; // A new form must not reuse a previous upload receipt.
+  state.pendingDocumentUpload = null; // A new form must not reuse a previous upload receipt.
   if (type === "document") {
     const existing = state.documents.find(item => item.id === id);
     state.documentContext = options.scope || (existing?.vehicleId ? "vehicle" : existing?.driverId ? "driver" : "company");
@@ -2610,8 +2610,6 @@ async function saveVehicle(values, driverIds, id) {
 
 // Keep a successful Drive upload receipt only while this document form is open.
 // Retrying a failed database/viewer save must not create another Drive copy.
-let pendingDocumentSave = null;
-
 function matchesPendingDocumentUpload(pending, file, context, vehicleId, driverId, editingId) {
   return Boolean(pending && pending.file === file &&
     pending.context === context &&
@@ -2646,7 +2644,7 @@ async function saveDocument(values, viewerDriverIds, id) {
     throw new Error("O motorista selecionado não existe na lista atual.");
   }
 
-  const previousAttempt = pendingDocumentSave?.editingId === id ? pendingDocumentSave : null;
+  const previousAttempt = state.pendingDocumentUpload?.editingId === id ? state.pendingDocumentUpload : null;
   let driveData = existing ? {
     fileId: existing.driveFileId,
     fileName: existing.fileName,
@@ -2679,7 +2677,7 @@ async function saveDocument(values, viewerDriverIds, id) {
       if (error) throw error;
       if (!data?.ok) throw new Error(data?.error || "Falha ao guardar no Google Drive.");
       driveData = data;
-      pendingDocumentSave = {
+      state.pendingDocumentUpload = {
         editingId: id, file, context,
         vehicleId: finalVehicleId, driverId: finalDriverId,
         driveData, savedDocumentId: previousAttempt?.savedDocumentId || null
@@ -2708,7 +2706,7 @@ async function saveDocument(values, viewerDriverIds, id) {
   };
 
   // If the first insert succeeded but updating viewers failed, retry as an update.
-  const targetDocumentId = (pendingDocumentSave?.editingId === id ? pendingDocumentSave.savedDocumentId : null) || id;
+  const targetDocumentId = (state.pendingDocumentUpload?.editingId === id ? state.pendingDocumentUpload.savedDocumentId : null) || id;
   const query = targetDocumentId
     ? supabaseClient.from("documents").update(payload).eq("id", targetDocumentId).select().single()
     : supabaseClient.from("documents").insert(payload).select().single();
@@ -2717,7 +2715,7 @@ async function saveDocument(values, viewerDriverIds, id) {
   if (error) throw error;
 
   const documentId = targetDocumentId || saved.id;
-  if (pendingDocumentSave?.editingId === id) pendingDocumentSave.savedDocumentId = documentId;
+  if (state.pendingDocumentUpload?.editingId === id) state.pendingDocumentUpload.savedDocumentId = documentId;
   documentBlobCache.delete(documentId);
   if (context === "driver") state.requestedDriverId = finalDriverId;
   const { error: viewerDeleteError } = await supabaseClient.from("document_viewers").delete().eq("document_id", documentId);
@@ -2730,7 +2728,7 @@ async function saveDocument(values, viewerDriverIds, id) {
     if (viewerError) throw viewerError;
   }
 
-  pendingDocumentSave = null;
+  state.pendingDocumentUpload = null;
   state.activeView = context === "vehicle" ? "vehicles" : context === "driver" ? "drivers" : "documents";
   showToast(
     context === "vehicle"

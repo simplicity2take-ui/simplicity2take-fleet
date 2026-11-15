@@ -28,12 +28,18 @@ const goodFolder = (id, n, parent) => ({
 const defaultTop = goodFolder(top, 'Motoristas', root);
 const defaultTarget = goodFolder(target, name, top);
 const pdf = Buffer.from('%PDF-1.7\nfixture content').toString('base64');
+const uploadId = 'a6f2fd31-d9ad-477a-9b90-3275be44fc34';
+const recoveredFile = () => ({
+  id: 'UploadedFile1234567890', name: 'seguro.pdf', mimeType: 'application/pdf',
+  parents: [target], size: String(Buffer.from(pdf, 'base64').byteLength),
+  appProperties: { s2tUploadId: uploadId }
+});
 
 async function run(options = {}) {
   const { readBoundedUploadJson, UploadRequestTooLargeError } = await import(
     pathToFileURL(path.join(__dirname, '..', 'supabase/functions/drive-upload/read-bounded-upload.mjs')).href
   );
-  const events = { list: [], folderCreates: [], fileUploads: [], logs: [] };
+  const events = { list: [], uploadLookups: [], folderCreates: [], fileUploads: [], logs: [] };
   const createClient = () => ({
     auth: { async getUser() { return { data: { user: { id: 'admin-user' } }, error: null }; } },
     from(table) {
@@ -56,7 +62,8 @@ async function run(options = {}) {
       events.fileUploads.push({ url: String(url), size: init.body.byteLength });
       const data = options.uploadReturn || {
         id: 'UploadedFile1234567890', name: 'seguro.pdf', mimeType: 'application/pdf',
-        parents: [target], size: String(Buffer.from(pdf, 'base64').byteLength)
+        parents: [target], size: String(Buffer.from(pdf, 'base64').byteLength),
+        ...(options.uploadId ? { appProperties: { s2tUploadId: options.uploadId } } : {})
       };
       return new Response(JSON.stringify(data), { status: options.uploadStatus || 200 });
     }
@@ -70,6 +77,10 @@ async function run(options = {}) {
     }
     if (isFolder && (!init.method || init.method === 'GET')) {
       const q = u.searchParams.get('q') || '';
+      if (q.includes("appProperties has")) {
+        events.uploadLookups.push({ query: q, url: String(url) });
+        return new Response(JSON.stringify(options.recoveredList || { files: [] }), { status: 200 });
+      }
       const isTop = q.includes("name='Motoristas'");
       const configured = isTop ? options.topList : options.driverList;
       const created = events.folderCreates.find(item =>
@@ -111,7 +122,9 @@ async function run(options = {}) {
     headers: { authorization: 'Bearer test-token', 'content-type': 'application/json' },
     body: JSON.stringify({
       fileName: 'seguro.pdf', mimeType: 'application/pdf',
-      folderType: 'drivers', folderName: name, base64: pdf
+      folderType: 'drivers', folderName: name, base64: pdf,
+      ...(options.uploadId !== undefined ? { uploadId: options.uploadId } : {}),
+      ...(options.recoverOnly !== undefined ? { recoverOnly: options.recoverOnly } : {})
     })
   });
   const response = await handler(request);
@@ -263,6 +276,71 @@ test('full Edge Function: missing returned parent or size is rejected', async ()
     assert.equal(result.response.status, 502);
     assert.equal(result.data.ok, false);
     assert.equal(result.events.fileUploads.length, 1);
+  }
+});
+
+test('full Edge Function: operation token is stored privately on the uploaded file', async () => {
+  const result = await run({ uploadId });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.events.uploadLookups.length, 1);
+  assert.match(result.events.uploadLookups[0].query, /appProperties has/);
+  assert.equal(result.events.fileUploads.length, 1);
+  assert.equal(result.data.fileId, 'UploadedFile1234567890');
+  const upload = await run({ uploadId });
+  assert.equal(upload.events.fileUploads.length, 1);
+});
+
+test('full Edge Function: recovery locates a prior upload without creating a new file', async () => {
+  const result = await run({ uploadId, recoverOnly: true, recoveredList: { files: [recoveredFile()] } });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.data.ok, true);
+  assert.equal(result.data.fileId, 'UploadedFile1234567890');
+  assert.equal(result.events.uploadLookups.length, 1);
+  assert.equal(result.events.fileUploads.length, 0);
+  assert.equal(result.events.folderCreates.length, 0);
+});
+
+test('full Edge Function: missing prior upload stops with conflict, not reupload', async () => {
+  const result = await run({ uploadId, recoverOnly: true });
+  assert.equal(result.response.status, 409);
+  assert.equal(result.data.ok, false);
+  assert.equal(result.events.uploadLookups.length, 1);
+  assert.equal(result.events.fileUploads.length, 0);
+  assert.equal(result.events.folderCreates.length, 0);
+});
+
+test('full Edge Function: absent folder on retry never creates a replacement folder', async () => {
+  const result = await run({ uploadId, recoverOnly: true, topList: { files: [] } });
+  assert.equal(result.response.status, 409);
+  assert.equal(result.events.fileUploads.length, 0);
+  assert.equal(result.events.folderCreates.length, 0);
+});
+
+test('full Edge Function: stale or mismatched recovery markers fail closed', async () => {
+  for (const recoveredList of [
+    { files: [recoveredFile(), { ...recoveredFile(), id: 'SecondFile1234567890' }] },
+    { files: [{ ...recoveredFile(), appProperties: { s2tUploadId: 'other' } }] },
+    { files: [{ ...recoveredFile(), parents: ['AnotherFolder12345678'] }] },
+    { files: [recoveredFile()], nextPageToken: 'more' },
+    { files: [recoveredFile()], incompleteSearch: true }
+  ]) {
+    const result = await run({ uploadId, recoverOnly: true, recoveredList });
+    assert.equal(result.response.status, 500);
+    assert.equal(result.events.fileUploads.length, 0);
+    assert.equal(result.events.folderCreates.length, 0);
+  }
+});
+
+test('full Edge Function: malformed recovery tokens are rejected before Drive access', async () => {
+  for (const options of [
+    { uploadId: 'not-a-uuid' },
+    { recoverOnly: true },
+    { uploadId, recoverOnly: 'yes' }
+  ]) {
+    const result = await run(options);
+    assert.equal(result.response.status, 400);
+    assert.equal(result.events.list.length, 0);
+    assert.equal(result.events.fileUploads.length, 0);
   }
 });
 

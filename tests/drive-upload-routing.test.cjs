@@ -47,6 +47,6 @@ assert(source.includes('binary.length > 10_000_000'), 'Decoded uploads must be c
 
 assert(source.includes('base64.length > 13_333_336'), 'Encoded request cap must match 10 MB decoded file limit');
 
-assert(source.includes('request.headers.get("content-length")'), 'Check declared request size');
-assert(source.includes('Number(declaredLength) > 18_000_000'), 'Reject clearly oversized request bodies');
-assert(source.indexOf('Number(declaredLength) > 18_000_000') < source.indexOf('await request.json()'), 'Reject oversized requests before JSON parsing');
+assert(source.includes('readBoundedUploadJson(request)'), 'Uploads must use bounded request parsing');
+assert(source.includes('error instanceof UploadRequestTooLargeError'), 'Oversized request must return a distinct 413 response');
+assert(!source.includes('await request.json()'), 'Uploads must not read unbounded request bodies');

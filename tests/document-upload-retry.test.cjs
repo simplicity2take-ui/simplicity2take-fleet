@@ -175,11 +175,12 @@ for (const portalPath of ['app.js', 'teste/app.js']) {
     const h = harness(portalPath);
     const pending = {
       editingId: '', file: h.file, context: 'company',
-      vehicleId: null, driverId: null, driveData: { fileId: 'a' }
+      vehicleId: null, driverId: null, folderName: '', driveData: { fileId: 'a' }
     };
-    assert.equal(h.matchesPendingDocumentUpload(pending, h.file, 'company', null, null, ''), true);
-    assert.equal(h.matchesPendingDocumentUpload(pending, { ...h.file }, 'company', null, null, ''), false);
-    assert.equal(h.matchesPendingDocumentUpload(pending, h.file, 'vehicle', null, null, ''), false);
-    assert.equal(h.matchesPendingDocumentUpload(pending, h.file, 'company', null, null, 'other'), false);
+    assert.equal(h.matchesPendingDocumentUpload(pending, h.file, 'company', null, null, '', ''), true);
+    assert.equal(h.matchesPendingDocumentUpload(pending, { ...h.file }, 'company', null, null, '', ''), false);
+    assert.equal(h.matchesPendingDocumentUpload(pending, h.file, 'vehicle', null, null, '', ''), false);
+    assert.equal(h.matchesPendingDocumentUpload(pending, h.file, 'company', null, null, 'other', ''), false);
+    assert.equal(h.matchesPendingDocumentUpload(pending, h.file, 'company', null, null, '', 'renamed'), false);
   });
 }

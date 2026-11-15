@@ -40,3 +40,5 @@ const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 assert(appSource.includes('const folderType = context === "vehicle" ? "vehicles" : context === "driver" ? "drivers" : "documents";'), 'UI must send known folder types');
 assert(!appSource.includes(': "Empresa";\n\n    const { data, error } = await supabaseClient.functions.invoke("drive-upload"'), 'Company uploads must not nest Empresa/Empresa');
 console.log('PASS: Google Drive upload destinations are explicit and unknown types rejected.');
+
+assert(source.includes('folderName.includes("\\\\")'), 'Drive folder names must reject backslash separators');

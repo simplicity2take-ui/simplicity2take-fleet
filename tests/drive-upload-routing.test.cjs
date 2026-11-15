@@ -28,6 +28,8 @@ assert(!source.includes('console.error(error)'), 'Do not log raw upload exceptio
 assert(source.includes('console.error("Drive upload failed unexpectedly.")'), 'Log generic upload failure');
 assert(!source.includes('const detail = await response.text()'), 'Raw Google Drive errors must not be logged');
 assert(source.includes('Google Drive HTTP ${response.status}'), 'Only the upstream HTTP status should be retained');
+assert(source.includes('typeof file.id !== "string"'), 'Upload must validate returned file identifier');
+assert(source.includes('O Google Drive não confirmou o identificador do documento.'), 'Missing file identifier must be treated as failure');
 assert(source.includes('["drivers", "vehicles", "documents"].includes(folderType)'), 'Only known destinations accepted');
 assert(source.includes('folderType !== "documents" && !folderName'), 'Vehicle and driver uploads need a folder identity');
 assert(source.indexOf('["drivers", "vehicles", "documents"].includes(folderType)') < source.indexOf('googleAccessToken(serviceAccount)'), 'Validate destination before contacting Google');

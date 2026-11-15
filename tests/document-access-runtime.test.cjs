@@ -13,8 +13,9 @@ const source = stripTypeScriptTypes(fs.readFileSync(
 function defaults(overrides = {}) {
   return {
     role: 'driver',
+    profileStatus: 'Ativo',
     authUser: { id: 'auth-user-1' },
-    driver: { id: 'driver-1' },
+    driver: { id: 'driver-1', status: 'Ativo' },
     document: {
       id: documentId, drive_file_id: 'drive-file-example',
       driver_id: null, vehicle_id: null, expiry_date: null,
@@ -35,7 +36,7 @@ async function invoke(options = {}) {
     const filters = {};
     const result = (list = false) => {
       if (table === 'documents') return scenario.document;
-      if (table === 'profiles') return scenario.role ? { role: scenario.role } : null;
+      if (table === 'profiles') return scenario.role ? { role: scenario.role, status: scenario.profileStatus } : null;
       if (table === 'drivers') return scenario.driver;
       if (table === 'document_viewers') {
         const allowed = scenario.viewers.includes(filters.driver_id) &&
@@ -182,6 +183,26 @@ test('unknown roles and unlinked profiles cannot reach Google Drive', async () =
     assert.equal(response.status, 403);
     assert.equal(traces.tokenConfigRead, 0);
   }
+});
+
+test('inactive profile is denied before Drive token retrieval', async () => {
+  for (const role of ['driver', 'admin']) {
+    const { response, traces } = await invoke({
+      role, profileStatus: 'Inativo', viewers: ['driver-1']
+    });
+    assert.equal(response.status, 403);
+    assert.equal(traces.tokenConfigRead, 0);
+    assert.equal(traces.networkCalls, 0);
+  }
+});
+
+test('inactive driver is denied even when the profile and document grant are active', async () => {
+  const { response, traces } = await invoke({
+    driver: { id: 'driver-1', status: 'Inativo' }, viewers: ['driver-1']
+  });
+  assert.equal(response.status, 403);
+  assert.equal(traces.tokenConfigRead, 0);
+  assert.equal(traces.tables.includes('document_viewers'), false);
 });
 
 test('authorization checks never use external network resources', async () => {

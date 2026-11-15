@@ -199,9 +199,27 @@ Deno.serve(async (request) => {
     if (Number.isFinite(declaredLength) && declaredLength > maxDocumentBytes) {
       return json({ error: "Documento demasiado grande para visualização." }, 413);
     }
-    const bytes = new Uint8Array(await driveResponse.arrayBuffer());
-    if (bytes.byteLength > maxDocumentBytes) {
-      return json({ error: "Documento demasiado grande para visualização." }, 413);
+    if (!driveResponse.body) {
+      return json({ error: "O Google Drive não devolveu conteúdo." }, 502);
+    }
+    const reader = driveResponse.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxDocumentBytes) {
+        await reader.cancel();
+        return json({ error: "Documento demasiado grande para visualização." }, 413);
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
     }
     const result = { mimeType: driveResponse.headers.get("content-type") || "", fileName: "" };
     const headers = new Headers(cors);

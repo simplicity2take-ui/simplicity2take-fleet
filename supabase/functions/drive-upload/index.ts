@@ -218,12 +218,16 @@ Deno.serve(async request => {
       return json({ ok: false, error: "O Google Drive não confirmou o identificador do documento." }, 502);
     }
 
+    if (file.mimeType !== mimeType || file.name !== fileName) {
+      console.error("Google Drive upload returned inconsistent file metadata.");
+      return json({ ok: false, error: "O Google Drive devolveu dados inconsistentes do documento." }, 502);
+    }
     return json({
       ok: true,
       fileId: file.id,
       fileName: file.name,
       mimeType: file.mimeType,
-      webViewLink: file.webViewLink || ""
+      webViewLink: typeof file.webViewLink === "string" ? file.webViewLink : ""
     });
   } catch {
     // Avoid logging upstream exceptions that could contain private document metadata.

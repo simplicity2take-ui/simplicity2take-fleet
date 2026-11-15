@@ -19,6 +19,14 @@ A função `drive-upload` passa a enviar o parâmetro `ignoreDefaultVisibility=t
 
 Esta proteção e os seus testes estão apenas no Pull Request #95 e **não foram aplicados à produção**.
 
+## Proteção contra pastas homónimas e resultados incompletos
+A função `drive-upload` já não seleciona a primeira pasta devolvida pelo Google Drive. Passa a pedir informação de paginação, nome, tipo e pai de cada pasta e:
+- reutiliza apenas uma pasta cujo nome e diretório pai coincidam exatamente com o pretendido;
+- interrompe o carregamento quando surgem duas pastas iguais, uma resposta incompleta, paginação adicional ou metadados incoerentes;
+- confirma também o identificador, nome, tipo e diretório pai após criar uma pasta nova.
+
+Nestes casos a operação falha de forma segura, **sem deslocar documentos nem escolher uma pasta por aproximação**. Se forem encontradas pastas duplicadas no ambiente real, será necessária revisão administrativa antes de voltar a carregar para essa localização. A deteção de respostas ambíguas e a validação do pai estão cobertas por testes isolados, não por carregamentos reais.
+
 ## Passos antes de publicar
 1. Rever a configuração e as partilhas da pasta raiz efetivamente usada pela conta de serviço do Fleet, não apenas pela conta Google Drive da auditoria.
 2. Testar a criação e leitura de um documento fictício numa pasta de testes, confirmando que nenhuma permissão de público/domínio foi herdada.

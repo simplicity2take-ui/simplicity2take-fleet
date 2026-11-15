@@ -25,6 +25,17 @@ Os portais distinguem agora a fase de **gravação** da atualização posterior 
 
 O teste `document-modal-concurrency.test.cjs` simula falhas de atualização e de renderização para os dois portais, além das falhas de gravação genuínas. Não substitui reconciliação transacional no servidor.
 
+## Proteção do formulário durante gravações assíncronas
+As tentativas de gravação podem demorar enquanto o ficheiro segue para o Google Drive e os metadados e permissões são registados. Se o administrador abrisse outro formulário ou fechasse o anterior durante esse intervalo, a resposta tardia poderia fechar o formulário errado e perder o recibo de recuperação.
+
+No ramo de revisão, enquanto `state.modalSaveInFlight` estiver ativo:
+- `openModal` não substitui o formulário, nem apaga o recibo pendente;
+- os botões de fechar/cancelar não dispensam o modal;
+- o evento de `cancel` do diálogo (por exemplo, tecla Escape) é impedido;
+- uma falha ao localizar o botão de guardar também liberta o bloqueio e mostra um erro controlado.
+
+Terminada a tentativa, com sucesso ou erro, o formulário pode voltar a ser aberto e fechado normalmente. Os testes de concorrência cobrem estes estados para `app.js` e `teste/app.js`. **Limite:** esta proteção apenas cobre o mesmo portal e não evita duplicações entre browsers/sessões, nem substitui transações no servidor. O fecho completo da página ou perda de rede ainda podem deixar um carregamento por reconciliar.
+
 ## Prevenção de carregamentos simultâneos no formulário
 O tratamento do envio de formulários passou a usar `state.modalSaveInFlight`, definido **sincronamente antes de ler o formulário e antes de qualquer pedido de rede**. Isto impede que uma segunda submissão do mesmo modal inicie outro carregamento enquanto o primeiro decorre; a mera desativação do botão não era suficiente para garantir essa exclusão.
 

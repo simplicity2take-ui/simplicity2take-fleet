@@ -38,6 +38,7 @@ for (const [label, needle] of checks) {
   assert(source.includes(needle), label);
 }
 assert(source.indexOf('if (document.driver_id && document.driver_id !== driver.id)') < source.indexOf('if (document.vehicle_id)'), 'Personal document ownership must be checked before shared vehicle access');
+assert(source.includes('"content-type": "application/json", "cache-control": "private, no-store", "x-content-type-options": "nosniff"'), 'Error responses must not be cached or sniffed');
 assert(!source.includes('console.error(error)'), 'Do not log raw exceptions with sensitive metadata');
 assert(source.includes('console.error("Document access failed unexpectedly.")'), 'Log a generic access failure');
 assert(!source.includes('error.message\\n          : "Erro interno."'), 'Do not expose internal exception messages');

@@ -3,6 +3,12 @@
 ## Situação observada
 Em `app.js`, o ficheiro é carregado para o Google Drive antes da operação `documents.insert/update` no Supabase. Se a gravação SQL falhar, o ficheiro pode ficar sem referência. Depois de gravar o documento, a aplicação elimina e recria os registos `document_viewers` em pedidos separados. Uma falha entre essas operações pode deixar permissões incompletas. Na atualização de um documento existente, o ficheiro anterior pode continuar no Drive sem referência.
 
+## Proteção já implementada no ramo de revisão
+- Durante a edição de um documento, a interface mantém **apenas em memória** o identificador devolvido por um carregamento bem-sucedido no Drive. Se falhar a gravação no Supabase, um novo clique em «Guardar» no **mesmo formulário e com o mesmo ficheiro/destino** reutiliza o carregamento, sem enviar outra cópia.
+- Se o registo `documents` já tiver sido criado mas a atualização dos visualizadores falhar, a repetição no mesmo formulário atualiza esse registo em vez de inserir outro.
+- A memória de tentativa é limpa quando o formulário volta a abrir ou quando a gravação e as permissões são concluídas. O limite do cliente está harmonizado com os 10 MB decimais do servidor.
+- Esta recuperação **não é uma transação**, não persiste ao fechar/recarregar a página e não garante idempotência se a resposta SQL se perder após uma gravação. O ficheiro no Drive pode continuar sem referência nesses casos. Os visualizadores também continuam a ser alterados em operações separadas.
+
 ## Proposta para implementação futura (não aplicada)
 1. Gerar um identificador de operação idempotente no cliente, preservado em cada tentativa.
 2. Criar um registo de operação pendente numa tabela com RLS administrativa, antes do upload. Guardar `document_id`, `drive_file_id`, estado e timestamps; nunca guardar conteúdo ou tokens.

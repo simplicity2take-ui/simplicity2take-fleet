@@ -57,6 +57,8 @@ O cliente e a Edge Function `drive-upload` utilizam agora um **identificador ale
 - Mantém-se suporte a pedidos antigos sem `uploadId`, que **não beneficiam desta proteção**. Os novos portais enviam o identificador.
 - O índice de pesquisa do Drive pode ter atrasos; uma recuperação pode não encontrar de imediato um ficheiro efetivamente criado. Para não duplicar, o servidor **não repete automaticamente o upload**. O administrador deve rever a situação. O fecho/recarregamento da página perde o identificador em memória; esta solução **não é idempotência transacional entre browsers, sessões ou dispositivos**.
 
+**Proteção contra abandono acidental:** se uma tentativa de upload ao Drive tiver uma resposta incerta, ou se já existir um ficheiro no Drive com gravação de metadados/visualizadores ainda pendente, os portais avisam antes de fechar o formulário (incluindo Escape e Cancelar) ou abrir outro. Recusar mantém o formulário e os identificadores temporários; confirmar abandona explicitamente a recuperação em memória e limpa as referências. A gravação em curso continua sempre bloqueada, sem possibilidade de interromper a meio. Os testes em `tests/document-modal-concurrency.test.cjs` cobrem ambos os tipos de pendência e os dois portais. **Limite:** o navegador não consegue garantir aviso em todos os casos de fecho forçado, falha ou recarregamento da página.
+
 Não se criaram tabelas, migrações ou permissões adicionais. Os testes simulam perda de resposta, recuperação, ausência ou duplicação de ficheiros e verificação do identificador privado; não foram carregados ficheiros reais. Antes de publicar, deve validar-se a pesquisa por `appProperties` com a conta de serviço do Fleet num ambiente isolado.
 
 ## Proposta para implementação futura (não aplicada)

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { readBoundedUploadJson, UploadRequestTooLargeError } from "./read-bounded-upload.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -129,21 +130,18 @@ Deno.serve(async request => {
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
     if (profile?.role !== "admin") return json({ ok: false, error: "Apenas o administrador pode carregar documentos." }, 403);
 
-    // Reject clearly oversized JSON requests before allocating their contents.
-    // This is an early check; the decoded file limit remains authoritative.
-    const declaredLength = request.headers.get("content-length");
-    if (declaredLength !== null && /^\\d+$/.test(declaredLength) && Number(declaredLength) > 18_000_000) {
-      return json({ ok: false, error: "Pedido demasiado grande." }, 413);
-    }
-
+    // Enforce the limit against actual bytes, even with missing or incorrect Content-Length.
     let body: Record<string, unknown>;
     try {
-      const parsed = await request.json();
+      const parsed = await readBoundedUploadJson(request);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         return json({ ok: false, error: "Pedido JSON inválido." }, 400);
       }
       body = parsed as Record<string, unknown>;
-    } catch {
+    } catch (error) {
+      if (error instanceof UploadRequestTooLargeError) {
+        return json({ ok: false, error: "Pedido demasiado grande." }, 413);
+      }
       return json({ ok: false, error: "Pedido JSON inválido." }, 400);
     }
     const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";

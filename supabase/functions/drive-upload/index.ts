@@ -221,8 +221,9 @@ Deno.serve(async request => {
       mimeType: file.mimeType,
       webViewLink: file.webViewLink || ""
     });
-  } catch (error) {
-    console.error(error);
+  } catch {
+    // Avoid logging upstream exceptions that could contain private document metadata.
+    console.error("Drive upload failed unexpectedly.");
     return json({ ok: false, error: "Erro interno ao carregar o documento." }, 500);
   }
 });

@@ -13,10 +13,15 @@ A política de seleção `s2t documents select` atualmente permite, além do adm
 
 O ramo de desenvolvimento já exige a data local de Lisboa no leitor de documentos, mas esta defesa não substitui a RLS do banco.
 
+## Verificação adicional dos estados de acesso
+Em consulta apenas de leitura, confirmei que `s2t_is_admin()` já exige um perfil administrativo com estado `Ativo` e que `s2t_driver_id()` exige um perfil com estado `Ativo`, mas **não valida `drivers.status`**. Assim, inativar apenas o registo `drivers` pode não impedir a seleção de metadados enquanto as regras antigas de RLS estiverem ativas.
+
+No ramo de revisão, a Edge Function `document-access` passou a exigir tanto `profiles.status = 'Ativo'` como `drivers.status = 'Ativo'`. O carregamento `drive-upload` também passou a exigir administrador com perfil ativo. A proposta SQL de RLS foi atualizada para exigir o estado ativo do próprio motorista. Estes controlos **ainda não estão em produção**.
+
 ## Alteração preparada (sem aplicação)
 O ficheiro [documents-driver-read-policy.sql](./documents-driver-read-policy.sql) contém uma política candidata que:
 1. mantém acesso administrativo a documentos expirados;
-2. aplica ao motorista um filtro de validade na data civil de `Europe/Lisbon`;
+2. aplica ao motorista um filtro de validade na data civil de `Europe/Lisbon` e exige `drivers.status = 'Ativo'`;
 3. exige a titularidade para documentos pessoais;
 4. exige uma atribuição ativa e a exclusividade da associação a viatura para documentos da frota;
 5. exige autorização explícita para documentos da empresa;

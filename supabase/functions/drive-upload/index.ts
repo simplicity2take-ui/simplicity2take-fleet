@@ -138,6 +138,44 @@ async function ensureFolder(token: string, name: string, parentId: string) {
   return created.id;
 }
 
+function verifiedUploadedFile(file: unknown, name: string, mimeType: string,
+  parentId: string, byteLength: number, uploadId: string) {
+  if (!file || typeof file !== "object") return false;
+  const item = file as Record<string, unknown>;
+  return typeof item.id === "string" && /^[A-Za-z0-9_-]{10,}$/.test(item.id) &&
+    item.name === name && item.mimeType === mimeType &&
+    Array.isArray(item.parents) && item.parents.length === 1 &&
+    item.parents[0] === parentId && item.size === String(byteLength) &&
+    (!uploadId || (item.appProperties as Record<string, unknown> | undefined)?.s2tUploadId === uploadId);
+}
+
+async function findUploadedFile(token: string, parentId: string, uploadId: string,
+  fileName: string, mimeType: string, byteLength: number) {
+  // Private appProperties allow the same service account to locate a prior
+  // upload without exposing tokens, document contents or an external view URL.
+  const safeParent = parentId.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const q = [
+    `'${safeParent}' in parents`,
+    `appProperties has { key='s2tUploadId' and value='${uploadId}' }`,
+    "trashed=false"
+  ].join(" and ");
+  const url = "https://www.googleapis.com/drive/v3/files?" + new URLSearchParams({
+    q,
+    fields: "nextPageToken,incompleteSearch,files(id,name,mimeType,parents,size,appProperties)",
+    pageSize: "2"
+  });
+  const response = await driveRequest(token, url);
+  const result = await response.json();
+  if (!result || !Array.isArray(result.files) || result.incompleteSearch ||
+      result.nextPageToken || result.files.length > 1 ||
+      (result.files.length === 1 && !verifiedUploadedFile(
+        result.files[0], fileName, mimeType, parentId, byteLength, uploadId
+      ))) {
+    throw new Error("Google Drive upload recovery is ambiguous or invalid.");
+  }
+  return result.files[0] || null;
+}
+
 function decodeBase64(base64: string) {
   const binary = atob(base64);
   return Uint8Array.from(binary, char => char.charCodeAt(0));
@@ -184,6 +222,15 @@ Deno.serve(async request => {
     const base64 = typeof body.base64 === "string" ? body.base64 : "";
     const folderType = typeof body.folderType === "string" ? body.folderType : "";
     const folderName = typeof body.folderName === "string" ? body.folderName.trim() : "";
+    const uploadId = typeof body.uploadId === "string" ? body.uploadId : "";
+    const recoverOnly = body.recoverOnly === true;
+    if (body.recoverOnly !== undefined && typeof body.recoverOnly !== "boolean") {
+      return json({ ok: false, error: "Pedido de recuperação inválido." }, 400);
+    }
+    if ((body.uploadId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) ||
+        (recoverOnly && !uploadId)) {
+      return json({ ok: false, error: "Identificador de carregamento inválido." }, 400);
+    }
 
     if (!fileName || !base64) return json({ ok: false, error: "Ficheiro em falta." }, 400);
     if (fileName.length > 180 || /[\x00-\x1f\x7f]/.test(fileName) || fileName.includes("/") || fileName.includes("\\")) {
@@ -234,12 +281,29 @@ Deno.serve(async request => {
     const topFolderName = folderNames[folderType];
     if (!topFolderName) return json({ ok: false, error: "Destino do documento inválido." }, 400);
     const topFolderId = await ensureFolder(token, topFolderName, rootFolderId);
-    const targetFolderId = folderName ? await ensureFolder(token, folderName, topFolderId) : topFolderId;
+    const targetFolderId = folderName
+      ? (recoverOnly ? await findFolder(token, folderName, topFolderId) : await ensureFolder(token, folderName, topFolderId))
+      : topFolderId;
+    if (!targetFolderId) {
+      return json({ ok: false, error: "Não foi possível confirmar o carregamento anterior. Contacte o administrador." }, 409);
+    }
+    if (uploadId) {
+      const recovered = await findUploadedFile(token, targetFolderId, uploadId,
+        fileName, mimeType, binary.byteLength);
+      if (recovered) {
+        return json({ ok: true, fileId: recovered.id, fileName, mimeType });
+      }
+      if (recoverOnly) {
+        // Never start another upload after a lost/ambiguous response.
+        return json({ ok: false, error: "Não foi possível confirmar o carregamento anterior. Contacte o administrador." }, 409);
+      }
+    }
 
     const metadata = {
       name: fileName,
       mimeType,
-      parents: [targetFolderId]
+      parents: [targetFolderId],
+      ...(uploadId ? { appProperties: { s2tUploadId: uploadId } } : {})
     };
     const boundary = "s2t_" + crypto.randomUUID();
     const metadataPart = new TextEncoder().encode(
@@ -251,7 +315,7 @@ Deno.serve(async request => {
     payload.set(binary, metadataPart.length);
     payload.set(endPart, metadataPart.length + binary.length);
 
-    const upload = await driveRequest(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,parents,size&ignoreDefaultVisibility=true", {
+    const upload = await driveRequest(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,parents,size,appProperties&ignoreDefaultVisibility=true", {
       method: "POST",
       headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
       body: payload
@@ -264,10 +328,8 @@ Deno.serve(async request => {
 
     // A successful HTTP upload is not sufficient: only register the file when
     // Google confirms its exact destination and decoded byte length.
-    if (file.mimeType !== mimeType || file.name !== fileName ||
-        !Array.isArray(file.parents) || file.parents.length !== 1 ||
-        file.parents[0] !== targetFolderId ||
-        file.size !== String(binary.byteLength)) {
+    if (!verifiedUploadedFile(file, fileName, mimeType, targetFolderId,
+      binary.byteLength, uploadId)) {
       console.error("Google Drive upload returned inconsistent file metadata.");
       return json({ ok: false, error: "O Google Drive devolveu dados inconsistentes do documento." }, 502);
     }

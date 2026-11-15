@@ -129,6 +129,13 @@ Deno.serve(async request => {
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
     if (profile?.role !== "admin") return json({ ok: false, error: "Apenas o administrador pode carregar documentos." }, 403);
 
+    // Reject clearly oversized JSON requests before allocating their contents.
+    // This is an early check; the decoded file limit remains authoritative.
+    const declaredLength = request.headers.get("content-length");
+    if (declaredLength !== null && /^\\d+$/.test(declaredLength) && Number(declaredLength) > 18_000_000) {
+      return json({ ok: false, error: "Pedido demasiado grande." }, 413);
+    }
+
     let body: Record<string, unknown>;
     try {
       const parsed = await request.json();

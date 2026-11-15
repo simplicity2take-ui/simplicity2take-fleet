@@ -2699,7 +2699,9 @@ async function saveDocument(values, viewerDriverIds, id) {
     original_file_name: driveData.fileName,
     mime_type: driveData.mimeType,
     drive_file_id: driveData.fileId,
-    drive_web_view_link: driveData.webViewLink,
+    // Do not persist new direct Drive links; opening is authorized through document-access.
+    // Preserve any legacy link only when editing metadata without replacing the file.
+    drive_web_view_link: file ? null : (existing?.driveUrl || null),
     vehicle_id: finalVehicleId,
     driver_id: finalDriverId,
     uploaded_by: state.sessionUserId

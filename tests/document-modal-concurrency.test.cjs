@@ -31,7 +31,7 @@ function modalHarness(portal, options = {}) {
   const selectors = {
     form: { querySelector(selector) {
       assert.equal(selector, 'button[type="submit"]');
-      return button;
+      return options.buttonMissing ? null : button;
     } },
     modal: { close() { events.closes++; }, showModal() { events.opens++; } },
     modalTitle: { textContent: '' },
@@ -166,6 +166,16 @@ for (const portal of ['app.js', 'teste/app.js']) {
     assert.equal(h.events.toasts.length, 1);
     assert.match(h.events.toasts[0], /^Alterações guardadas, mas não foi possível atualizar a lista/);
     assert.equal(h.state.modalSaveInFlight, false);
+  });
+
+  test(portal + ': missing submit control does not permanently lock document saving', async () => {
+    const h = modalHarness(portal, { buttonMissing: true });
+    await h.submit();
+    assert.equal(h.events.saves, 0);
+    assert.equal(h.events.closes, 0);
+    assert.equal(h.state.modalSaveInFlight, false);
+    assert.equal(h.events.toasts[0], 'Formulário indisponível. Abra-o novamente.');
+    assert.equal(h.context.allowAdminModalClose(), true);
   });
 
   test(portal + ': errors while reading form also release the submit lock', async () => {

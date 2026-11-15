@@ -42,7 +42,11 @@ async function invoke(options = {}) {
           filters.document_id === documentId && filters.can_view === true;
         return allowed ? { document_id: documentId } : null;
       }
-      if (table === 'vehicle_assignments') return scenario.assignments;
+      if (table === 'vehicle_assignments') {
+        return scenario.assignments.filter(item =>
+          item.vehicle_id === filters.vehicle_id && item.driver_id === filters.driver_id
+        );
+      }
       throw new Error('Unexpected table: ' + table);
     };
     const chain = {
@@ -112,7 +116,7 @@ test('personal documents are visible only to the owning driver', async () => {
 test('inconsistent document associated with both vehicle and driver is rejected', async () => {
   const { response, traces } = await invoke({
     document: { ...defaults().document, driver_id: 'driver-1', vehicle_id: 'vehicle-1' },
-    assignments: [{ active_from: '2020-01-01', active_until: null }]
+    assignments: [{ vehicle_id: 'vehicle-1', driver_id: 'driver-1', active_from: '2020-01-01', active_until: null }]
   });
   assert.equal(response.status, 403);
   assert.equal(traces.tables.includes('vehicle_assignments'), false);
@@ -123,14 +127,24 @@ test('vehicle files require a currently active assignment to the correct vehicle
   const doc = { ...defaults().document, vehicle_id: 'vehicle-1' };
   const noAssignment = await invoke({ document: doc });
   assert.equal(noAssignment.response.status, 403);
+  const otherVehicle = await invoke({
+    document: doc,
+    assignments: [{ vehicle_id: 'vehicle-2', driver_id: 'driver-1', active_from: '2020-01-01', active_until: null }]
+  });
+  assert.equal(otherVehicle.response.status, 403);
+  const otherDriver = await invoke({
+    document: doc,
+    assignments: [{ vehicle_id: 'vehicle-1', driver_id: 'driver-2', active_from: '2020-01-01', active_until: null }]
+  });
+  assert.equal(otherDriver.response.status, 403);
   const expired = await invoke({
     document: doc,
-    assignments: [{ active_from: '2020-01-01', active_until: '2020-01-02' }]
+    assignments: [{ vehicle_id: 'vehicle-1', driver_id: 'driver-1', active_from: '2020-01-01', active_until: '2020-01-02' }]
   });
   assert.equal(expired.response.status, 403);
   const active = await invoke({
     document: doc,
-    assignments: [{ active_from: '2020-01-01', active_until: null }]
+    assignments: [{ vehicle_id: 'vehicle-1', driver_id: 'driver-1', active_from: '2020-01-01', active_until: null }]
   });
   assert.equal(active.response.status, 503);
 });

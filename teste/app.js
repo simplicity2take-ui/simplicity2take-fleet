@@ -2583,12 +2583,13 @@ async function saveVehicle(values, driverIds, id) {
 
 // Keep a successful Drive upload receipt only while this document form is open.
 // Retrying a failed database/viewer save must not create another Drive copy.
-function matchesPendingDocumentUpload(pending, file, context, vehicleId, driverId, editingId) {
+function matchesPendingDocumentUpload(pending, file, context, vehicleId, driverId, editingId, folderName) {
   return Boolean(pending && pending.file === file &&
     pending.context === context &&
     pending.vehicleId === vehicleId &&
     pending.driverId === driverId &&
-    pending.editingId === editingId);
+    pending.editingId === editingId &&
+    pending.folderName === folderName);
 }
 
 async function saveDocument(values, viewerDriverIds, id) {
@@ -2634,7 +2635,7 @@ async function saveDocument(values, viewerDriverIds, id) {
         : "";
 
     const reusingUpload = matchesPendingDocumentUpload(
-      previousAttempt, file, context, finalVehicleId, finalDriverId, id
+      previousAttempt, file, context, finalVehicleId, finalDriverId, id, folderName
     );
     // A previous insert might have committed despite a lost SQL response.
     // Reconcile that earlier Drive file BEFORE changing the upload/destination;
@@ -2667,7 +2668,7 @@ async function saveDocument(values, viewerDriverIds, id) {
       driveData = data;
       state.pendingDocumentUpload = {
         editingId: id, file, context,
-        vehicleId: finalVehicleId, driverId: finalDriverId,
+        vehicleId: finalVehicleId, driverId: finalDriverId, folderName,
         driveData, savedDocumentId: previousAttempt?.savedDocumentId || null
       };
     }

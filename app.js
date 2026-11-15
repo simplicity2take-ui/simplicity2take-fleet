@@ -2549,8 +2549,10 @@ async function submitModal(event) {
   if (state.modalSaveInFlight) return;
   state.modalSaveInFlight = true;
   let saved = false;
-  const submitButton = selectors.form.querySelector('button[type="submit"]');
+  let submitButton = null;
   try {
+    submitButton = selectors.form?.querySelector('button[type="submit"]');
+    if (!submitButton) throw new Error("Formulário indisponível. Abra-o novamente.");
     submitButton.disabled = true;
     submitButton.textContent = "A guardar…";
     const data = new FormData(selectors.form);
@@ -2575,8 +2577,10 @@ async function submitModal(event) {
       : (error?.message || "Não foi possível guardar."));
   } finally {
     state.modalSaveInFlight = false;
-    submitButton.disabled = false;
-    submitButton.textContent = "Guardar";
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = "Guardar";
+    }
   }
 }
 

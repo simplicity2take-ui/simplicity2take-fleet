@@ -10,7 +10,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
         payload = value;
         return { eq: () => ({ select: () => ({ single: async () => ({ data: { id:'d1' } }) }) }) };
       }};
-      return { delete: () => ({ eq: async () => ({ error:null }) }) };
+      return { select: () => ({ eq: async () => ({ data:[], error:null }) }), delete: () => ({ eq: () => ({ in: async () => ({ error:null }) }) }), upsert: async () => ({ error:null }) };
     }};
 
     context.validateDocumentFile=()=>{};vm.createContext(context);

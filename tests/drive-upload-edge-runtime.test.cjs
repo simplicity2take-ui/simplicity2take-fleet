@@ -55,7 +55,8 @@ async function run(options = {}) {
     if (isUpload && init.method === 'POST') {
       events.fileUploads.push({ url: String(url), size: init.body.byteLength });
       const data = options.uploadReturn || {
-        id: 'UploadedFile1234567890', name: 'seguro.pdf', mimeType: 'application/pdf'
+        id: 'UploadedFile1234567890', name: 'seguro.pdf', mimeType: 'application/pdf',
+        parents: [target], size: String(Buffer.from(pdf, 'base64').byteLength)
       };
       return new Response(JSON.stringify(data), { status: options.uploadStatus || 200 });
     }
@@ -186,6 +187,39 @@ test('full Edge Function: mismatched uploaded MIME is rejected without exposing 
   assert.equal(result.data.ok, false);
   assert.equal(result.events.fileUploads.length, 1);
   assert(!JSON.stringify(result.data).includes('UploadedFile1234567890'));
+});
+
+test('full Edge Function: wrong destination folder is not accepted after upload', async () => {
+  const result = await run({ uploadReturn: {
+    id: 'UploadedFile1234567890', name: 'seguro.pdf', mimeType: 'application/pdf',
+    parents: ['UnrelatedFolder1234567890'], size: String(Buffer.from(pdf, 'base64').byteLength)
+  } });
+  assert.equal(result.response.status, 502);
+  assert.equal(result.data.ok, false);
+  assert.equal(result.events.fileUploads.length, 1, 'Upload occurred, but was not confirmed');
+  assert(!JSON.stringify(result.data).includes('UnrelatedFolder'));
+});
+
+test('full Edge Function: wrong byte size is not accepted after upload', async () => {
+  const result = await run({ uploadReturn: {
+    id: 'UploadedFile1234567890', name: 'seguro.pdf', mimeType: 'application/pdf',
+    parents: [target], size: String(Buffer.from(pdf, 'base64').byteLength + 1)
+  } });
+  assert.equal(result.response.status, 502);
+  assert.equal(result.data.ok, false);
+  assert.equal(result.events.fileUploads.length, 1);
+});
+
+test('full Edge Function: missing returned parent or size is rejected', async () => {
+  for (const uploadReturn of [
+    { id: 'UploadedFile1234567890', name: 'seguro.pdf', mimeType: 'application/pdf', size: String(Buffer.from(pdf, 'base64').byteLength) },
+    { id: 'UploadedFile1234567890', name: 'seguro.pdf', mimeType: 'application/pdf', parents: [target] }
+  ]) {
+    const result = await run({ uploadReturn });
+    assert.equal(result.response.status, 502);
+    assert.equal(result.data.ok, false);
+    assert.equal(result.events.fileUploads.length, 1);
+  }
 });
 
 test('full Edge Function: inactive admin stops before any Google request', async () => {

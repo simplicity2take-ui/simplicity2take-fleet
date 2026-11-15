@@ -162,11 +162,7 @@ Deno.serve(async (request) => {
           item.active_from <= todayLocal && (!item.active_until || item.active_until >= todayLocal)
         );
         if (!assigned) return json({ error: "Viatura não atribuída ao motorista." }, 403);
-      } else if (document.driver_id) {
-        if (document.driver_id !== driver.id) {
-          return json({ error: "Documento não autorizado." }, 403);
-        }
-      } else {
+      } else if (!document.driver_id) {
         const { data: viewer, error: viewerError } = await supabase
           .from("document_viewers")
           .select("document_id")

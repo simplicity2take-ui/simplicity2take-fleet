@@ -5,8 +5,8 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  vm.createContext(c);
  vm.runInContext(s.slice(s.indexOf('function validateDocumentFile('),s.indexOf('\nlet documentAnalysisRun')),c);
  vm.runInContext(s.slice(s.indexOf('async function saveDocument('),s.indexOf('\nfunction fileToBase64(')),c);
- for(const type of ['application/pdf','image/jpeg','image/png'])c.validateDocumentFile({type,size:10*1024*1024});
- for(const bad of [{type:'image/jpeg',size:0},{type:'image/jpeg',size:10*1024*1024+1},{type:'image/heic',size:100}]){
+ for(const type of ['application/pdf','image/jpeg','image/png'])c.validateDocumentFile({type,size:10_000_000});
+ for(const bad of [{type:'image/jpeg',size:0},{type:'image/jpeg',size:10_000_001},{type:'image/heic',size:100}]){
   chosen=bad;await assert.rejects(c.saveDocument({vehicleId:'vehicle'},[],''));assert.equal(reads,0);
  }
  chosen={type:'image/jpeg',size:100};await assert.rejects(c.saveDocument({},[],''),/Selecione a viatura/);assert.equal(reads,0);

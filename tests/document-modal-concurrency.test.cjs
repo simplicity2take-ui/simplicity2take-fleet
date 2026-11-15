@@ -10,7 +10,7 @@ function modalHarness(portal, options = {}) {
   const end = source.indexOf('\n}\n', start) + 3;
   assert(start >= 0 && end > start, 'Modal submit handler must remain available');
   const button = { disabled: false, textContent: 'Guardar' };
-  const events = { submits: 0, saves: 0, closes: 0, opens: 0, loads: 0, renders: 0, toasts: [] };
+  const events = { submits: 0, saves: 0, closes: 0, opens: 0, loads: 0, renders: 0, toasts: [], confirms: [] };
   let unblock;
   const blocked = new Promise(resolve => { unblock = resolve; });
   const state = { editing: { type: 'document', id: '' } };
@@ -39,6 +39,10 @@ function modalHarness(portal, options = {}) {
   };
   const context = {
     state, selectors, FormData: FormDataStub,
+    window: { confirm(message) {
+      events.confirms.push(message);
+      return options.confirmAbandon === true;
+    } },
     modalFields: (type) => 'form-' + type,
     async saveDocument(values, viewers, id) {
       events.saves++;
@@ -61,7 +65,7 @@ function modalHarness(portal, options = {}) {
   };
   vm.createContext(context);
   vm.runInContext(source.slice(start, end), context);
-  const guardStart = source.indexOf('function allowAdminModalClose(');
+  const guardStart = source.indexOf('function hasUnresolvedDocumentSave(');
   const guardEnd = source.indexOf('function modalFields(', guardStart);
   assert(guardStart >= 0 && guardEnd > guardStart);
   vm.runInContext(source.slice(guardStart, guardEnd), context);
@@ -127,6 +131,52 @@ for (const portal of ['app.js', 'teste/app.js']) {
     assert.equal(h.events.opens, 1);
     assert.equal(h.state.editing.type, 'vehicle');
     assert.equal(h.context.allowAdminModalClose(), true);
+  });
+
+  test(portal + ': losing an uncertain Drive upload requires explicit confirmation', () => {
+    const h = modalHarness(portal);
+    const receipt = {
+      editingId: '', uploadId: 'operation-1', uploadAttempted: true,
+      file: { name: 'seguro.pdf' }
+    };
+    h.state.pendingDriveUploadRequest = receipt;
+    let cancelled = false;
+    assert.equal(h.context.allowAdminModalClose({
+      preventDefault() { cancelled = true; }
+    }), false);
+    assert.equal(cancelled, true, 'Escape should stay open if the administrator declines');
+    assert.strictEqual(h.state.pendingDriveUploadRequest, receipt);
+    assert.equal(h.events.confirms.length, 1);
+    assert.match(h.events.confirms[0], /originar duplicados/);
+    h.context.openModal('vehicle');
+    assert.equal(h.events.opens, 0, 'Changing forms must not drop the receipt');
+    assert.strictEqual(h.state.pendingDriveUploadRequest, receipt);
+    assert.equal(h.state.editing.type, 'document');
+  });
+
+  test(portal + ': explicit abandonment clears a lost Drive reply receipt', () => {
+    const h = modalHarness(portal, { confirmAbandon: true });
+    h.state.pendingDriveUploadRequest = {
+      uploadAttempted: true, uploadId: 'operation-1', editingId: ''
+    };
+    assert.equal(h.context.allowAdminModalClose(), true);
+    assert.equal(h.state.pendingDriveUploadRequest, null);
+    assert.equal(h.events.confirms.length, 1);
+    h.context.openModal('vehicle');
+    assert.equal(h.events.opens, 1);
+  });
+
+  test(portal + ': uncommitted document metadata is protected when changing forms', () => {
+    const h = modalHarness(portal);
+    const pending = {
+      editingId: '', driveData: { fileId: 'GoogleFile1234567890' },
+      insertAttempted: true
+    };
+    h.state.pendingDocumentUpload = pending;
+    h.context.openModal('vehicle');
+    assert.equal(h.events.opens, 0);
+    assert.strictEqual(h.state.pendingDocumentUpload, pending);
+    assert.equal(h.events.confirms.length, 1);
   });
 
   test(portal + ': document save failure releases the submit lock for retry', async () => {

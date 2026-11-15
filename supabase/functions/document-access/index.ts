@@ -144,6 +144,12 @@ Deno.serve(async (request) => {
       if (driverError) throw driverError;
       if (!driver) return json({ error: "Motorista não autorizado." }, 403);
 
+      // A personal document must belong to the requesting driver even when
+      // the record also references a vehicle shared with other drivers.
+      if (document.driver_id && document.driver_id !== driver.id) {
+        return json({ error: "Documento não autorizado." }, 403);
+      }
+
       if (document.vehicle_id) {
         const { data: assignments, error: assignmentError } = await supabase
           .from("vehicle_assignments")

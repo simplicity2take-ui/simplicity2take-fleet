@@ -33,8 +33,9 @@ function harness(portalPath, failurePoint) {
         }
       };
       if (table === 'document_viewers') return {
-        delete() { return { eq: async () => ({ error: null }) }; },
-        insert() {
+        select() { return { eq: async () => ({ data: [], error: null }) }; },
+        delete() { return { eq: () => ({ in: async () => ({ error: null }) }) }; },
+        upsert() {
           events.viewerInserts++;
           return Promise.resolve({
             error: failurePoint === 'viewer' && events.viewerInserts === 1

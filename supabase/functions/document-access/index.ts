@@ -67,6 +67,21 @@ function lisbonToday(): string {
   return [value("year"), value("month"), value("day")].join("-");
 }
 
+// Encode the original Unicode filename using RFC 5987, while keeping an
+// ASCII fallback for browsers and HTTP header implementations that require it.
+function safeInlineContentDisposition(rawName: unknown): string {
+  const cleaned = Array.from(
+    String(rawName || "documento").replace(/[\\x00-\\x1f\\x7f"\\\\]/g, "")
+  ).filter(char => !/^[\\uD800-\\uDFFF]$/.test(char))
+    .slice(0, 180).join("").trim() || "documento";
+  const fallback = cleaned.normalize("NFKD")
+    .replace(/[\\u0300-\\u036f]/g, "")
+    .replace(/[^\\x20-\\x7e]/g, "_") || "documento";
+  const encoded = encodeURIComponent(cleaned).replace(/[!'()*]/g, char =>
+    "%" + char.charCodeAt(0).toString(16).toUpperCase());
+  return 'inline; filename="' + fallback + '"; filename*=UTF-8\\'\\'' + encoded;
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: cors });
@@ -256,16 +271,11 @@ Deno.serve(async (request) => {
     headers.set("content-type", verifiedType);
     headers.set("x-content-type-options", "nosniff");
 
-    const safeName = String(
-      document.original_file_name ||
-      document.name ||
-      result.fileName ||
-      "documento"
-    ).replace(/[\x00-\x1f\x7f"\\]/g, "").slice(0, 180);
-
     headers.set(
       "content-disposition",
-      'inline; filename="' + safeName + '"'
+      safeInlineContentDisposition(
+        document.original_file_name || document.name || result.fileName || "documento"
+      )
     );
 
     headers.set("cache-control", "private, no-store");

@@ -10,7 +10,8 @@ function harness(portalPath, failurePoint) {
   const end = code.indexOf('function fileToBase64(', start);
   assert(start >= 0 && end > start, 'Retry logic must remain available in the portal');
   const file = { name: 'insurance.pdf', type: 'application/pdf', size: 120 };
-  const events = { uploads: 0, inserts: 0, updates: 0, viewerInserts: 0 };
+  const events = { uploads: 0, inserts: 0, updates: 0, viewerInserts: 0, recoveries: 0 };
+  let committed = false;
   const state = {
     documentContext: 'company', documents: [], vehicles: [], drivers: [],
     sessionUserId: 'admin', activeView: 'documents'
@@ -20,10 +21,30 @@ function harness(portalPath, failurePoint) {
       if (table === 'documents') return {
         insert() {
           events.inserts++;
-          return { select: () => ({ single: async () => ({
-            data: { id: 'doc-created-1' },
-            error: failurePoint === 'document' && events.inserts === 1 ? new Error('database unavailable') : null,
-          }) }) };
+          return { select: () => ({ single: async () => {
+            if (events.inserts === 1 && failurePoint === 'response-lost') {
+              committed = true;
+              return { data: null, error: new Error('database response lost') };
+            }
+            if (events.inserts === 1 && ['document', 'lookup'].includes(failurePoint)) {
+              return { data: null, error: new Error('database unavailable') };
+            }
+            committed = true;
+            return { data: { id: 'doc-created-1' }, error: null };
+          } }) };
+        },
+        select() {
+          return { eq: (field, value) => {
+            assert.equal(field, 'drive_file_id');
+            assert.equal(value, 'validdriveid1234');
+            return { maybeSingle: async () => {
+              events.recoveries++;
+              if (failurePoint === 'lookup') {
+                return { data: null, error: new Error('database recovery unavailable') };
+              }
+              return { data: committed ? { id: 'doc-created-1' } : null, error: null };
+            } };
+          } };
         },
         update() {
           events.updates++;
@@ -80,6 +101,28 @@ for (const portalPath of ['app.js', 'teste/app.js']) {
     assert.equal(h.events.inserts, 2);
     assert.equal(h.events.updates, 0);
     assert.equal(h.pending(), null);
+  });
+
+  test(portalPath + ': recovers committed document when insert response was lost', async () => {
+    const h = harness(portalPath, 'response-lost');
+    await assert.rejects(h.saveDocument(h.values, [], ''), /database response lost/);
+    await h.saveDocument(h.values, [], '');
+    assert.equal(h.events.uploads, 1);
+    assert.equal(h.events.recoveries, 1);
+    assert.equal(h.events.inserts, 1);
+    assert.equal(h.events.updates, 1);
+    assert.equal(h.pending(), null);
+  });
+
+  test(portalPath + ': failed recovery lookup stops before duplicate insert', async () => {
+    const h = harness(portalPath, 'lookup');
+    await assert.rejects(h.saveDocument(h.values, [], ''), /database unavailable/);
+    await assert.rejects(h.saveDocument(h.values, [], ''), /Não foi possível confirmar/);
+    assert.equal(h.events.uploads, 1);
+    assert.equal(h.events.recoveries, 1);
+    assert.equal(h.events.inserts, 1);
+    assert.equal(h.events.updates, 0);
+    assert.notEqual(h.pending(), null);
   });
 
   test(portalPath + ': retry after viewer failure updates existing row', async () => {

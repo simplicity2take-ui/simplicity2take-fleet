@@ -9,6 +9,10 @@ assert(source.includes('"X-Content-Type-Options": "nosniff"'), 'Upload responses
 assert(source.includes('name.replace(/\\\\/g, "\\\\\\\\").replace(/\'/g, "\\\\\'")'), 'Drive folder lookup must escape backslashes and quotes');
 assert(source.includes('vehicles: "Veículos"'), 'Vehicle uploads must use Veículos');
 assert(source.includes('documents: "Empresa"'), 'Company uploads must use Empresa');
+assert(source.includes('files?fields=id,name&ignoreDefaultVisibility=true'), 'New Drive folders must ignore domain default visibility');
+assert(source.includes('uploadType=multipart&fields=id,name,mimeType&ignoreDefaultVisibility=true'), 'Uploaded files must ignore domain default visibility');
+assert(!source.includes('permissions.create'), 'Upload code must not create sharing grants');
+
 assert(source.includes('if (!topFolderName)'), 'Unknown folder types must be rejected');
 assert(source.includes('Conteúdo do ficheiro inválido.'), 'Malformed base64 must be rejected');
 assert(source.includes('Nome do ficheiro inválido.'), 'Unsafe upload filenames must be rejected');

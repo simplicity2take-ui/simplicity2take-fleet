@@ -167,6 +167,9 @@ Deno.serve(async request => {
     }
 
     const binary = decodeBase64(base64);
+    if (binary.length > 10_000_000) {
+      return json({ ok: false, error: "Ficheiro demasiado grande." }, 413);
+    }
     const isPdf = binary.length >= 5 && binary[0] === 0x25 && binary[1] === 0x50 && binary[2] === 0x44 && binary[3] === 0x46 && binary[4] === 0x2d;
     const isJpeg = binary.length >= 3 && binary[0] === 0xff && binary[1] === 0xd8 && binary[2] === 0xff;
     const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];

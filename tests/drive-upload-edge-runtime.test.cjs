@@ -72,8 +72,16 @@ async function run(options = {}) {
       const q = u.searchParams.get('q') || '';
       const isTop = q.includes("name='Motoristas'");
       const configured = isTop ? options.topList : options.driverList;
-      const response = configured === undefined
-        ? { files: [isTop ? defaultTop : defaultTarget] } : configured;
+      const created = events.folderCreates.find(item =>
+        item.body.name === (isTop ? 'Motoristas' : name)
+      );
+      const afterCreate = isTop ? options.topListAfterCreate : options.driverListAfterCreate;
+      const response = created
+        ? (afterCreate ?? { files: [goodFolder(
+            isTop ? top : target, created.body.name, created.body.parents[0]
+          )] })
+        : configured === undefined
+          ? { files: [isTop ? defaultTop : defaultTarget] } : configured;
       events.list.push({ kind: isTop ? 'top' : 'driver', query: q, url: String(url) });
       return new Response(JSON.stringify(response), { status: 200 });
     }
@@ -161,11 +169,47 @@ test('full Edge Function: nonexistent folders can be created with private defaul
   const result = await run({ topList: { files: [] }, driverList: { files: [] } });
   assert.equal(result.response.status, 200);
   assert.equal(result.events.folderCreates.length, 2);
+  assert.equal(result.events.list.length, 4, 'Each new folder must be rechecked');
   assert.equal(result.events.fileUploads.length, 1);
   for (const creation of result.events.folderCreates) {
     assert.equal(new URL(creation.url).searchParams.get('ignoreDefaultVisibility'), 'true');
   }
   assert.deepEqual(result.events.folderCreates.map(x => x.body.parents[0]), [root, top]);
+});
+
+test('full Edge Function: duplicate folder discovered after create stops before upload', async () => {
+  const result = await run({
+    topList: { files: [] },
+    topListAfterCreate: { files: [
+      defaultTop, goodFolder('ParallelTopFolder12345678', 'Motoristas', root)
+    ] }
+  });
+  assert.equal(result.response.status, 500);
+  assert.equal(result.events.folderCreates.length, 1);
+  assert.equal(result.events.list.length, 2, 'Created folder must be rechecked');
+  assert.equal(result.events.fileUploads.length, 0);
+});
+
+test('full Edge Function: newly created folder absent on recheck cannot be used', async () => {
+  const result = await run({
+    topList: { files: [] },
+    topListAfterCreate: { files: [] }
+  });
+  assert.equal(result.response.status, 500);
+  assert.equal(result.events.list.length, 2);
+  assert.equal(result.events.fileUploads.length, 0);
+});
+
+test('full Edge Function: driver folder collision after create stops before upload', async () => {
+  const result = await run({
+    driverList: { files: [] },
+    driverListAfterCreate: { files: [
+      defaultTarget, goodFolder('ParallelDriverFolder12345', name, top)
+    ] }
+  });
+  assert.equal(result.response.status, 500);
+  assert.equal(result.events.folderCreates.length, 1);
+  assert.equal(result.events.fileUploads.length, 0);
 });
 
 test('full Edge Function: wrong folder parent on create stops before file upload', async () => {

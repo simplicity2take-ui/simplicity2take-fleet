@@ -2691,12 +2691,26 @@ async function saveDocument(values, viewerDriverIds, id) {
   if (state.pendingDocumentUpload?.editingId === id) state.pendingDocumentUpload.savedDocumentId = documentId;
   documentBlobCache.delete(documentId);
   if (context === "driver") state.requestedDriverId = finalDriverId;
-  const { error: viewerDeleteError } = await supabaseClient.from("document_viewers").delete().eq("document_id", documentId);
-  if (viewerDeleteError) throw viewerDeleteError;
+  // Update only changed grants. Never clear all permissions before inserting replacements.
+  const { data: currentViewerRows, error: viewerReadError } = await supabaseClient
+    .from("document_viewers").select("driver_id,can_view").eq("document_id", documentId);
+  if (viewerReadError) throw viewerReadError;
 
-  if (context !== "driver" && viewerDriverIds.length) {
-    const { error: viewerError } = await supabaseClient.from("document_viewers").insert(
-      viewerDriverIds.map(driverId => ({ document_id: documentId, driver_id: driverId, can_view: true }))
+  const requestedViewers = new Set(context === "driver" ? [] : viewerDriverIds);
+  const existingViewers = new Map((currentViewerRows || []).map(row => [row.driver_id, row.can_view === true]));
+  const toRevoke = [...existingViewers.keys()].filter(driverId => !requestedViewers.has(driverId));
+  const toGrant = [...requestedViewers].filter(driverId => existingViewers.get(driverId) !== true);
+
+  // Revoke only stale grants first (fail closed), keeping unchanged viewers intact.
+  if (toRevoke.length) {
+    const { error: viewerDeleteError } = await supabaseClient.from("document_viewers")
+      .delete().eq("document_id", documentId).in("driver_id", toRevoke);
+    if (viewerDeleteError) throw viewerDeleteError;
+  }
+  if (toGrant.length) {
+    const { error: viewerError } = await supabaseClient.from("document_viewers").upsert(
+      toGrant.map(driverId => ({ document_id: documentId, driver_id: driverId, can_view: true })),
+      { onConflict: "document_id,driver_id" }
     );
     if (viewerError) throw viewerError;
   }

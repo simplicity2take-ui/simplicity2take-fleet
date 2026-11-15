@@ -4,7 +4,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
  const c={state:{documents:[],vehicles:[{id:'vehicle',plate:'AA-00-AA'}],drivers:[],documentContext:'vehicle',smartPreview:{vehicleId:'stale',driverId:'stale'}},selectors:{modalFields:{querySelector:()=>({files:chosen?[chosen]:[]})}},fileToBase64:async()=>{reads++;throw Error('Reached file read')}};
  vm.createContext(c);
  vm.runInContext(s.slice(s.indexOf('function validateDocumentFile('),s.indexOf('\nlet documentAnalysisRun')),c);
- vm.runInContext(s.slice(s.indexOf('async function saveDocument('),s.indexOf('\nfunction fileToBase64(')),c);
+ vm.runInContext(s.slice(s.indexOf('function matchesPendingDocumentUpload('),s.indexOf('\nfunction fileToBase64(')),c);
  for(const type of ['application/pdf','image/jpeg','image/png'])c.validateDocumentFile({type,size:10_000_000});
  for(const bad of [{type:'image/jpeg',size:0},{type:'image/jpeg',size:10_000_001},{type:'image/heic',size:100}]){
   chosen=bad;await assert.rejects(c.saveDocument({vehicleId:'vehicle'},[],''));assert.equal(reads,0);

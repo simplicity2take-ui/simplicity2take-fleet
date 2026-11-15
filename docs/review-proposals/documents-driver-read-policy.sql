@@ -7,7 +7,7 @@
 --   * Admins retain access to expired documents for renewal.
 --   * Drivers must never SELECT documents whose expiry_date is before today
 --     in Europe/Lisbon (the same calendar timezone as document-access).
---   * Personal documents must belong to the current driver.
+--   * Drivers must have an Ativo record, in addition to an active profile.\n--   * Personal documents must belong to the current driver.
 --   * Vehicle documents need an active assignment to the specific vehicle.
 --   * Company documents require an explicit active document_viewers grant.
 --   * Malformed rows with both vehicle_id and driver_id set do not become
@@ -27,6 +27,11 @@ USING (
   public.s2t_is_admin()
   OR (
     (expiry_date IS NULL OR expiry_date >= (now() AT TIME ZONE 'Europe/Lisbon')::date)
+    AND EXISTS (
+      SELECT 1 FROM public.drivers active_driver
+      WHERE active_driver.id = public.s2t_driver_id()
+        AND active_driver.status = 'Ativo'
+    )
     AND (
       (
         driver_id IS NOT NULL

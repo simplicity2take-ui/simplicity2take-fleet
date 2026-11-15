@@ -23,6 +23,12 @@ test('driver metadata access excludes expired documents using Lisbon calendar da
   assert.doesNotMatch(candidate, /\bCURRENT_DATE\b/i, 'database timezone must not accidentally control expiry');
 });
 
+test('driver metadata access additionally requires an active driver record', () => {
+  assert.match(candidate, /FROM public\.drivers active_driver/);
+  assert.match(candidate, /active_driver\.id = public\.s2t_driver_id\(\)/);
+  assert.match(candidate, /active_driver\.status = 'Ativo'/);
+});
+
 test('personal, vehicle, and company document cases stay mutually exclusive', () => {
   assert.match(candidate, /driver_id IS NOT NULL\s+AND vehicle_id IS NULL\s+AND driver_id = public\.s2t_driver_id\(\)/);
   assert.match(candidate, /vehicle_id IS NOT NULL\s+AND driver_id IS NULL\s+AND EXISTS\s*\(\s*SELECT 1\s+FROM public\.vehicle_assignments va/);

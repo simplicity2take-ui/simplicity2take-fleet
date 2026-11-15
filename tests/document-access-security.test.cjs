@@ -19,6 +19,9 @@ const checks = [
   ['Only supported document MIME types', 'const allowedMimeTypes = ["application/pdf", "image/jpeg", "image/png"]'],
   ['Unknown content uses safe binary MIME', '"application/octet-stream"'],
   ['Browser content sniffing disabled', '"x-content-type-options", "nosniff"'],
+  ['Document size cap', 'const maxDocumentBytes = 12 * 1024 * 1024'],
+  ['Reject oversized content length', 'declaredLength > maxDocumentBytes'],
+  ['Reject oversized actual response', 'bytes.byteLength > maxDocumentBytes'],
   ['Internal errors not exposed', 'Erro interno ao consultar o documento.'],
   ['Response filename sanitization', '.slice(0, 180)'],
 ];

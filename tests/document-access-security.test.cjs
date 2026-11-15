@@ -16,6 +16,9 @@ const checks = [
   ['Expired documents blocked', 'document.expiry_date < today'],
   ['Google Drive service account', 'GOOGLE_SERVICE_ACCOUNT_JSON'],
   ['Private no-store response', '"private, no-store"'],
+  ['Only supported document MIME types', 'const allowedMimeTypes = ["application/pdf", "image/jpeg", "image/png"]'],
+  ['Unknown content uses safe binary MIME', '"application/octet-stream"'],
+  ['Browser content sniffing disabled', '"x-content-type-options", "nosniff"'],
   ['Internal errors not exposed', 'Erro interno ao consultar o documento.'],
   ['Response filename sanitization', '.slice(0, 180)'],
 ];

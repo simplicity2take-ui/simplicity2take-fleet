@@ -20,6 +20,13 @@ Em `app.js`, o ficheiro é carregado para o Google Drive antes da operação `do
 - **Limite importante:** eliminar a ligação textual de novos registos não prova que os ficheiros sejam privados: a partilha de cada ficheiro e pasta do Google Drive tem de ser auditada, e um identificador de ficheiro pode permitir reconstruir uma ligação direta. Não há neste PR alterações às ACLs/permissões do Drive nem limpeza dos registos existentes.
 - Antes de qualquer alteração em produção, confirmar permissões de ficheiros e pastas e preparar revisão administrativa dos `drive_web_view_link` legados; não eliminar os URLs ou os ficheiros sem confirmação.
 
+## Confirmação dos dados devolvidos pelo Google Drive
+A Edge Function de upload passou a solicitar também `parents` e `size` no resultado de `files.create`. Antes de informar o navegador de que o carregamento teve sucesso, compara o nome, MIME, identificador, pasta principal e número exato de bytes com os valores submetidos. Em caso de divergência ou campos em falta devolve erro genérico (502) e **não confirma o carregamento ao Fleet**.
+
+Esta medida evita registar um documento para uma pasta errada ou com tamanho inesperado. **Limite:** caso o Google tenha efetivamente criado o ficheiro antes de devolver metadados inesperados, pode ficar um ficheiro sem referência. A função não o elimina automaticamente. A recuperação administrativa e uma transação idempotente continuam pendentes.
+
+Os testes `drive-upload-edge-runtime.test.cjs` simulam a resposta da API do Google, incluindo pasta e tamanho corretos, pasta errada, tamanho errado e metadados omissos. Não usam conta Google real nem comprovam o comportamento efetivo da conta de serviço do Fleet.
+
 ## Proposta para implementação futura (não aplicada)
 1. Gerar um identificador de operação idempotente no cliente, preservado em cada tentativa.
 2. Criar um registo de operação pendente numa tabela com RLS administrativa, antes do upload. Guardar `document_id`, `drive_file_id`, estado e timestamps; nunca guardar conteúdo ou tokens.

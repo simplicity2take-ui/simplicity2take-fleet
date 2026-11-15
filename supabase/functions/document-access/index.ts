@@ -194,7 +194,15 @@ Deno.serve(async (request) => {
       console.error("Google Drive file retrieval failed", driveResponse.status);
       return json({ error: "Não foi possível obter o ficheiro do Google Drive." }, 502);
     }
+    const maxDocumentBytes = 12 * 1024 * 1024;
+    const declaredLength = Number(driveResponse.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > maxDocumentBytes) {
+      return json({ error: "Documento demasiado grande para visualização." }, 413);
+    }
     const bytes = new Uint8Array(await driveResponse.arrayBuffer());
+    if (bytes.byteLength > maxDocumentBytes) {
+      return json({ error: "Documento demasiado grande para visualização." }, 413);
+    }
     const result = { mimeType: driveResponse.headers.get("content-type") || "", fileName: "" };
     const headers = new Headers(cors);
 

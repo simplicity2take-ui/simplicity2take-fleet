@@ -17,7 +17,7 @@ function makeHarness(portal, initialViewers, options = {}) {
   };
   const state = {
     documents: [doc], documentContext: options.context || 'company',
-    vehicles: [], drivers: [], sessionUserId: 'administrator', activeView: 'documents'
+    vehicles: [], drivers: options.context === 'driver' ? [{ id: 'driver-owner' }] : [], sessionUserId: 'administrator', activeView: 'documents'
   };
   const db = {
     from(table) {
@@ -57,7 +57,7 @@ function makeHarness(portal, initialViewers, options = {}) {
   };
   vm.createContext(sandbox);
   vm.runInContext(code.slice(start, end), sandbox);
-  const save = selected => sandbox.saveDocument({ name: 'Seguro', type: 'Carta Verde' }, selected, doc.id);
+  const save = selected => sandbox.saveDocument({ name: 'Seguro', type: 'Carta Verde', driverId: options.context === 'driver' ? 'driver-owner' : undefined }, selected, doc.id);
   return { save, saved, events };
 }
 
@@ -101,11 +101,9 @@ for (const portal of ['app.js', 'teste/app.js']) {
 
   test(portal + ': personal documents do not inherit explicit grants', async () => {
     const h = makeHarness(portal, [{ driver_id: 'a', can_view: true }], { context: 'driver' });
-    // A selected viewer must not be granted to a private driver document.
-    const doc = h;
-    // Supply a driver identity via state through the harness rather than a viewer.
-    await assert.rejects(doc.save(['a']), /Selecione o motorista/);
-    assert.equal(h.saved.get('a'), true);
-    assert.deepEqual(h.events.revoked, []);
+    await h.save(['a']);
+    assert.equal(h.saved.has('a'), false);
+    assert.deepEqual(h.events.revoked, ['a']);
+    assert.deepEqual(h.events.granted, []);
   });
 }

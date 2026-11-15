@@ -45,8 +45,14 @@ function modalHarness(portal, options = {}) {
       if (options.failFirst && events.saves === 1) throw new Error('upload failed');
       if (options.block) await blocked;
     },
-    async loadBackendData() { events.loads++; },
-    renderApp() { events.renders++; },
+    async loadBackendData() {
+      events.loads++;
+      if (options.loadThrows) throw new Error('backend refresh failed');
+    },
+    renderApp() {
+      events.renders++;
+      if (options.renderThrows) throw new Error('render failed');
+    },
     showToast(message) { events.toasts.push(message); },
     console: { error() {} }
   };
@@ -92,6 +98,31 @@ for (const portal of ['app.js', 'teste/app.js']) {
     assert.equal(h.events.saves, 2);
     assert.equal(h.events.closes, 1);
     assert.equal(h.events.toasts.length, 1);
+  });
+
+  test(portal + ': successful save followed by failed data refresh reports saved changes', async () => {
+    const h = modalHarness(portal, { loadThrows: true });
+    await h.submit();
+    assert.equal(h.events.saves, 1);
+    assert.equal(h.events.closes, 1);
+    assert.equal(h.events.loads, 1);
+    assert.equal(h.events.renders, 0);
+    assert.equal(h.events.toasts.length, 1);
+    assert.match(h.events.toasts[0], /^Alterações guardadas, mas não foi possível atualizar a lista/);
+    assert.equal(h.state.modalSaveInFlight, false);
+    assert.equal(h.button.disabled, false);
+  });
+
+  test(portal + ': rendering failure after save does not report a failed write', async () => {
+    const h = modalHarness(portal, { renderThrows: true });
+    await h.submit();
+    assert.equal(h.events.saves, 1);
+    assert.equal(h.events.closes, 1);
+    assert.equal(h.events.loads, 1);
+    assert.equal(h.events.renders, 1);
+    assert.equal(h.events.toasts.length, 1);
+    assert.match(h.events.toasts[0], /^Alterações guardadas, mas não foi possível atualizar a lista/);
+    assert.equal(h.state.modalSaveInFlight, false);
   });
 
   test(portal + ': errors while reading form also release the submit lock', async () => {

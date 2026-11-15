@@ -10,7 +10,7 @@ function modalHarness(portal, options = {}) {
   const end = source.indexOf('\n}\n', start) + 3;
   assert(start >= 0 && end > start, 'Modal submit handler must remain available');
   const button = { disabled: false, textContent: 'Guardar' };
-  const events = { submits: 0, saves: 0, closes: 0, loads: 0, renders: 0, toasts: [] };
+  const events = { submits: 0, saves: 0, closes: 0, opens: 0, loads: 0, renders: 0, toasts: [] };
   let unblock;
   const blocked = new Promise(resolve => { unblock = resolve; });
   const state = { editing: { type: 'document', id: '' } };
@@ -33,10 +33,13 @@ function modalHarness(portal, options = {}) {
       assert.equal(selector, 'button[type="submit"]');
       return button;
     } },
-    modal: { close() { events.closes++; } }
+    modal: { close() { events.closes++; }, showModal() { events.opens++; } },
+    modalTitle: { textContent: '' },
+    modalFields: { innerHTML: '' }
   };
   const context = {
     state, selectors, FormData: FormDataStub,
+    modalFields: (type) => 'form-' + type,
     async saveDocument(values, viewers, id) {
       events.saves++;
       assert.equal(values.name, 'Seguro');
@@ -58,11 +61,15 @@ function modalHarness(portal, options = {}) {
   };
   vm.createContext(context);
   vm.runInContext(source.slice(start, end), context);
+  const guardStart = source.indexOf('function allowAdminModalClose(');
+  const guardEnd = source.indexOf('function modalFields(', guardStart);
+  assert(guardStart >= 0 && guardEnd > guardStart);
+  vm.runInContext(source.slice(guardStart, guardEnd), context);
   const submit = () => {
     events.submits++;
     return context.submitModal({ preventDefault() {} });
   };
-  return { submit, unblock, button, events, state };
+  return { submit, unblock, button, events, state, context, source };
 }
 
 for (const portal of ['app.js', 'teste/app.js']) {
@@ -84,6 +91,42 @@ for (const portal of ['app.js', 'teste/app.js']) {
     assert.equal(h.state.modalSaveInFlight, false);
     assert.equal(h.button.disabled, false);
     assert.equal(h.button.textContent, 'Guardar');
+  });
+
+  test(portal + ': Escape and close buttons cannot dismiss an unresolved save', async () => {
+    const h = modalHarness(portal, { block: true });
+    const saving = h.submit();
+    let cancelled = false;
+    assert.equal(h.context.allowAdminModalClose({
+      preventDefault() { cancelled = true; }
+    }), false);
+    assert.equal(cancelled, true, 'Escape must be prevented during upload');
+    assert.match(h.source, /selectors\.modal\?\.addEventListener\("cancel", allowAdminModalClose\)/);
+    assert.match(h.source, /if \(allowAdminModalClose\(\)\) selectors\.modal\?\.close\(\)/);
+    assert.equal(h.events.closes, 0);
+    h.unblock();
+    await saving;
+    let preventedAfter = false;
+    assert.equal(h.context.allowAdminModalClose({
+      preventDefault() { preventedAfter = true; }
+    }), true);
+    assert.equal(preventedAfter, false);
+  });
+
+  test(portal + ': a different modal cannot replace a pending document save', async () => {
+    const h = modalHarness(portal, { block: true });
+    const originalEditing = h.state.editing;
+    const saving = h.submit();
+    h.context.openModal('vehicle');
+    assert.strictEqual(h.state.editing, originalEditing);
+    assert.equal(h.events.opens, 0);
+    assert.equal(h.events.saves, 1);
+    h.unblock();
+    await saving;
+    h.context.openModal('vehicle');
+    assert.equal(h.events.opens, 1);
+    assert.equal(h.state.editing.type, 'vehicle');
+    assert.equal(h.context.allowAdminModalClose(), true);
   });
 
   test(portal + ': document save failure releases the submit lock for retry', async () => {

@@ -2633,7 +2633,22 @@ async function saveDocument(values, viewerDriverIds, id) {
         ? (state.drivers.find(driver => driver.id === finalDriverId)?.name || "")
         : "";
 
-    if (matchesPendingDocumentUpload(previousAttempt, file, context, finalVehicleId, finalDriverId, id)) {
+    const reusingUpload = matchesPendingDocumentUpload(
+      previousAttempt, file, context, finalVehicleId, finalDriverId, id
+    );
+    // A previous insert might have committed despite a lost SQL response.
+    // Reconcile that earlier Drive file BEFORE changing the upload/destination;
+    // otherwise a new file may be inserted as a second document.
+    if (!reusingUpload && previousAttempt?.insertAttempted && !previousAttempt.savedDocumentId) {
+      const { data: recovered, error: recoveryError } = await supabaseClient.from("documents")
+        .select("id").eq("drive_file_id", previousAttempt.driveData.fileId).maybeSingle();
+      if (recoveryError) {
+        throw new Error("Não foi possível confirmar se o documento anterior já foi guardado. Tente novamente.");
+      }
+      if (recovered?.id) previousAttempt.savedDocumentId = recovered.id;
+    }
+
+    if (reusingUpload) {
       driveData = previousAttempt.driveData;
     } else {
       const base64 = await fileToBase64(file);

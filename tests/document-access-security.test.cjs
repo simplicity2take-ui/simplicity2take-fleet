@@ -21,7 +21,10 @@ const checks = [
   ['Browser content sniffing disabled', '"x-content-type-options", "nosniff"'],
   ['Document size cap', 'const maxDocumentBytes = 12 * 1024 * 1024'],
   ['Reject oversized content length', 'declaredLength > maxDocumentBytes'],
-  ['Reject oversized actual response', 'bytes.byteLength > maxDocumentBytes'],
+  ['Reject oversized actual response', 'totalBytes > maxDocumentBytes'],
+  ['Read Drive content incrementally', 'driveResponse.body.getReader()'],
+  ['Cancel oversized Drive transfers', 'await reader.cancel()'],
+  ['Assemble bounded content', 'new Uint8Array(totalBytes)'],
   ['Internal errors not exposed', 'Erro interno ao consultar o documento.'],
   ['Response filename sanitization', '.slice(0, 180)'],
 ];

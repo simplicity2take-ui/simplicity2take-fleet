@@ -265,9 +265,10 @@ Deno.serve(async (request) => {
       headers,
     });
 
-  } catch (error) {
-    console.error(error);
-
+  } catch {
+    // Do not log raw upstream errors: they can contain document identifiers,
+    // service-account details, or request metadata.
+    console.error("Document access failed unexpectedly.");
     return json({ error: "Erro interno ao consultar o documento." }, 500);
   }
 });

@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 function harness(portalPath, failurePoint) {
   const code = fs.readFileSync(path.join(__dirname, '..', portalPath), 'utf8');
-  const start = code.indexOf('let pendingDocumentSave = null;');
+  const start = code.indexOf('function matchesPendingDocumentUpload(');
   const end = code.indexOf('function fileToBase64(', start);
   assert(start >= 0 && end > start, 'Retry logic must remain available in the portal');
   const file = { name: 'insurance.pdf', type: 'application/pdf', size: 120 };
@@ -63,7 +63,7 @@ function harness(portalPath, failurePoint) {
   vm.runInContext(code.slice(start, end) + `
     globalThis.testApi = {
       saveDocument, matchesPendingDocumentUpload,
-      pending: () => pendingDocumentSave
+      pending: () => state.pendingDocumentUpload
     };
   `, sandbox, { timeout: 1000 });
   const values = { name: 'Seguro', type: 'Carta Verde', expiryDate: '2027-01-01' };

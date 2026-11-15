@@ -48,6 +48,17 @@ Esta medida evita registar um documento para uma pasta errada ou com tamanho ine
 
 Os testes `drive-upload-edge-runtime.test.cjs` simulam a resposta da API do Google, incluindo pasta e tamanho corretos, pasta errada, tamanho errado e metadados omissos. Não usam conta Google real nem comprovam o comportamento efetivo da conta de serviço do Fleet.
 
+## Recuperar um carregamento quando a resposta do Google Drive se perde
+O cliente e a Edge Function `drive-upload` utilizam agora um **identificador aleatório único por tentativa de ficheiro/destino**, criado no navegador antes de contactar o Drive. É enviado como `uploadId` e guardado no ficheiro pela conta de serviço na propriedade **privada** `appProperties.s2tUploadId`, sem tokens ou dados pessoais.
+
+- Antes de efetuar um upload com `uploadId`, o servidor pesquisa se já existe **exatamente um ficheiro** com esse identificador na pasta correta. Se existir e coincidir o nome, formato e tamanho, devolve a referência anterior.
+- Se o navegador não receber a resposta, mantém o identificador da operação **em memória no mesmo formulário**. Ao premir «Guardar» novamente, envia `recoverOnly=true`: o servidor procura o ficheiro anterior e **não cria outro ficheiro nem outra pasta**.
+- Quando a pesquisa recupera um ficheiro único e coerente, prossegue a gravação SQL normal. Se não encontrar o ficheiro, houver duplicados, erro de pesquisa ou metadados incoerentes, a operação é interrompida. A escolha de outro ficheiro ou pasta durante essa incerteza também é bloqueada.
+- Mantém-se suporte a pedidos antigos sem `uploadId`, que **não beneficiam desta proteção**. Os novos portais enviam o identificador.
+- O índice de pesquisa do Drive pode ter atrasos; uma recuperação pode não encontrar de imediato um ficheiro efetivamente criado. Para não duplicar, o servidor **não repete automaticamente o upload**. O administrador deve rever a situação. O fecho/recarregamento da página perde o identificador em memória; esta solução **não é idempotência transacional entre browsers, sessões ou dispositivos**.
+
+Não se criaram tabelas, migrações ou permissões adicionais. Os testes simulam perda de resposta, recuperação, ausência ou duplicação de ficheiros e verificação do identificador privado; não foram carregados ficheiros reais. Antes de publicar, deve validar-se a pesquisa por `appProperties` com a conta de serviço do Fleet num ambiente isolado.
+
 ## Proposta para implementação futura (não aplicada)
 1. Gerar um identificador de operação idempotente no cliente, preservado em cada tentativa.
 2. Criar um registo de operação pendente numa tabela com RLS administrativa, antes do upload. Guardar `document_id`, `drive_file_id`, estado e timestamps; nunca guardar conteúdo ou tokens.

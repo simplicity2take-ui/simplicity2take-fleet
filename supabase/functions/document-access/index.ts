@@ -230,7 +230,15 @@ Deno.serve(async (request) => {
       : allowedMimeTypes.includes(result.mimeType)
         ? result.mimeType
         : "application/octet-stream";
-    headers.set("content-type", contentType);
+    const isPdf = bytes.length >= 5 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2d;
+    const isJpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+    const isPng = bytes.length >= 8 && pngSignature.every((byte, index) => bytes[index] === byte);
+    const verifiedType = (contentType === "application/pdf" && isPdf) ||
+      (contentType === "image/jpeg" && isJpeg) ||
+      (contentType === "image/png" && isPng)
+      ? contentType : "application/octet-stream";
+    headers.set("content-type", verifiedType);
     headers.set("x-content-type-options", "nosniff");
 
     const safeName = String(

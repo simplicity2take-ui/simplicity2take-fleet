@@ -219,7 +219,7 @@ Deno.serve(async request => {
     payload.set(binary, metadataPart.length);
     payload.set(endPart, metadataPart.length + binary.length);
 
-    const upload = await driveRequest(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink", {
+    const upload = await driveRequest(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType", {
       method: "POST",
       headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
       body: payload
@@ -238,8 +238,7 @@ Deno.serve(async request => {
       ok: true,
       fileId: file.id,
       fileName: file.name,
-      mimeType: file.mimeType,
-      webViewLink: typeof file.webViewLink === "string" ? file.webViewLink : ""
+      mimeType: file.mimeType
     });
   } catch {
     // Avoid logging upstream exceptions that could contain private document metadata.

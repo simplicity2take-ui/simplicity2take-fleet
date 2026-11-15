@@ -2705,8 +2705,22 @@ async function saveDocument(values, viewerDriverIds, id) {
     uploaded_by: state.sessionUserId
   };
 
-  // If the first insert succeeded but updating viewers failed, retry as an update.
-  const targetDocumentId = (state.pendingDocumentUpload?.editingId === id ? state.pendingDocumentUpload.savedDocumentId : null) || id;
+  // The previous insert may have committed even if its response was lost.
+  // On retry, look up the unique Drive file ID before attempting another insert.
+  const pendingSave = state.pendingDocumentUpload?.editingId === id ? state.pendingDocumentUpload : null;
+  let targetDocumentId = pendingSave?.savedDocumentId || id;
+  if (!targetDocumentId && pendingSave?.insertAttempted && pendingSave.driveData?.fileId === driveData.fileId) {
+    const { data: recovered, error: recoveryError } = await supabaseClient.from("documents")
+      .select("id").eq("drive_file_id", driveData.fileId).maybeSingle();
+    if (recoveryError) {
+      throw new Error("Não foi possível confirmar se o documento já foi guardado. Tente novamente.");
+    }
+    if (recovered?.id) {
+      targetDocumentId = recovered.id;
+      pendingSave.savedDocumentId = recovered.id;
+    }
+  }
+  if (!targetDocumentId && pendingSave) pendingSave.insertAttempted = true;
   const query = targetDocumentId
     ? supabaseClient.from("documents").update(payload).eq("id", targetDocumentId).select().single()
     : supabaseClient.from("documents").insert(payload).select().single();

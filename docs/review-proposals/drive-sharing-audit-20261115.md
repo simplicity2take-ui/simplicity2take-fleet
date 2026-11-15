@@ -27,6 +27,10 @@ A função `drive-upload` já não seleciona a primeira pasta devolvida pelo Goo
 
 Nestes casos a operação falha de forma segura, **sem deslocar documentos nem escolher uma pasta por aproximação**. Se forem encontradas pastas duplicadas no ambiente real, será necessária revisão administrativa antes de voltar a carregar para essa localização. A deteção de respostas ambíguas e a validação do pai estão cobertas por testes isolados, não por carregamentos reais.
 
+**Reverificação após criação:** o fluxo volta a pesquisar a pasta recém-criada. Só a utiliza se for a única pasta encontrada e se o ID coincidir com a resposta de criação. Assim, uma pasta com o mesmo nome criada por um segundo pedido, entre a pesquisa inicial e a criação, faz interromper o carregamento **antes de enviar o ficheiro**.
+
+**Limite operacional:** o índice de pesquisa do Google Drive pode demorar a mostrar uma pasta nova. Nesse caso, a reverificação pode falhar temporariamente, deixando a pasta criada mas ainda sem ficheiro. O servidor não apaga nem move essa pasta e o administrador pode repetir a operação após verificar a organização. Esta abordagem conservadora precisa de ser validada com a conta de serviço num ambiente de testes antes de ser publicada; não garante unicidade transacional perante corridas entre sessões.
+
 ## Passos antes de publicar
 1. Rever a configuração e as partilhas da pasta raiz efetivamente usada pela conta de serviço do Fleet, não apenas pela conta Google Drive da auditoria.
 2. Testar a criação e leitura de um documento fictício numa pasta de testes, confirmando que nenhuma permissão de público/domínio foi herdada.

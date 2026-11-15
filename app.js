@@ -2610,6 +2610,17 @@ async function saveVehicle(values, driverIds, id) {
 
 // Keep a successful Drive upload receipt only while this document form is open.
 // Retrying a failed database/viewer save must not create another Drive copy.
+function driveDriverFolderName(driver, driverId) {
+  // Human-readable folder names are not unique; include the immutable driver ID.
+  // Do not rename legacy Drive folders or move existing documents.
+  const cleanName = String(driver?.name || "Motorista")
+    .replace(/[\\/\x00-\x1f\x7f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120) || "Motorista";
+  return `${cleanName} [${driverId}]`;
+}
+
 function matchesPendingDocumentUpload(pending, file, context, vehicleId, driverId, editingId, folderName) {
   return Boolean(pending && pending.file === file &&
     pending.context === context &&
@@ -2658,7 +2669,7 @@ async function saveDocument(values, viewerDriverIds, id) {
     const folderName = context === "vehicle"
       ? (state.vehicles.find(vehicle => vehicle.id === finalVehicleId)?.plate || "")
       : context === "driver"
-        ? (state.drivers.find(driver => driver.id === finalDriverId)?.name || "")
+        ? driveDriverFolderName(state.drivers.find(driver => driver.id === finalDriverId), finalDriverId)
         : "";
 
     const reusingUpload = matchesPendingDocumentUpload(

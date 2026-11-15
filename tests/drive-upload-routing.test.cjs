@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'supabase/functions/drive-upload/index.ts'), 'utf8');
 assert(source.includes('drivers: "Motoristas"'), 'Driver uploads must use Motoristas');
+assert(source.includes('"Cache-Control": "private, no-store"'), 'Upload responses must not be cached');
+assert(source.includes('"X-Content-Type-Options": "nosniff"'), 'Upload responses must disable content sniffing');
 assert(source.includes('name.replace(/\\\\/g, "\\\\\\\\").replace(/\'/g, "\\\\\'")'), 'Drive folder lookup must escape backslashes and quotes');
 assert(source.includes('vehicles: "Veículos"'), 'Vehicle uploads must use Veículos');
 assert(source.includes('documents: "Empresa"'), 'Company uploads must use Empresa');

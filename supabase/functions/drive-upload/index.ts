@@ -213,6 +213,10 @@ Deno.serve(async request => {
       body: payload
     });
     const file = await upload.json();
+    if (!file || typeof file.id !== "string" || !/^[A-Za-z0-9_-]{10,}$/.test(file.id)) {
+      console.error("Google Drive upload returned no valid file identifier.");
+      return json({ ok: false, error: "O Google Drive não confirmou o identificador do documento." }, 502);
+    }
 
     return json({
       ok: true,

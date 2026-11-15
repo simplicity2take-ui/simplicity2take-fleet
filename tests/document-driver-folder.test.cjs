@@ -49,6 +49,8 @@ function harness(portalPath) {
   };
   const env = {
     state, supabaseClient, documentBlobCache: new Map(), showToast() {},
+    // New uploads create a stable operation ID before contacting Drive.
+    crypto: { randomUUID: () => '00000000-0000-4000-8000-000000000001' },
     validateDocumentFile() {}, fileToBase64: async () => 'JVBERi0=',
     crypto: { randomUUID: () => 'b7b52d37-91db-48ad-bb3c-0f7477845055' },
     selectors: { modalFields: { querySelector: () => ({ files: [file] }) } }

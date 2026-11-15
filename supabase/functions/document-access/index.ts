@@ -125,12 +125,16 @@ Deno.serve(async (request) => {
     // delivered to a driver, even if they bypass the UI.
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role,status")
       .eq("id", user.id)
       .maybeSingle();
 
     if (profileError) throw profileError;
-    const isAdmin = profile?.role === "admin";
+    // A valid JWT is not enough once an account has been inactivated.
+    if (profile?.status !== "Ativo") {
+      return json({ error: "Conta inativa ou não autorizada." }, 403);
+    }
+    const isAdmin = profile.role === "admin";
 
     if (!isAdmin) {
       if (profile?.role !== "driver" || !document) {
@@ -138,11 +142,13 @@ Deno.serve(async (request) => {
       }
       const { data: driver, error: driverError } = await supabase
         .from("drivers")
-        .select("id")
+        .select("id,status")
         .eq("profile_id", user.id)
         .maybeSingle();
       if (driverError) throw driverError;
-      if (!driver) return json({ error: "Motorista não autorizado." }, 403);
+      if (!driver || driver.status !== "Ativo") {
+        return json({ error: "Motorista inativo ou não autorizado." }, 403);
+      }
 
       // Reject inconsistent records that are simultaneously personal and
       // vehicle documents. They must be repaired by an administrator.

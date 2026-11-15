@@ -2538,6 +2538,7 @@ async function submitModal(event) {
   // form submit events (e.g. repeated Enter presses during an async upload).
   if (state.modalSaveInFlight) return;
   state.modalSaveInFlight = true;
+  let saved = false;
   const submitButton = selectors.form.querySelector('button[type="submit"]');
   try {
     submitButton.disabled = true;
@@ -2551,12 +2552,17 @@ async function submitModal(event) {
     if (type === "document") await saveDocument(values, checked("viewerDriverIds"), id);
     if (type === "password") await savePassword(values.password);
     if (type === "admin-password") await saveAdminPassword(id, values.password, values.passwordConfirm);
+    // Only report a save failure when the write itself failed. A refresh
+    // error after a successful save must never encourage a duplicate upload.
+    saved = true;
     selectors.modal.close();
     await loadBackendData();
     renderApp();
   } catch (error) {
     console.error(error);
-    showToast(error?.message || "Não foi possível guardar.");
+    showToast(saved
+      ? "Alterações guardadas, mas não foi possível atualizar a lista. Atualize a página para ver os dados."
+      : (error?.message || "Não foi possível guardar."));
   } finally {
     state.modalSaveInFlight = false;
     submitButton.disabled = false;

@@ -20,6 +20,11 @@ Em `app.js`, o ficheiro é carregado para o Google Drive antes da operação `do
 - **Limite importante:** eliminar a ligação textual de novos registos não prova que os ficheiros sejam privados: a partilha de cada ficheiro e pasta do Google Drive tem de ser auditada, e um identificador de ficheiro pode permitir reconstruir uma ligação direta. Não há neste PR alterações às ACLs/permissões do Drive nem limpeza dos registos existentes.
 - Antes de qualquer alteração em produção, confirmar permissões de ficheiros e pastas e preparar revisão administrativa dos `drive_web_view_link` legados; não eliminar os URLs ou os ficheiros sem confirmação.
 
+## Confirmar gravação não é o mesmo que atualizar o ecrã
+Os portais distinguem agora a fase de **gravação** da atualização posterior dos dados. Se o Supabase ou o Google Drive já tiver confirmado a gravação, mas `loadBackendData()` ou `renderApp()` falharem, a interface indica que **as alterações foram guardadas, mas a lista não pôde ser atualizada**, recomendando atualizar a página. Não apresenta uma mensagem enganadora de falha na gravação, que poderia incentivar um novo carregamento duplicado.
+
+O teste `document-modal-concurrency.test.cjs` simula falhas de atualização e de renderização para os dois portais, além das falhas de gravação genuínas. Não substitui reconciliação transacional no servidor.
+
 ## Prevenção de carregamentos simultâneos no formulário
 O tratamento do envio de formulários passou a usar `state.modalSaveInFlight`, definido **sincronamente antes de ler o formulário e antes de qualquer pedido de rede**. Isto impede que uma segunda submissão do mesmo modal inicie outro carregamento enquanto o primeiro decorre; a mera desativação do botão não era suficiente para garantir essa exclusão.
 

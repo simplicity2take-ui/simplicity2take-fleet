@@ -13,6 +13,13 @@ Em `app.js`, o ficheiro é carregado para o Google Drive antes da operação `do
 - A memória de tentativa é limpa quando o formulário volta a abrir ou quando a gravação e as permissões são concluídas. O limite do cliente está harmonizado com os 10 MB decimais do servidor.
 - Esta recuperação **não é uma transação**, não persiste ao fechar/recarregar a página e não garante idempotência completa perante corridas, perda de sessão ou fecho da página. O ficheiro no Drive pode continuar sem referência nesses casos. As permissões de visualização são agora sincronizadas por diferenças: conservam-se os acessos inalterados, revogam-se apenas os acessos removidos e acrescentam-se apenas os novos ou anteriormente desativados. A tabela usa a chave `(document_id, driver_id)` e a escrita fica sujeita à RLS administrativa. Estas operações continuam separadas, pelo que uma falha pode deixar **parte** das alterações de acesso por concluir; a recuperação completa exige uma transação no servidor.
 
+## Ligações diretas ao Google Drive — revisão 15/11/2026
+- Numa consulta SQL **apenas de contagem**, os dois registos atualmente existentes em `public.documents` apresentavam tanto `drive_file_id` como `drive_web_view_link`. **Não foram consultados os conteúdos nem alteradas linhas**.
+- Os novos carregamentos do Fleet já não pedem nem devolvem `webViewLink` na Edge Function `drive-upload`; os novos documentos ou substituições guardam `drive_web_view_link = NULL`. Editar apenas metadados preserva, por precaução, a ligação antiga sem a eliminar.
+- A visualização do portal continua a usar `document-access`, que verifica sessão, estado e autorização antes de devolver o ficheiro. Uma ligação Google Drive antiga não é usada para abrir o documento na interface.
+- **Limite importante:** eliminar a ligação textual de novos registos não prova que os ficheiros sejam privados: a partilha de cada ficheiro e pasta do Google Drive tem de ser auditada, e um identificador de ficheiro pode permitir reconstruir uma ligação direta. Não há neste PR alterações às ACLs/permissões do Drive nem limpeza dos registos existentes.
+- Antes de qualquer alteração em produção, confirmar permissões de ficheiros e pastas e preparar revisão administrativa dos `drive_web_view_link` legados; não eliminar os URLs ou os ficheiros sem confirmação.
+
 ## Proposta para implementação futura (não aplicada)
 1. Gerar um identificador de operação idempotente no cliente, preservado em cada tentativa.
 2. Criar um registo de operação pendente numa tabela com RLS administrativa, antes do upload. Guardar `document_id`, `drive_file_id`, estado e timestamps; nunca guardar conteúdo ou tokens.

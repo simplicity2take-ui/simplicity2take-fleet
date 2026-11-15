@@ -107,9 +107,13 @@ for (const portalPath of ['app.js', 'teste/app.js']) {
 
   test(portalPath + ': replacing a document clears the legacy direct URL', async () => {
     const h = harness(portalPath);
+    h.state.documents.push({
+      id: 'existing-document-1', name: 'Seguro', driveFileId: 'existingDriveFile12345',
+      driveUrl: 'https://drive.google.com/file/d/legacy/view',
+      fileName: 'legacy.pdf', fileType: 'application/pdf'
+    });
     h.setFile({ name: 'replacement.pdf', type: 'application/pdf', size: 140 });
-    // The existing document keeps its metadata when no file is selected,
-    // but a replacement must never persist its old external link.
+    // A replacement must never persist the previous external view link.
     await h.saveDocument(h.values, [], 'existing-document-1');
     assert.equal(h.events.updates, 1);
     assert.equal(h.events.updatedPayload.drive_web_view_link, null);

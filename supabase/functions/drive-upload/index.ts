@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { readBoundedUploadJson, UploadRequestTooLargeError } from "./read-bounded-upload.mjs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://fleet.simplicity2take.com",
@@ -9,7 +10,7 @@ const corsHeaders = {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" }
+    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" }
   });
 }
 
@@ -68,33 +69,53 @@ async function driveRequest(token: string, url: string, init: RequestInit = {}) 
     }
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Google Drive: ${detail.slice(0, 500)}`);
+    throw new Error(`Google Drive HTTP ${response.status}`);
   }
   return response;
 }
 
+function validDriveFolder(folder: unknown, name: string, parentId: string): folder is { id: string } {
+  if (!folder || typeof folder !== "object") return false;
+  const candidate = folder as Record<string, unknown>;
+  return typeof candidate.id === "string" &&
+    /^[A-Za-z0-9_-]{10,}$/.test(candidate.id) &&
+    candidate.name === name &&
+    candidate.mimeType === "application/vnd.google-apps.folder" &&
+    Array.isArray(candidate.parents) &&
+    candidate.parents.length === 1 &&
+    candidate.parents[0] === parentId;
+}
+
 async function findFolder(token: string, name: string, parentId: string) {
+  const safeName = name.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeParent = parentId.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   const q = [
     "mimeType='application/vnd.google-apps.folder'",
-    `name='${name.replace(/'/g, "\\'")}'`,
-    `'${parentId}' in parents`,
+    `name='${safeName}'`,
+    `'${safeParent}' in parents`,
     "trashed=false"
   ].join(" and ");
   const url = "https://www.googleapis.com/drive/v3/files?" + new URLSearchParams({
     q,
-    fields: "files(id,name)",
-    pageSize: "10"
+    fields: "nextPageToken,incompleteSearch,files(id,name,mimeType,parents)",
+    pageSize: "2"
   });
   const response = await driveRequest(token, url);
   const data = await response.json();
-  return data.files?.[0]?.id || null;
+  // Never guess which folder is correct if the Drive list is partial,
+  // ambiguous or inconsistent; stop rather than uploading in the wrong place.
+  if (!data || !Array.isArray(data.files) || data.incompleteSearch ||
+      data.nextPageToken || data.files.length > 1 ||
+      (data.files.length === 1 && !validDriveFolder(data.files[0], name, parentId))) {
+    throw new Error("Google Drive folder lookup ambiguous or invalid.");
+  }
+  return data.files.length === 1 ? data.files[0].id : null;
 }
 
 async function ensureFolder(token: string, name: string, parentId: string) {
   const existing = await findFolder(token, name, parentId);
   if (existing) return existing;
-  const response = await driveRequest(token, "https://www.googleapis.com/drive/v3/files?fields=id,name", {
+  const response = await driveRequest(token, "https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType,parents&ignoreDefaultVisibility=true", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -103,7 +124,56 @@ async function ensureFolder(token: string, name: string, parentId: string) {
       parents: [parentId]
     })
   });
-  return (await response.json()).id;
+  const created = await response.json();
+  if (!validDriveFolder(created, name, parentId)) {
+    throw new Error("Google Drive did not confirm the requested parent folder.");
+  }
+  // A second upload may have created a same-name folder between our initial
+  // lookup and this POST. Re-list before accepting the new destination:
+  // on ambiguity, never send the document into an arbitrary folder.
+  const confirmedId = await findFolder(token, name, parentId);
+  if (confirmedId !== created.id) {
+    throw new Error("Google Drive folder creation could not be verified.");
+  }
+  return created.id;
+}
+
+function verifiedUploadedFile(file: unknown, name: string, mimeType: string,
+  parentId: string, byteLength: number, uploadId: string) {
+  if (!file || typeof file !== "object") return false;
+  const item = file as Record<string, unknown>;
+  return typeof item.id === "string" && /^[A-Za-z0-9_-]{10,}$/.test(item.id) &&
+    item.name === name && item.mimeType === mimeType &&
+    Array.isArray(item.parents) && item.parents.length === 1 &&
+    item.parents[0] === parentId && item.size === String(byteLength) &&
+    (!uploadId || (item.appProperties as Record<string, unknown> | undefined)?.s2tUploadId === uploadId);
+}
+
+async function findUploadedFile(token: string, parentId: string, uploadId: string,
+  fileName: string, mimeType: string, byteLength: number) {
+  // Private appProperties allow the same service account to locate a prior
+  // upload without exposing tokens, document contents or an external view URL.
+  const safeParent = parentId.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const q = [
+    `'${safeParent}' in parents`,
+    `appProperties has { key='s2tUploadId' and value='${uploadId}' }`,
+    "trashed=false"
+  ].join(" and ");
+  const url = "https://www.googleapis.com/drive/v3/files?" + new URLSearchParams({
+    q,
+    fields: "nextPageToken,incompleteSearch,files(id,name,mimeType,parents,size,appProperties)",
+    pageSize: "2"
+  });
+  const response = await driveRequest(token, url);
+  const result = await response.json();
+  if (!result || !Array.isArray(result.files) || result.incompleteSearch ||
+      result.nextPageToken || result.files.length > 1 ||
+      (result.files.length === 1 && !verifiedUploadedFile(
+        result.files[0], fileName, mimeType, parentId, byteLength, uploadId
+      ))) {
+    throw new Error("Google Drive upload recovery is ambiguous or invalid.");
+  }
+  return result.files[0] || null;
 }
 
 function decodeBase64(base64: string) {
@@ -127,21 +197,76 @@ Deno.serve(async request => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return json({ ok: false, error: "Sessão inválida." }, 401);
 
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-    if (profile?.role !== "admin") return json({ ok: false, error: "Apenas o administrador pode carregar documentos." }, 403);
+    const { data: profile, error: profileError } = await supabase.from("profiles")
+      .select("role,status").eq("id", user.id).maybeSingle();
+    if (profileError || profile?.role !== "admin" || profile.status !== "Ativo") {
+      return json({ ok: false, error: "Conta administrativa inativa ou não autorizada." }, 403);
+    }
 
-    const body = await request.json();
-    const fileName = String(body.fileName || "").trim();
-    const mimeType = String(body.mimeType || "application/octet-stream");
-    const base64 = String(body.base64 || "");
-    const folderType = String(body.folderType || "documents");
-    const folderName = String(body.folderName || "").trim();
+    // Enforce the limit against actual bytes, even with missing or incorrect Content-Length.
+    let body: Record<string, unknown>;
+    try {
+      const parsed = await readBoundedUploadJson(request);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return json({ ok: false, error: "Pedido JSON inválido." }, 400);
+      }
+      body = parsed as Record<string, unknown>;
+    } catch (error) {
+      if (error instanceof UploadRequestTooLargeError) {
+        return json({ ok: false, error: "Pedido demasiado grande." }, 413);
+      }
+      return json({ ok: false, error: "Pedido JSON inválido." }, 400);
+    }
+    const fileName = typeof body.fileName === "string" ? body.fileName.trim() : "";
+    const mimeType = typeof body.mimeType === "string" ? body.mimeType : "";
+    const base64 = typeof body.base64 === "string" ? body.base64 : "";
+    const folderType = typeof body.folderType === "string" ? body.folderType : "";
+    const folderName = typeof body.folderName === "string" ? body.folderName.trim() : "";
+    const uploadId = typeof body.uploadId === "string" ? body.uploadId : "";
+    const recoverOnly = body.recoverOnly === true;
+    if (body.recoverOnly !== undefined && typeof body.recoverOnly !== "boolean") {
+      return json({ ok: false, error: "Pedido de recuperação inválido." }, 400);
+    }
+    if ((body.uploadId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uploadId)) ||
+        (recoverOnly && !uploadId)) {
+      return json({ ok: false, error: "Identificador de carregamento inválido." }, 400);
+    }
 
     if (!fileName || !base64) return json({ ok: false, error: "Ficheiro em falta." }, 400);
+    if (fileName.length > 180 || /[\x00-\x1f\x7f]/.test(fileName) || fileName.includes("/") || fileName.includes("\\")) {
+      return json({ ok: false, error: "Nome do ficheiro inválido." }, 400);
+    }
+    if (folderName.length > 180 || /[\x00-\x1f\x7f]/.test(folderName) || folderName.includes("/") || folderName.includes("\\")) {
+      return json({ ok: false, error: "Nome da pasta inválido." }, 400);
+    }
     if (!["application/pdf", "image/jpeg", "image/png"].includes(mimeType)) {
       return json({ ok: false, error: "Formato não suportado." }, 400);
     }
-    if (base64.length > 15_000_000) return json({ ok: false, error: "Ficheiro demasiado grande." }, 413);
+    // A 10 MB file needs at most 13,333,336 base64 characters.
+    if (base64.length > 13_333_336) return json({ ok: false, error: "Ficheiro demasiado grande." }, 413);
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) {
+      return json({ ok: false, error: "Conteúdo do ficheiro inválido." }, 400);
+    }
+    if (!["drivers", "vehicles", "documents"].includes(folderType)) {
+      return json({ ok: false, error: "Destino do documento inválido." }, 400);
+    }
+    if (folderType !== "documents" && !folderName) {
+      return json({ ok: false, error: "Identificação do motorista ou da viatura em falta." }, 400);
+    }
+
+    const binary = decodeBase64(base64);
+    if (binary.length > 10_000_000) {
+      return json({ ok: false, error: "Ficheiro demasiado grande." }, 413);
+    }
+    const isPdf = binary.length >= 5 && binary[0] === 0x25 && binary[1] === 0x50 && binary[2] === 0x44 && binary[3] === 0x46 && binary[4] === 0x2d;
+    const isJpeg = binary.length >= 3 && binary[0] === 0xff && binary[1] === 0xd8 && binary[2] === 0xff;
+    const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+    const isPng = binary.length >= 8 && pngSignature.every((byte, index) => binary[index] === byte);
+    if (!((mimeType === "application/pdf" && isPdf) ||
+      (mimeType === "image/jpeg" && isJpeg) ||
+      (mimeType === "image/png" && isPng))) {
+      return json({ ok: false, error: "O conteúdo não corresponde ao formato declarado." }, 400);
+    }
 
     const rootFolderId = Deno.env.get("GOOGLE_DRIVE_ROOT_FOLDER_ID");
     const serviceAccountJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON");
@@ -152,17 +277,40 @@ Deno.serve(async request => {
     const serviceAccount = JSON.parse(serviceAccountJson);
     const token = await googleAccessToken(serviceAccount);
 
-    const topFolderName = folderType === "drivers" ? "Motoristas" : "Veículos";
-    const topFolderId = await ensureFolder(token, topFolderName, rootFolderId);
-    const targetFolderId = folderName ? await ensureFolder(token, folderName, topFolderId) : topFolderId;
+    const folderNames: Record<string, string> = { drivers: "Motoristas", vehicles: "Veículos", documents: "Empresa" };
+    const topFolderName = folderNames[folderType];
+    if (!topFolderName) return json({ ok: false, error: "Destino do documento inválido." }, 400);
+    const topFolderId = recoverOnly
+      ? await findFolder(token, topFolderName, rootFolderId)
+      : await ensureFolder(token, topFolderName, rootFolderId);
+    if (!topFolderId) {
+      return json({ ok: false, error: "Não foi possível confirmar o carregamento anterior. Contacte o administrador." }, 409);
+    }
+    const targetFolderId = folderName
+      ? (recoverOnly ? await findFolder(token, folderName, topFolderId) : await ensureFolder(token, folderName, topFolderId))
+      : topFolderId;
+    if (!targetFolderId) {
+      return json({ ok: false, error: "Não foi possível confirmar o carregamento anterior. Contacte o administrador." }, 409);
+    }
+    if (uploadId) {
+      const recovered = await findUploadedFile(token, targetFolderId, uploadId,
+        fileName, mimeType, binary.byteLength);
+      if (recovered) {
+        return json({ ok: true, fileId: recovered.id, fileName, mimeType });
+      }
+      if (recoverOnly) {
+        // Never start another upload after a lost/ambiguous response.
+        return json({ ok: false, error: "Não foi possível confirmar o carregamento anterior. Contacte o administrador." }, 409);
+      }
+    }
 
     const metadata = {
       name: fileName,
       mimeType,
-      parents: [targetFolderId]
+      parents: [targetFolderId],
+      ...(uploadId ? { appProperties: { s2tUploadId: uploadId } } : {})
     };
     const boundary = "s2t_" + crypto.randomUUID();
-    const binary = decodeBase64(base64);
     const metadataPart = new TextEncoder().encode(
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`
     );
@@ -172,22 +320,33 @@ Deno.serve(async request => {
     payload.set(binary, metadataPart.length);
     payload.set(endPart, metadataPart.length + binary.length);
 
-    const upload = await driveRequest(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink", {
+    const upload = await driveRequest(token, "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,parents,size,appProperties&ignoreDefaultVisibility=true", {
       method: "POST",
       headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
       body: payload
     });
     const file = await upload.json();
+    if (!file || typeof file.id !== "string" || !/^[A-Za-z0-9_-]{10,}$/.test(file.id)) {
+      console.error("Google Drive upload returned no valid file identifier.");
+      return json({ ok: false, error: "O Google Drive não confirmou o identificador do documento." }, 502);
+    }
 
+    // A successful HTTP upload is not sufficient: only register the file when
+    // Google confirms its exact destination and decoded byte length.
+    if (!verifiedUploadedFile(file, fileName, mimeType, targetFolderId,
+      binary.byteLength, uploadId)) {
+      console.error("Google Drive upload returned inconsistent file metadata.");
+      return json({ ok: false, error: "O Google Drive devolveu dados inconsistentes do documento." }, 502);
+    }
     return json({
       ok: true,
       fileId: file.id,
       fileName: file.name,
-      mimeType: file.mimeType,
-      webViewLink: file.webViewLink || ""
+      mimeType: file.mimeType
     });
-  } catch (error) {
-    console.error(error);
-    return json({ ok: false, error: error?.message || "Erro ao carregar para o Google Drive." }, 500);
+  } catch {
+    // Avoid logging upstream exceptions that could contain private document metadata.
+    console.error("Drive upload failed unexpectedly.");
+    return json({ ok: false, error: "Erro interno ao carregar o documento." }, 500);
   }
 });

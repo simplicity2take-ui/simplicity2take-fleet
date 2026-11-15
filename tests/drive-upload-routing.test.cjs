@@ -1,0 +1,62 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+
+const source = fs.readFileSync(path.join(__dirname, '..', 'supabase/functions/drive-upload/index.ts'), 'utf8');
+assert(source.includes('drivers: "Motoristas"'), 'Driver uploads must use Motoristas');
+assert(source.includes('"Cache-Control": "private, no-store"'), 'Upload responses must not be cached');
+assert(source.includes('"X-Content-Type-Options": "nosniff"'), 'Upload responses must disable content sniffing');
+assert(source.includes('name.replace(/\\\\/g, "\\\\\\\\").replace(/\'/g, "\\\\\'")'), 'Drive folder lookup must escape backslashes and quotes');
+assert(source.includes('vehicles: "Veículos"'), 'Vehicle uploads must use Veículos');
+assert(source.includes('documents: "Empresa"'), 'Company uploads must use Empresa');
+assert(source.includes('files?fields=id,name,mimeType,parents&ignoreDefaultVisibility=true'), 'New Drive folders must ignore domain default visibility');
+assert(source.includes('uploadType=multipart&fields=id,name,mimeType,parents,size,appProperties&ignoreDefaultVisibility=true'), 'Uploaded files must ignore domain default visibility');
+assert(!source.includes('permissions.create'), 'Upload code must not create sharing grants');
+
+assert(source.includes('if (!topFolderName)'), 'Unknown folder types must be rejected');
+assert(source.includes('Conteúdo do ficheiro inválido.'), 'Malformed base64 must be rejected');
+assert(source.includes('Nome do ficheiro inválido.'), 'Unsafe upload filenames must be rejected');
+assert(source.includes('Nome da pasta inválido.'), 'Unsafe destination folder names must be rejected');
+assert(source.includes('fileName.length > 180'), 'File names must have a length limit');
+assert(source.includes('folderName.length > 180'), 'Folder names must have a length limit');
+assert(source.includes('fileName.includes("/")') && source.includes('fileName.includes("\\\\")'), 'File names must reject path separators');
+assert(source.includes('folderName.includes("/")'), 'Folder names must reject slash separators');
+assert(source.indexOf('Nome do ficheiro inválido.') < source.indexOf('googleAccessToken(serviceAccount)'), 'Reject invalid names before Google authorization');
+assert(source.includes('O conteúdo não corresponde ao formato declarado.'), 'MIME and file signature must match');
+assert(source.includes('const isPdf =') && source.includes('const isJpeg =') && source.includes('const isPng ='), 'PDF JPEG PNG magic bytes must be verified');
+assert(source.indexOf('const isPdf =') < source.indexOf('googleAccessToken(serviceAccount)'), 'Check file signature before Google authorization');
+assert(source.match(/const binary = decodeBase64\(base64\)/g)?.length === 1, 'Decode uploaded file only once');
+assert(source.includes('Erro interno ao carregar o documento.'), 'Unexpected errors must be generic');
+assert(!source.includes('error: error?.message'), 'Internal error messages must not leak to clients');
+assert(!source.includes('console.error(error)'), 'Do not log raw upload exceptions');
+assert(source.includes('console.error("Drive upload failed unexpectedly.")'), 'Log generic upload failure');
+assert(!source.includes('const detail = await response.text()'), 'Raw Google Drive errors must not be logged');
+assert(source.includes('Google Drive HTTP ${response.status}'), 'Only the upstream HTTP status should be retained');
+assert(source.includes('verifiedUploadedFile(file, fileName, mimeType, targetFolderId,'), 'Upload must validate returned file identifier and metadata');
+assert(source.includes('item.name === name && item.mimeType === mimeType'), 'Upload must reject inconsistent returned file metadata');
+assert(source.includes('item.parents[0] === parentId'), 'Upload must confirm the exact Drive destination folder');
+assert(source.includes('item.size === String(byteLength)'), 'Upload must confirm the decoded content size');
+assert(!source.includes('webViewLink'), 'Upload service must not request or expose direct Google Drive links');
+assert(source.includes('O Google Drive não confirmou o identificador do documento.'), 'Missing file identifier must be treated as failure');
+assert(source.includes('appProperties has { key=\'s2tUploadId\''), 'Recovery searches Drive private app property');
+assert(source.includes('recoverOnly && !uploadId'), 'Recovery requires a valid upload operation token');
+assert(source.includes('if (recoverOnly)'), 'Recovery cannot trigger a second upload');
+assert(source.includes('appProperties: { s2tUploadId: uploadId }'), 'New Drive files must be tagged with the operation identifier');
+assert(source.includes('["drivers", "vehicles", "documents"].includes(folderType)'), 'Only known destinations accepted');
+assert(source.includes('folderType !== "documents" && !folderName'), 'Vehicle and driver uploads need a folder identity');
+assert(source.indexOf('["drivers", "vehicles", "documents"].includes(folderType)') < source.indexOf('googleAccessToken(serviceAccount)'), 'Validate destination before contacting Google');
+assert(!source.includes('folderType === "drivers" ? "Motoristas" : "Veículos"'), 'No company-to-vehicle fallback');
+const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+assert(appSource.includes('const folderType = context === "vehicle" ? "vehicles" : context === "driver" ? "drivers" : "documents";'), 'UI must send known folder types');
+assert(!appSource.includes(': "Empresa";\n\n    const { data, error } = await supabaseClient.functions.invoke("drive-upload"'), 'Company uploads must not nest Empresa/Empresa');
+console.log('PASS: Google Drive upload destinations are explicit and unknown types rejected.');
+
+assert(source.includes('folderName.includes("\\\\")'), 'Drive folder names must reject backslash separators');
+
+assert(source.includes('binary.length > 10_000_000'), 'Decoded uploads must be capped at 10 MB');
+
+assert(source.includes('base64.length > 13_333_336'), 'Encoded request cap must match 10 MB decoded file limit');
+
+assert(source.includes('readBoundedUploadJson(request)'), 'Uploads must use bounded request parsing');
+assert(source.includes('error instanceof UploadRequestTooLargeError'), 'Oversized request must return a distinct 413 response');
+assert(!source.includes('await request.json()'), 'Uploads must not read unbounded request bodies');

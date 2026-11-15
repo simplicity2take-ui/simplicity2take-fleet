@@ -142,7 +142,7 @@ const documentTypes = [
   "Contrato",
   "Outros"
 ];
-const vehicleDocumentTypes = ["DUA", "Seguro", "Carta Verde", "IPO"];
+const vehicleDocumentTypes = ["DUA", "Carta Verde", "Inspeção (INSP)", "Condições Particulares", "Licença TVDE", "Outros"];
 
 const navByRole = {
   admin: [["dashboard", "Dashboard", "DB"], ["vehicles", "Veículos", "VE"], ["drivers", "Motoristas", "MO"], ["activity", "Utilização", "UT"], ["documents", "Documentos da Empresa", "DO"], ["applications", "Candidaturas", "AI"], ["alerts", "Alertas", "AL"], ["settings", "Configurações", "CO"]],
@@ -450,9 +450,11 @@ function driverDocuments() {
   const driverId = currentUser().driverId;
   const assignedVehicleIds = new Set(driverVehicles().map(vehicle => vehicle.id));
   return state.documents.filter(doc =>
-    (Boolean(driverId) && doc.driverId === driverId) ||
-    (Boolean(doc.vehicleId) && assignedVehicleIds.has(doc.vehicleId)) ||
-    (Boolean(driverId) && !doc.driverId && (doc.viewerDriverIds || []).includes(driverId))
+    (!doc.expiryDate || daysUntil(doc.expiryDate) >= 0) && (
+      (Boolean(doc.vehicleId) && assignedVehicleIds.has(doc.vehicleId)) ||
+      (!doc.vehicleId && Boolean(driverId) && doc.driverId === driverId) ||
+      (!doc.vehicleId && Boolean(driverId) && !doc.driverId && (doc.viewerDriverIds || []).includes(driverId))
+    )
   );
 }
 
@@ -2221,8 +2223,40 @@ function openDriverDocumentModal(driverId, docType = "") {
   state.smartPreview = { vehicleId: "", driverId, scope: "driver" };
 }
 
+function hasUnresolvedDocumentSave() {
+  // Both the Drive response-loss receipt and a confirmed Drive upload whose
+  // database/viewer save has not finished are recoverable only in this form.
+  return Boolean(state.pendingDriveUploadRequest?.uploadAttempted ||
+    state.pendingDocumentUpload?.driveData?.fileId);
+}
+
+function allowAdminModalClose(event) {
+  if (state.modalSaveInFlight) {
+    event?.preventDefault();
+    return false;
+  }
+  if (hasUnresolvedDocumentSave()) {
+    const abandon = window.confirm(
+      "Existe um carregamento de documento por confirmar. Sair agora perde a recuperação automática desta tentativa e pode originar duplicados. Quer mesmo sair?"
+    );
+    if (!abandon) {
+      event?.preventDefault();
+      return false;
+    }
+    // The administrator explicitly accepts losing the in-memory receipts.
+    state.pendingDriveUploadRequest = null;
+    state.pendingDocumentUpload = null;
+  }
+  return true;
+}
+
 function openModal(type, id = "", options = {}) {
+  // Never replace the form while a request runs, or silently discard an
+  // ambiguous Drive/SQL receipt from the preceding form.
+  if (!allowAdminModalClose()) return;
   state.editing = { type, id };
+  state.pendingDocumentUpload = null; // A new form must not reuse a previous upload receipt.
+  state.pendingDriveUploadRequest = null; // An ambiguous upload is confined to its original form.
   if (type === "document") {
     const existing = state.documents.find(item => item.id === id);
     state.documentContext = options.scope || (existing?.vehicleId ? "vehicle" : existing?.driverId ? "driver" : "company");
@@ -2465,7 +2499,7 @@ function updateSmartValidityStatus() {
 function validateDocumentFile(file) {
   if (!file) return;
   if (!file.size) throw new Error("O ficheiro está vazio. Selecione outro ficheiro.");
-  if (file.size > 10 * 1024 * 1024) throw new Error("O ficheiro ultrapassa 10 MB.");
+  if (file.size > 10_000_000) throw new Error("O ficheiro ultrapassa 10 MB.");
   if (!["application/pdf", "image/jpeg", "image/png"].includes(file.type)) throw new Error("Só são permitidos PDF, JPG e PNG.");
 }
 
@@ -2531,28 +2565,43 @@ function wireSmartDocsUpload() {
 
 async function submitModal(event) {
   event.preventDefault();
-  const submitButton = selectors.form.querySelector('button[type="submit"]');
-  submitButton.disabled = true;
-  submitButton.textContent = "A guardar…";
-  const data = new FormData(selectors.form);
-  const values = Object.fromEntries(data.entries());
-  const checked = name => data.getAll(name);
-  const { type, id } = state.editing;
+  // Lock synchronously: disabling a button alone cannot prevent overlapping
+  // form submit events (e.g. repeated Enter presses during an async upload).
+  if (state.modalSaveInFlight) return;
+  state.modalSaveInFlight = true;
+  let saved = false;
+  let submitButton = null;
   try {
+    submitButton = selectors.form?.querySelector('button[type="submit"]');
+    if (!submitButton) throw new Error("Formulário indisponível. Abra-o novamente.");
+    submitButton.disabled = true;
+    submitButton.textContent = "A guardar…";
+    const data = new FormData(selectors.form);
+    const values = Object.fromEntries(data.entries());
+    const checked = name => data.getAll(name);
+    const { type, id } = state.editing;
     if (type === "driver") await saveDriver(values, id);
     if (type === "vehicle") await saveVehicle(values, checked("driverIds"), id);
     if (type === "document") await saveDocument(values, checked("viewerDriverIds"), id);
     if (type === "password") await savePassword(values.password);
     if (type === "admin-password") await saveAdminPassword(id, values.password, values.passwordConfirm);
+    // Only report a save failure when the write itself failed. A refresh
+    // error after a successful save must never encourage a duplicate upload.
+    saved = true;
     selectors.modal.close();
     await loadBackendData();
     renderApp();
   } catch (error) {
     console.error(error);
-    showToast(error?.message || "Não foi possível guardar.");
+    showToast(saved
+      ? "Alterações guardadas, mas não foi possível atualizar a lista. Atualize a página para ver os dados."
+      : (error?.message || "Não foi possível guardar."));
   } finally {
-    submitButton.disabled = false;
-    submitButton.textContent = "Guardar";
+    state.modalSaveInFlight = false;
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = "Guardar";
+    }
   }
 }
 
@@ -2605,6 +2654,28 @@ async function saveVehicle(values, driverIds, id) {
   showToast(id ? "Veículo atualizado." : "Veículo criado.");
 }
 
+// Keep a successful Drive upload receipt only while this document form is open.
+// Retrying a failed database/viewer save must not create another Drive copy.
+function driveDriverFolderName(driver, driverId) {
+  // Human-readable folder names are not unique; include the immutable driver ID.
+  // Do not rename legacy Drive folders or move existing documents.
+  const cleanName = String(driver?.name || "Motorista")
+    .replace(/[\\/\x00-\x1f\x7f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120) || "Motorista";
+  return `${cleanName} [${driverId}]`;
+}
+
+function matchesPendingDocumentUpload(pending, file, context, vehicleId, driverId, editingId, folderName) {
+  return Boolean(pending && pending.file === file &&
+    pending.context === context &&
+    pending.vehicleId === vehicleId &&
+    pending.driverId === driverId &&
+    pending.editingId === editingId &&
+    pending.folderName === folderName);
+}
+
 async function saveDocument(values, viewerDriverIds, id) {
   const file = selectors.modalFields.querySelector('[name="file"]')?.files?.[0];
   const existing = state.documents.find(item => item.id === id);
@@ -2624,7 +2695,14 @@ async function saveDocument(values, viewerDriverIds, id) {
   if (context === "driver" && !finalDriverId) {
     throw new Error("Selecione o motorista.");
   }
+  if (context === "vehicle" && !state.vehicles.some(vehicle => vehicle.id === finalVehicleId)) {
+    throw new Error("A viatura selecionada não existe na lista atual.");
+  }
+  if (context === "driver" && !state.drivers.some(driver => driver.id === finalDriverId)) {
+    throw new Error("O motorista selecionado não existe na lista atual.");
+  }
 
+  const previousAttempt = state.pendingDocumentUpload?.editingId === id ? state.pendingDocumentUpload : null;
   let driveData = existing ? {
     fileId: existing.driveFileId,
     fileName: existing.fileName,
@@ -2633,28 +2711,76 @@ async function saveDocument(values, viewerDriverIds, id) {
   } : null;
 
   if (file) {
-
-    const base64 = await fileToBase64(file);
     const folderType = context === "vehicle" ? "vehicles" : context === "driver" ? "drivers" : "documents";
     const folderName = context === "vehicle"
-      ? (state.vehicles.find(vehicle => vehicle.id === values.vehicleId)?.plate || "Sem viatura")
+      ? (state.vehicles.find(vehicle => vehicle.id === finalVehicleId)?.plate || "")
       : context === "driver"
-        ? (state.drivers.find(driver => driver.id === values.driverId)?.name || "Sem motorista")
-        : "Empresa";
+        ? driveDriverFolderName(state.drivers.find(driver => driver.id === finalDriverId), finalDriverId)
+        : "";
 
-    const { data, error } = await supabaseClient.functions.invoke("drive-upload", {
-      body: {
-        fileName: file.name,
-        mimeType: file.type,
-        base64,
-        folderType,
-        folderName,
-        documentType: values.type
+    const reusingUpload = matchesPendingDocumentUpload(
+      previousAttempt, file, context, finalVehicleId, finalDriverId, id, folderName
+    );
+    // A previous insert might have committed despite a lost SQL response.
+    // Reconcile that earlier Drive file BEFORE changing the upload/destination;
+    // otherwise a new file may be inserted as a second document.
+    if (!reusingUpload && previousAttempt?.insertAttempted && !previousAttempt.savedDocumentId) {
+      const { data: recovered, error: recoveryError } = await supabaseClient.from("documents")
+        .select("id").eq("drive_file_id", previousAttempt.driveData.fileId).maybeSingle();
+      if (recoveryError) {
+        throw new Error("Não foi possível confirmar se o documento anterior já foi guardado. Tente novamente.");
       }
-    });
-    if (error) throw error;
-    if (!data?.ok) throw new Error(data?.error || "Falha ao guardar no Google Drive.");
-    driveData = data;
+      if (recovered?.id) previousAttempt.savedDocumentId = recovered.id;
+    }
+
+    if (reusingUpload) {
+      driveData = previousAttempt.driveData;
+    } else {
+      // The Drive operation ID is created BEFORE the HTTP call. If its
+      // response is lost, the next click can only look up this operation,
+      // never start a second upload with a new ID.
+      const previousRequest = state.pendingDriveUploadRequest;
+      const sameRequest = matchesPendingDocumentUpload(
+        previousRequest, file, context, finalVehicleId, finalDriverId, id, folderName
+      );
+      if (previousRequest?.uploadAttempted && !sameRequest) {
+        throw new Error("Confirme primeiro o carregamento anterior com o mesmo ficheiro e destino.");
+      }
+      const base64 = await fileToBase64(file);
+      const uploadRequest = sameRequest ? previousRequest : {
+        editingId: id, file, context,
+        vehicleId: finalVehicleId, driverId: finalDriverId, folderName,
+        uploadId: crypto.randomUUID(), uploadAttempted: false
+      };
+      const recoverOnly = uploadRequest.uploadAttempted;
+      state.pendingDriveUploadRequest = uploadRequest;
+      uploadRequest.uploadAttempted = true;
+      const { data, error } = await supabaseClient.functions.invoke("drive-upload", {
+        body: {
+          fileName: file.name,
+          mimeType: file.type,
+          base64,
+          folderType,
+          folderName,
+          documentType: values.type,
+          uploadId: uploadRequest.uploadId,
+          recoverOnly
+        }
+      });
+      if (error) {
+        throw new Error(recoverOnly
+          ? "Não foi possível confirmar o carregamento anterior. Contacte o administrador."
+          : "Não foi possível confirmar o carregamento. Prima Guardar novamente para verificar, sem enviar outra cópia.");
+      }
+      if (!data?.ok) throw new Error(data?.error || "Não foi possível confirmar o carregamento.");
+      driveData = data;
+      state.pendingDriveUploadRequest = null;
+      state.pendingDocumentUpload = {
+        editingId: id, file, context,
+        vehicleId: finalVehicleId, driverId: finalDriverId, folderName,
+        driveData, savedDocumentId: previousAttempt?.savedDocumentId || null
+      };
+    }
   }
 
   if (!driveData) throw new Error("Selecione um ficheiro.");
@@ -2671,32 +2797,66 @@ async function saveDocument(values, viewerDriverIds, id) {
     original_file_name: driveData.fileName,
     mime_type: driveData.mimeType,
     drive_file_id: driveData.fileId,
-    drive_web_view_link: driveData.webViewLink,
+    // Do not persist new direct Drive links; opening is authorized through document-access.
+    // Preserve any legacy link only when editing metadata without replacing the file.
+    drive_web_view_link: file ? null : (existing?.driveUrl || null),
     vehicle_id: finalVehicleId,
     driver_id: finalDriverId,
     uploaded_by: state.sessionUserId
   };
 
-  const query = id
-    ? supabaseClient.from("documents").update(payload).eq("id", id).select().single()
+  // The previous insert may have committed even if its response was lost.
+  // On retry, look up the unique Drive file ID before attempting another insert.
+  const pendingSave = state.pendingDocumentUpload?.editingId === id ? state.pendingDocumentUpload : null;
+  let targetDocumentId = pendingSave?.savedDocumentId || id;
+  if (!targetDocumentId && pendingSave?.insertAttempted && pendingSave.driveData?.fileId === driveData.fileId) {
+    const { data: recovered, error: recoveryError } = await supabaseClient.from("documents")
+      .select("id").eq("drive_file_id", driveData.fileId).maybeSingle();
+    if (recoveryError) {
+      throw new Error("Não foi possível confirmar se o documento já foi guardado. Tente novamente.");
+    }
+    if (recovered?.id) {
+      targetDocumentId = recovered.id;
+      pendingSave.savedDocumentId = recovered.id;
+    }
+  }
+  if (!targetDocumentId && pendingSave) pendingSave.insertAttempted = true;
+  const query = targetDocumentId
+    ? supabaseClient.from("documents").update(payload).eq("id", targetDocumentId).select().single()
     : supabaseClient.from("documents").insert(payload).select().single();
 
   const { data: saved, error } = await query;
   if (error) throw error;
 
-  const documentId = id || saved.id;
+  const documentId = targetDocumentId || saved.id;
+  if (state.pendingDocumentUpload?.editingId === id) state.pendingDocumentUpload.savedDocumentId = documentId;
   documentBlobCache.delete(documentId);
   if (context === "driver") state.requestedDriverId = finalDriverId;
-  const { error: viewerDeleteError } = await supabaseClient.from("document_viewers").delete().eq("document_id", documentId);
-  if (viewerDeleteError) throw viewerDeleteError;
+  // Update only changed grants. Never clear all permissions before inserting replacements.
+  const { data: currentViewerRows, error: viewerReadError } = await supabaseClient
+    .from("document_viewers").select("driver_id,can_view").eq("document_id", documentId);
+  if (viewerReadError) throw viewerReadError;
 
-  if (context !== "driver" && viewerDriverIds.length) {
-    const { error: viewerError } = await supabaseClient.from("document_viewers").insert(
-      viewerDriverIds.map(driverId => ({ document_id: documentId, driver_id: driverId, can_view: true }))
+  const requestedViewers = new Set(context === "driver" ? [] : viewerDriverIds);
+  const existingViewers = new Map((currentViewerRows || []).map(row => [row.driver_id, row.can_view === true]));
+  const toRevoke = [...existingViewers.keys()].filter(driverId => !requestedViewers.has(driverId));
+  const toGrant = [...requestedViewers].filter(driverId => existingViewers.get(driverId) !== true);
+
+  // Revoke only stale grants first (fail closed), keeping unchanged viewers intact.
+  if (toRevoke.length) {
+    const { error: viewerDeleteError } = await supabaseClient.from("document_viewers")
+      .delete().eq("document_id", documentId).in("driver_id", toRevoke);
+    if (viewerDeleteError) throw viewerDeleteError;
+  }
+  if (toGrant.length) {
+    const { error: viewerError } = await supabaseClient.from("document_viewers").upsert(
+      toGrant.map(driverId => ({ document_id: documentId, driver_id: driverId, can_view: true })),
+      { onConflict: "document_id,driver_id" }
     );
     if (viewerError) throw viewerError;
   }
 
+  state.pendingDocumentUpload = null;
   state.activeView = context === "vehicle" ? "vehicles" : context === "driver" ? "drivers" : "documents";
   showToast(
     context === "vehicle"
@@ -3078,11 +3238,16 @@ function bindPortalEvents() {
     if (target.id === "logoutButton") return logout();
     if (target.id === "workWithUsButton") return openRecruitment();
     if (target.id === "backToLoginButton") return closeRecruitment();
-    if (target.id === "closeModal" || target.id === "cancelModal") return selectors.modal?.close();
+    if (target.id === "closeModal" || target.id === "cancelModal") {
+      if (allowAdminModalClose()) selectors.modal?.close();
+      return;
+    }
     if (target.id === "closeQrModal") return document.querySelector("#qrModal")?.close();
     if (target.id === "printQrButton") return printQr();
   });
 
+  // Escape/cancel must not dismiss a form while the save is unresolved.
+  selectors.modal?.addEventListener("cancel", allowAdminModalClose);
   selectors.form?.addEventListener("submit", submitModal);
   selectors.recruiterForm?.addEventListener("submit", async event => {
     event.preventDefault();

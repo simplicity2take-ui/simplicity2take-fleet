@@ -2223,17 +2223,37 @@ function openDriverDocumentModal(driverId, docType = "") {
   state.smartPreview = { vehicleId: "", driverId, scope: "driver" };
 }
 
+function hasUnresolvedDocumentSave() {
+  // Both the Drive response-loss receipt and a confirmed Drive upload whose
+  // database/viewer save has not finished are recoverable only in this form.
+  return Boolean(state.pendingDriveUploadRequest?.uploadAttempted ||
+    state.pendingDocumentUpload?.driveData?.fileId);
+}
+
 function allowAdminModalClose(event) {
   if (state.modalSaveInFlight) {
     event?.preventDefault();
     return false;
   }
+  if (hasUnresolvedDocumentSave()) {
+    const abandon = window.confirm(
+      "Existe um carregamento de documento por confirmar. Sair agora perde a recuperação automática desta tentativa e pode originar duplicados. Quer mesmo sair?"
+    );
+    if (!abandon) {
+      event?.preventDefault();
+      return false;
+    }
+    // The administrator explicitly accepts losing the in-memory receipts.
+    state.pendingDriveUploadRequest = null;
+    state.pendingDocumentUpload = null;
+  }
   return true;
 }
 
 function openModal(type, id = "", options = {}) {
-  // Do not replace the modal while an earlier form is still being saved.
-  if (state.modalSaveInFlight) return;
+  // Never replace the form while a request runs, or silently discard an
+  // ambiguous Drive/SQL receipt from the preceding form.
+  if (!allowAdminModalClose()) return;
   state.editing = { type, id };
   state.pendingDocumentUpload = null; // A new form must not reuse a previous upload receipt.
   state.pendingDriveUploadRequest = null; // An ambiguous upload is confined to its original form.

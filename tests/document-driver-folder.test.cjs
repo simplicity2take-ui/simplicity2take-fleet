@@ -50,6 +50,7 @@ function harness(portalPath) {
   const env = {
     state, supabaseClient, documentBlobCache: new Map(), showToast() {},
     validateDocumentFile() {}, fileToBase64: async () => 'JVBERi0=',
+    crypto: { randomUUID: () => 'b7b52d37-91db-48ad-bb3c-0f7477845055' },
     selectors: { modalFields: { querySelector: () => ({ files: [file] }) } }
   };
   vm.createContext(env);

@@ -8,64 +8,107 @@ const corsHeaders = {
 
 const BASE = "https://fleetapi-pt.cartrack.com/rest";
 
-Deno.serve(async (req) => {
+function json(body: unknown, status: number) {
+  return new Response(JSON.stringify(body), {
+    status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+class SyncFailure extends Error {
+  readonly stage: string;
+  readonly httpStatus: number;
+
+  constructor(stage: string, message: string, httpStatus: number) {
+    super(message);
+    this.stage = stage;
+    this.httpStatus = httpStatus;
+  }
+}
+
+type ProviderRow = {
+  registration?: string;
+  vehicle_id?: number | string;
+  terminal_id?: number | string;
+  terminal_serial?: string;
+  vehicle_name?: string;
+  default_timezone?: string;
+  event_ts?: string;
+  odometer?: number | string;
+  speed?: number | string;
+  ignition?: boolean;
+  idling?: boolean;
+};
+
+function registrationOf(row: ProviderRow) {
+  return (row.registration ?? "").trim().toUpperCase();
+}
+
+async function readRows(path: string, stage: string, headers: Record<string, string>): Promise<ProviderRow[]> {
+  let data: unknown;
+  try {
+    const response = await fetch(BASE + path, { headers });
+    if (!response.ok) throw new Error();
+    data = (await response.json())?.data;
+  } catch {
+    throw new SyncFailure(stage, "Não foi possível ler a resposta CarTrack.", 502);
+  }
+  if (!Array.isArray(data)) throw new SyncFailure(stage, "A lista recebida da CarTrack é inválida.", 502);
+  const seen = new Set<string>();
+  for (const row of data) {
+    if (!row || typeof row !== "object" || Array.isArray(row) ||
+        (row.registration != null && typeof row.registration !== "string")) {
+      throw new SyncFailure(stage, "A lista recebida da CarTrack é inválida.", 502);
+    }
+    const registration = registrationOf(row);
+    if (!registration) continue;
+    if (seen.has(registration)) {
+      throw new SyncFailure("validation", "A resposta CarTrack contém matrículas duplicadas.", 502);
+    }
+    seen.add(registration);
+  }
+  return data;
+}
+
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-
-  if (req.method !== "POST") return new Response(JSON.stringify({success:false,error:"Método não permitido."}), {status:405,headers:{...corsHeaders,"Content-Type":"application/json"}});
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const supabase = createClient(supabaseUrl, serviceKey);
-  const cronKey = req.headers.get("x-cartrack-sync-key");
-  if (cronKey) {
-    const { data: allowed, error } = await supabase.rpc("verify_cartrack_sync_key", { candidate: cronKey });
-    if (error || allowed !== true) return new Response(JSON.stringify({success:false,error:"Não autorizado."}), {status:403,headers:{...corsHeaders,"Content-Type":"application/json"}});
-  } else {
-    const token = req.headers.get("Authorization")?.replace(/^Bearer /i, "");
-    if (!token) return new Response(JSON.stringify({success:false,error:"Não autenticado."}), {status:401,headers:{...corsHeaders,"Content-Type":"application/json"}});
-    const {data: {user}, error} = await supabase.auth.getUser(token);
-    if (error || !user) return new Response(JSON.stringify({success:false,error:"Sessão inválida."}), {status:401,headers:{...corsHeaders,"Content-Type":"application/json"}});
-    const {data: profile, error: profileError} = await supabase.from("profiles").select("role,status").eq("id", user.id).maybeSingle();
-    if (profileError || profile?.role !== "admin" || profile?.status !== "Ativo") return new Response(JSON.stringify({success:false,error:"Apenas o administrador pode sincronizar."}), {status:403,headers:{...corsHeaders,"Content-Type":"application/json"}});
-  }
-  const username = Deno.env.get("CARTRACK_USERNAME");
-  const password = Deno.env.get("CARTRACK_PASSWORD");
-
-  if (!username || !password) {
-    return new Response(JSON.stringify({ success:false, error:"Cartrack credentials are not configured." }), {
-      status:500, headers:{...corsHeaders,"Content-Type":"application/json"}
-    });
-  }
-
-  const auth = "Basic " + btoa(username + ":" + password);
-  const headers = { "Accept":"application/json", "Authorization":auth };
+  if (req.method !== "POST") return json({ success: false, error: "Método não permitido." }, 405);
 
   try {
-    const vehiclesResp = await fetch(BASE + "/vehicles?limit=1000", { headers });
-    const vehiclesText = await vehiclesResp.text();
-    if (!vehiclesResp.ok) {
-      return new Response(JSON.stringify({success:false, stage:"vehicles", status:vehiclesResp.status, error:vehiclesText.slice(0,1000)}), {
-        status:vehiclesResp.status, headers:{...corsHeaders,"Content-Type":"application/json"}
-      });
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !serviceKey) return json({ success: false, error: "Configuração do servidor incompleta." }, 503);
+    const supabase = createClient(supabaseUrl, serviceKey);
+    const cronKey = req.headers.get("x-cartrack-sync-key");
+    if (cronKey) {
+      const { data: allowed, error } = await supabase.rpc("verify_cartrack_sync_key", { candidate: cronKey });
+      if (error || allowed !== true) return json({ success: false, error: "Não autorizado." }, 403);
+    } else {
+      const token = req.headers.get("Authorization")?.replace(/^Bearer /i, "");
+      if (!token) return json({ success: false, error: "Não autenticado." }, 401);
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (error || !user) return json({ success: false, error: "Sessão inválida." }, 401);
+      const { data: profile, error: profileError } = await supabase.from("profiles")
+        .select("role,status").eq("id", user.id).maybeSingle();
+      if (profileError || profile?.role !== "admin" || profile?.status !== "Ativo") {
+        return json({ success: false, error: "Apenas o administrador pode sincronizar." }, 403);
+      }
     }
-    const vehiclesJson = JSON.parse(vehiclesText);
-    const vehicles = Array.isArray(vehiclesJson?.data) ? vehiclesJson.data : [];
 
-    const statusResp = await fetch(BASE + "/vehicles/status?odometer_in_km=true", { headers });
-    const statusText = await statusResp.text();
-    if (!statusResp.ok) {
-      return new Response(JSON.stringify({success:false, stage:"status", status:statusResp.status, error:statusText.slice(0,1000), vehiclesFound:vehicles.length}), {
-        status:statusResp.status, headers:{...corsHeaders,"Content-Type":"application/json"}
-      });
-    }
-    const statusJson = JSON.parse(statusText);
-    const statuses = Array.isArray(statusJson?.data) ? statusJson.data : [];
-    const byRegistration = new Map(statuses.map((x:any)=>[String(x.registration).toUpperCase(),x]));
+    const username = Deno.env.get("CARTRACK_USERNAME");
+    const password = Deno.env.get("CARTRACK_PASSWORD");
+    if (!username || !password) return json({ success: false, error: "Credenciais CarTrack por configurar." }, 503);
+    const headers = { Accept: "application/json", Authorization: "Basic " + btoa(username + ":" + password) };
+    const vehicles = await readRows("/vehicles?limit=1000", "vehicles", headers);
+    const statuses = await readRows("/vehicles/status?odometer_in_km=true", "status", headers);
+    const byRegistration = new Map(statuses.map(row => [registrationOf(row), row]));
     const now = new Date().toISOString();
 
-    const rows = vehicles.map((v:any)=>{
-      const registration = String(v.registration ?? "").trim().toUpperCase();
-      const s = byRegistration.get(registration) ?? {};
+    const rows = vehicles.map(v => {
+      const registration = registrationOf(v);
+      const s: ProviderRow = byRegistration.get(registration) ?? {};
+      if (v.vehicle_id != null && s.vehicle_id != null && String(v.vehicle_id) !== String(s.vehicle_id)) {
+        throw new SyncFailure("validation", "Os identificadores da viatura CarTrack não coincidem.", 502);
+      }
       const eventTs = s.event_ts ? new Date(s.event_ts).toISOString() : null;
       return {
         vehicle_id: v.vehicle_id ?? s.vehicle_id ?? null,
@@ -83,10 +126,10 @@ Deno.serve(async (req) => {
         raw: { vehicle:v, status:s },
         updated_at: now
       };
-    }).filter((x:any)=>x.registration);
+    }).filter(x => x.registration);
 
-    const snapshots = statuses.map((s:any)=>({
-      registration:String(s.registration ?? "").trim().toUpperCase(),
+    const snapshots = statuses.map(s => ({
+      registration:registrationOf(s),
       vehicle_id:s.vehicle_id ?? null,
       observed_at:s.event_ts ? new Date(s.event_ts).toISOString() : now,
       odometer_km:s.odometer == null ? null : Number(s.odometer),
@@ -94,25 +137,26 @@ Deno.serve(async (req) => {
       ignition:s.ignition ?? null,
       idling:s.idling ?? null,
       raw:s
-    })).filter((x:any)=>x.registration);
+    })).filter(x => x.registration);
 
-    const { data: syncResult, error: syncError } = await supabase.rpc("sync_cartrack_data", {
+    const { error: syncError } = await supabase.rpc("sync_cartrack_data", {
       p_vehicles: rows,
       p_snapshots: snapshots
     });
-    if (syncError) throw new Error("DB sync: " + syncError.message);
+    if (syncError) throw new SyncFailure("database", "Não foi possível guardar os dados CarTrack.", 500);
 
-    return new Response(JSON.stringify({
+    return json({
       success:true,
       vehiclesFound:vehicles.length,
       statusesFound:statuses.length,
       vehiclesSaved:rows.length,
       snapshotsSaved:snapshots.length,
       message:"Cartrack ligado com sucesso. Dados de veículos e estado atual sincronizados."
-    }),{status:200,headers:{...corsHeaders,"Content-Type":"application/json"}});
-  } catch (e) {
-    return new Response(JSON.stringify({success:false,error:(e as Error).message}),{
-      status:200,headers:{...corsHeaders,"Content-Type":"application/json"}
-    });
+    }, 200);
+  } catch (error) {
+    if (error instanceof SyncFailure) {
+      return json({ success: false, stage: error.stage, error: error.message }, error.httpStatus);
+    }
+    return json({ success: false, error: "Ocorreu um erro interno na sincronização CarTrack." }, 500);
   }
 });

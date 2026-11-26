@@ -90,6 +90,8 @@
       const matching = declarations.filter(s => {
         if (!s.entry || !s.exit || s.flags.length || s.entry.driver_id !== driver.id || s.entry.vehicle_id !== vehicle.id) return false;
         const entry = stamp(s.entry.registered_at), exit = stamp(s.exit.registered_at);
+        if (first === last && serviceStart === null) return entry < last && last <= exit;
+        if (first === last && serviceEnd === null) return entry <= first && first < exit;
         if (first < last && (last <= entry || first >= exit)) return false;
         return entry <= first + 300000 && exit >= last - 300000;
       });

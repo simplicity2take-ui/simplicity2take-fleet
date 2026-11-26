@@ -42,6 +42,13 @@ for(const file of ['../native-shifts.js','../teste/native-shifts.js']){
    assert.equal(reviewTrips(s,[t,adjacent],d).counts.uber,1);
    assert.equal(reviewTrips(s,[t,{...adjacent,driver_id:'next-driver'}],d).state,'checked_available_data');
  }
+ const nextShift={...s,started_at:s.ended_at,ended_at:'2026-11-10T23:00:00Z'};
+ const finishOnly={...t,accepted_at:null,dropoff_at:s.ended_at,finished_at:s.ended_at};
+ const startOnly={...t,accepted_at:null,pickup_at:s.ended_at,finished_at:null};
+ assert.equal(reviewTrips(s,[finishOnly],d).counts.uber,1);
+ assert.equal(reviewTrips(nextShift,[finishOnly],d).counts.uber,0);
+ assert.equal(reviewTrips(s,[startOnly],d).counts.uber,0);
+ assert.equal(reviewTrips(nextShift,[startOnly],d).counts.uber,1);
  const crossing={...t,accepted_at:'2026-11-10T15:59:00Z',finished_at:'2026-11-10T16:03:00Z'};
  assert.equal(reviewTrips(s,[crossing],d).counts.uber,1);
  assert.equal(reviewTrips({...s,ended_at:null},[t],d).counts.uber,0);

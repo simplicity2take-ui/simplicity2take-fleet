@@ -115,3 +115,21 @@ test('a short service at handover matches only the declaration it overlaps', () 
   const crossing = {...trip,accepted_at:at('11:59'),finished_at:at('12:06')};
   assert.equal(run({events:shifts,trips:[crossing]}).groups[0].services[0].matches.length,1);
 });
+
+test('uses the recorded stage when a handover trip has only one observed instant', () => {
+  const at = time => '2026-11-10T' + time + ':00Z';
+  const shifts = [...events, {...events[0],id:'e2',registered_at:at('12:00')}, {...events[1],id:'x2',registered_at:at('16:00')}];
+  const base = {...trip,platform:'uber',platform_driver_uuid:'u1',platform_vehicle_uuid:'uv1',accepted_at:null,finished_at:null};
+  for (const [delta, expected] of [
+    [{dropoff_at:at('12:00'),finished_at:at('12:00')},'10:00'],
+    [{finished_at:at('12:01')},'12:00'],
+    [{pickup_at:at('12:00')},'12:00'],
+    [{accepted_at:at('11:59')},'10:00'],
+  ]) {
+    const group = run({events:shifts,trips:[{...base,...delta}]}).groups[0];
+    assert.equal(group.uber,1);
+    assert.deepEqual(group.services[0].matches.map(match => match.entry),[Date.parse(at(expected))]);
+    assert.equal(group.missingServiceStart,delta.finished_at ? 1 : 0);
+    assert.equal(group.missingServiceEnd,delta.finished_at ? 0 : 1);
+  }
+});

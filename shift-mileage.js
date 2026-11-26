@@ -63,24 +63,39 @@
     }
     return result.sort((a,b)=>(timestamp(a.entry?.registered_at||a.exit?.registered_at)??Infinity)-(timestamp(b.entry?.registered_at||b.exit?.registered_at)??Infinity));
   }
-  function reading(trips, plate, target, toleranceMs=15*60000) {
-    const time = timestamp(target);
-    const registration = plateKey(plate);
-    if (time === null || !registration) return null;
-    const candidates=[],seen=new Set();
-    for(const trip of trips) {
-      if(plateKey(trip.registration)!==registration)continue;
-      for(const [date,value] of [[trip.start,trip.startOdometerKm],[trip.end,trip.endOdometerKm]]) {
-        const at=timestamp(date);
-        if(at===null||typeof value!=='number'||!Number.isFinite(value)||value<0||Math.abs(at-time)>toleranceMs)continue;
-        const key=`${at}|${value}`;if(seen.has(key))continue;seen.add(key);
-        candidates.push({at,km:value,gapSeconds:Math.abs(at-time)/1000});
+  function vehicleReadings(trips, registration) {
+    const readings = [];
+    if (!registration) return readings;
+    for (const trip of trips) {
+      if (plateKey(trip.registration) !== registration) continue;
+      for (const [date, km] of [[trip.start, trip.startOdometerKm], [trip.end, trip.endOdometerKm]]) {
+        const at = timestamp(date);
+        if (at !== null && Number.isFinite(km) && km >= 0) readings.push({at, km});
       }
     }
-    candidates.sort((a,b)=>a.gapSeconds-b.gapSeconds||a.at-b.at);
-    if(!candidates.length)return null;
-    if(candidates[1]?.gapSeconds===candidates[0].gapSeconds && (candidates[1].km!==candidates[0].km||candidates[1].at!==candidates[0].at))return null;
-    return candidates[0];
+    return readings;
+  }
+
+  function nearestReading(readings, target, toleranceMs = 15 * 60000) {
+    const time = timestamp(target);
+    if (time === null) return null;
+    let nearest = null, ambiguous = false;
+    for (const {at, km} of readings) {
+      const gap = Math.abs(at - time);
+      if (gap > toleranceMs) continue;
+      if (!nearest || gap < nearest.gap) {
+        nearest = {at, km, gap};
+        ambiguous = false;
+      } else if (gap === nearest.gap && (at !== nearest.at || km !== nearest.km)) {
+        ambiguous = true;
+      }
+    }
+    if (!nearest || ambiguous) return null;
+    return {at: nearest.at, km: nearest.km, gapSeconds: nearest.gap / 1000};
+  }
+
+  function reading(trips, plate, target, toleranceMs) {
+    return nearestReading(vehicleReadings(trips, plateKey(plate)), target, toleranceMs);
   }
   function mileage(session,trips,partial=false) {
     if(partial||session.flags.length||!session.entry||!session.exit)return {start:null,end:null,distance:null,reason:partial?'partial_history':'incomplete_shift'};
@@ -89,10 +104,18 @@
     if (entryPlate && exitPlate && entryPlate !== exitPlate) {
       return {start:null,end:null,distance:null,reason:'inconsistent_readings'};
     }
-    const start=reading(trips,session.entry.vehicle_plate,session.entry.registered_at);
-    const end=reading(trips,session.exit.vehicle_plate,session.exit.registered_at);
-    if(!start||!end)return {start,end,distance:null,reason:'missing_reading'};
-    if(end.at<=start.at||end.km<start.km)return {start,end,distance:null,reason:'inconsistent_readings'};
+    const readings = vehicleReadings(trips, entryPlate || exitPlate);
+    const start = entryPlate ? nearestReading(readings, session.entry.registered_at) : null;
+    const end = exitPlate ? nearestReading(readings, session.exit.registered_at) : null;
+    if (!start || !end) return {start, end, distance:null, reason:'missing_reading'};
+    const interval = readings.filter(sample => sample.at >= start.at && sample.at <= end.at)
+      .sort((a, b) => a.at - b.at);
+    const inconsistent = interval.some((sample, i) => {
+      if (i === 0) return false;
+      const previous = interval[i - 1];
+      return sample.km < previous.km || (sample.at === previous.at && sample.km !== previous.km);
+    });
+    if (end.at <= start.at || inconsistent) return {start, end, distance:null, reason:'inconsistent_readings'};
     return {start,end,distance:end.km-start.km,reason:null};
   }
   // Track one CarTrack query across pages before trusting either odometer boundary.

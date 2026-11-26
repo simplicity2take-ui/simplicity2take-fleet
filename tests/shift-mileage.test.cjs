@@ -95,3 +95,38 @@ for (const file of ['../shift-mileage.js', '../teste/shift-mileage.js', '../supa
     assert.ok(sessions([...first, ...second]).every(s => s.flags.length === 0));
   }
 }
+
+const {test} = require('node:test');
+test('checks the odometer history between the selected shift readings', () => {
+  const {mileage, sessions} = require('../shift-mileage.js');
+  const at = hour => '2026-11-10T' + String(hour).padStart(2, '0') + ':00:00Z';
+  const row = {driver_id:'d', vehicle_id:'v', vehicle_plate:'AA-00-AA'};
+  const [shift] = sessions([
+    {...row, event_kind:'entry', registered_at:at(8)},
+    {...row, event_kind:'exit', registered_at:at(16)}
+  ]);
+  const trip = (start, end, first, last) => ({
+    registration:'AA00AA', start:at(start), end:at(end), startOdometerKm:first, endOdometerKm:last
+  });
+  const edges = trip(8,16,1000,1120);
+  for (const middle of [
+    [trip(10,11,1080,1060)],
+    [trip(10,11,1040,1060),trip(12,13,1050,1100)],
+    [trip(10,12,1040,1050),trip(12,14,1060,1100)]
+  ]) {
+    for (const history of [[edges,...middle],[...middle,edges]]) {
+      const result = mileage(shift, history);
+      assert.equal(result.distance, null);
+      assert.equal(result.reason, 'inconsistent_readings');
+      assert.equal(result.start.km, 1000);
+      assert.equal(result.end.km, 1120);
+    }
+  }
+  const shared = trip(10,12,1050,1070);
+  const history = [
+    trip(12,14,1070,1090), shared, edges, shared,
+    trip(17,18,10,5), {...trip(10,12,500,0), registration:'BB11BB'}
+  ];
+  assert.equal(mileage(shift, history).distance, 120);
+  assert.equal(mileage(shift, [trip(8,16,1000,1000),trip(10,12,1000,1000)]).distance, 0);
+});

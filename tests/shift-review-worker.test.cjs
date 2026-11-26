@@ -117,7 +117,18 @@ const {stripTypeScriptTypes}=require('node:module');
  shift.cartrack_review=verified;historyFails=true;historyPartial=false;
  assert.equal((await call('scoped-test-key')).status,200);assert.equal(writes.at(-1).cartrack_review.distance,120);
  assert.equal(writes.at(-1).cartrack_review.refresh_state,'pending');assert.equal(writes.at(-1).cartrack_review.confirmed_at,verified.confirmed_at);
- historyFails=false;staleWrite=true;
+ historyFails=false;
+ historyPage=()=>({success:true,meta:{last_page:1,total:2},trips:[
+   {...odometers,id:1},
+   {id:2,registration:odometers.registration,start:'2026-11-10T11:00:00Z',end:'2026-11-10T12:00:00Z',startOdometerKm:1080,endOdometerKm:1060}
+ ]});
+ assert.equal((await call('scoped-test-key')).status,200);
+ const conflict=writes.at(-1).cartrack_review;
+ assert.equal(conflict.state,'pending');
+ assert.equal(conflict.reason,'inconsistent_readings');
+ assert.equal(conflict.distance,null);
+ assert.equal(conflict.confirmed_at,null);
+ historyPage=null;staleWrite=true;
  const skipped=await (await call('scoped-test-key')).json();assert.equal(skipped.reviewed,0);assert.equal(skipped.skipped,1);
  console.log('PASS automatic review worker: scoped authentication, trip checks, Cartrack-only mileage, unavailable/partial history and no declared-shift changes');
 })().catch(e=>{console.error(e);process.exitCode=1});

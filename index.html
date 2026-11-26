@@ -103,6 +103,17 @@
       </main>
     </div>
 
+    <dialog id="manualOdometerDialog" aria-labelledby="manualOdometerTitle">
+      <form class="modal-card">
+        <div class="modal-heading"><h2 id="manualOdometerTitle" data-value></h2><button type="button" class="icon-button" data-close aria-label="Fechar">×</button></div>
+        <p class="section-copy" data-value data-cartrack></p>
+        <label>Quilómetros inteiros no painel da viatura agora<input name="km" type="number" min="0" step="1" max="9007199254740991" required></label>
+        <button class="primary-button" type="submit" disabled>Registar leitura manual</button>
+        <p role="status" data-value data-status></p>
+        <h3>Últimas 10 leituras manuais</h3>
+        <ol data-value></ol>
+      </form>
+    </dialog>
     <dialog id="entityModal">
       <form method="dialog" class="modal-card" id="entityForm">
         <div class="modal-heading">
@@ -158,7 +169,8 @@
     <script src="./native-shift-ui.js?v=2"></script>
     <script src="./trip-conference.js?v=2"></script>
     <script src="./trip-conference-ui.js?v=3"></script>
-    <script src="./app.js?v=v70-odometer-history"></script>
+    <script src="./vehicle-manual-odometer.js?v=1"></script>
+    <script src="./app.js?v=v71-manual-odometer"></script>
     <script src="./uber-activity-view.js?v=v9-driver-status-only"></script>
   </body>
 </html>

@@ -311,7 +311,7 @@ async function loadBackendData() {
   state.cartrackVehicles = (cartrackVehiclesResult.data || []).map(row => ({
     registration: row.registration,
     vehicleId: row.vehicle_id,
-    odometerKm: row.odometer_km,
+    odometerKm: recordedOdometer(row.odometer_km, row.raw?.status),
     speedKmh: row.speed_kmh,
     ignition: row.ignition,
     idling: row.idling,
@@ -322,11 +322,14 @@ async function loadBackendData() {
     registration: row.registration,
     vehicleId: row.vehicle_id,
     observedAt: row.observed_at,
-    odometerKm: row.odometer_km,
+    odometerKm: recordedOdometer(row.odometer_km, row.raw),
     speedKmh: row.speed_kmh,
     ignition: row.ignition,
     idling: row.idling
   }));
+  state.vehicleOdometerHistory = state.profile?.role === "admin"
+    ? indexVehicleOdometerHistory(cartrackSnapshotsResult.data || [])
+    : new Map();
   state.tripRecords = (tripsResult.data || []).map(row => ({
     id: row.id, platform: row.platform || "bolt", sourceTripId: row.source_trip_id, driverId: row.driver_id, vehicleId: row.vehicle_id,
     driverUuid: row.platform_driver_uuid, vehicleUuid: row.platform_vehicle_uuid, plate: row.vehicle_plate,
@@ -1020,14 +1023,52 @@ function vehicleOdometer(vehicle) {
     return "Correspondência CarTrack por confirmar";
   }
   const row = matches[0];
-  const raw = row.odometerKm;
-  const km = typeof raw === "string" && /^\d+(?:\.\d+)?$/.test(raw.trim()) ? Number(raw) : raw;
+  const km = row.odometerKm;
   if (!Number.isFinite(km) || km < 0) return "Sem leitura de odómetro CarTrack";
   const at = ShiftMileage.timestamp(row.eventTs);
   if (at === null || at > Date.now()) return "Data da leitura CarTrack por confirmar";
-  const date = new Date(at).toLocaleString("pt-PT", {timeZone:"Europe/Lisbon"});
-  const status = cartrackTimestampIsStale(row.eventTs) ? " · Leitura antiga" : "";
-  return `${km.toLocaleString("pt-PT")} km · CarTrack · ${date} (Lisboa)${status}`;
+  const status = cartrackTimestampIsStale(at) ? " · Leitura antiga" : "";
+  const display = (value, time) => `${value.toLocaleString("pt-PT")} km · CarTrack · ${new Date(time).toLocaleString("pt-PT", {timeZone:"Europe/Lisbon"})} (Lisboa)`;
+  const current = display(km, at) + status;
+  const key = odometerHistoryKey(plate, row.vehicleId);
+  const history = state.vehicleOdometerHistory?.get(key) || [];
+  for (const previous of history) {
+    if (previous.at > at) return `${current} · Existe uma leitura posterior: ${display(previous.km, previous.at)}. Confirmar odómetro.`;
+    if (previous.km > km || (previous.at === at && previous.km !== km)) {
+      return `${current} · Divergência com a leitura de ${display(previous.km, previous.at)}. Confirmar odómetro.`;
+    }
+  }
+  return current;
+}
+
+function recordedOdometer(stored, source) {
+  function number(value) {
+    if (typeof value === "string" && /^\d+(?:\.\d+)?$/.test(value.trim())) value = Number(value);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+  const km = number(stored);
+  return source && number(source.odometer) !== km ? null : km;
+}
+
+function odometerHistoryKey(plate, vehicleId) {
+  const id = String(vehicleId ?? "").trim();
+  return plate && id ? JSON.stringify([plate, id]) : null;
+}
+
+function indexVehicleOdometerHistory(rows) {
+  const history = new Map();
+  const now = Date.now();
+  // The query supplies newest observations first. observed_at can also be an import time.
+  for (const row of rows) {
+    const at = ShiftMileage.timestamp(row.raw?.event_ts);
+    if (at === null || at > now || at !== ShiftMileage.timestamp(row.observed_at)) continue;
+    const key = odometerHistoryKey(normalizePlateSearch(row.registration), row.vehicle_id);
+    const km = recordedOdometer(row.odometer_km, row.raw);
+    if (!key || km === null) continue;
+    if (!history.has(key)) history.set(key, []);
+    history.get(key).push({at, km});
+  }
+  return history;
 }
 
 function vehicleAccessPanel(vehicle, admin) {

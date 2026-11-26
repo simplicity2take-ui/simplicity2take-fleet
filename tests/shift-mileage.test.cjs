@@ -43,3 +43,38 @@ for(const file of ['../shift-mileage.js','../teste/shift-mileage.js']){
  console.log(file+': PASS midnight pairing, missing/duplicate/overlapping entries, nearest readings, ambiguity, odometer reversal and incomplete-history protection');
 }
 
+for (const file of ['../shift-mileage.js', '../teste/shift-mileage.js', '../supabase/functions/shift-review/shift-mileage.js']) {
+  const { sessions, mileage } = require(file);
+  const at = hour => '2026-11-10T' + String(hour).padStart(2, '0') + ':00:00Z';
+  function pair(driver, vehicle, plate, startHour, endHour) {
+    const row = { driver_id: driver, vehicle_id: vehicle, vehicle_plate: plate };
+    return [
+      { ...row, event_kind: 'entry', registered_at: at(startHour) },
+      { ...row, event_kind: 'exit', registered_at: at(endHour) },
+    ];
+  }
+  const first = pair('one', 'car', 'AA-00-AA', 8, 12);
+  const readings = [
+    { registration: 'AA00AA', start: at(8), end: at(12), startOdometerKm: 100, endOdometerKm: 180 },
+    { registration: 'AA00AA', start: at(10), end: at(14), startOdometerKm: 140, endOdometerKm: 220 },
+  ];
+  for (const second of [
+    pair('two', 'car', 'AA00AA', 10, 14),
+    pair('two', 'other-id', ' aa00aa ', 10, 14),
+    pair('two', 'car', 'AA00AA', 10, 11),
+  ]) {
+    const shifts = sessions([...second, ...first]);
+    assert.equal(shifts.length, 2);
+    for (const shift of shifts) {
+      assert.ok(shift.flags.includes('overlapping_shift'), file + ' must flag both drivers');
+      assert.equal(mileage(shift, readings).distance, null);
+    }
+  }
+  for (const second of [
+    pair('two', 'car', 'AA00AA', 12, 14),
+    pair('two', 'another-car', 'BB11BB', 10, 14),
+    pair('two', 'another-car', '', 10, 14),
+  ]) {
+    assert.ok(sessions([...first, ...second]).every(s => s.flags.length === 0));
+  }
+}

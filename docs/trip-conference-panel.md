@@ -24,3 +24,5 @@ The controller permits reads for an administrator only, relies on existing datab
 Visual/mobile browser acceptance and live authenticated administrator UI acceptance are still pending. Earlier browser attempts in this environment were blocked; no policy workaround or further browser retry was attempted. Source/VM tests and connector snapshots do not establish that those acceptance tests passed.
 
 The release must include both new modules in the root and `/teste/` paths together with their app/index changes. No backend migration or deployment is needed for this panel.
+
+When completed form declarations overlap for the same driver or vehicle, both declarations require review and neither can validate mileage. Vehicle matching considers the vehicle ID and a nonempty normalized registration. A handover at the exact end of the first declaration allows both shifts to be assessed separately. The regression cases are in `tests/shift-mileage.test.cjs`.

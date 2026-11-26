@@ -39,11 +39,23 @@
       });
       if(conflict)session.flags.push('conflicting_entry');
     }
-    for (let i=0;i<result.length;i++) for(let j=i+1;j<result.length;j++) {
-      const a=result[i],b=result[j];
-      if (a.entry&&a.exit&&b.entry&&b.exit&&a.entry.driver_id===b.entry.driver_id && timestamp(a.entry.registered_at)<timestamp(b.exit.registered_at)&&timestamp(b.entry.registered_at)<timestamp(a.exit.registered_at)) {
-        if(!a.flags.includes('overlapping_shift'))a.flags.push('overlapping_shift');
-        if(!b.flags.includes('overlapping_shift'))b.flags.push('overlapping_shift');
+    const intervals = result.filter(session => session.entry && session.exit).map(session => ({
+      session,
+      start: timestamp(session.entry.registered_at),
+      end: timestamp(session.exit.registered_at),
+      driver: session.entry.driver_id,
+      vehicle: session.entry.vehicle_id,
+      plate: plateKey(session.entry.vehicle_plate)
+    })).filter(interval => interval.start < interval.end).sort((a, b) => a.start - b.start);
+    for (let i = 0; i < intervals.length; i++) {
+      const a = intervals[i];
+      for (let j = i + 1; j < intervals.length; j++) {
+        const b = intervals[j];
+        if (b.start >= a.end) break;
+        if (a.driver !== b.driver && a.vehicle !== b.vehicle && !(a.plate && a.plate === b.plate)) continue;
+        for (const { session } of [a, b]) {
+          if (!session.flags.includes('overlapping_shift')) session.flags.push('overlapping_shift');
+        }
       }
     }
     return result.sort((a,b)=>(timestamp(a.entry?.registered_at||a.exit?.registered_at)??Infinity)-(timestamp(b.entry?.registered_at||b.exit?.registered_at)??Infinity));

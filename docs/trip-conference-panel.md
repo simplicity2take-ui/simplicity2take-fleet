@@ -26,3 +26,5 @@ Visual/mobile browser acceptance and live authenticated administrator UI accepta
 The release must include both new modules in the root and `/teste/` paths together with their app/index changes. No backend migration or deployment is needed for this panel.
 
 When completed form declarations overlap for the same driver or vehicle, both declarations require review and neither can validate mileage. Vehicle matching considers the vehicle ID and a nonempty normalized registration. A handover at the exact end of the first declaration allows both shifts to be assessed separately. The regression cases are in `tests/shift-mileage.test.cjs`.
+
+CarTrack mileage requires a nonempty normalized registration at each boundary. If the entry and exit name different registrations, their odometers cannot establish a distance for the shift, even if the declarations share an internal vehicle ID.

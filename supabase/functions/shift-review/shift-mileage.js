@@ -61,10 +61,12 @@
     return result.sort((a,b)=>(timestamp(a.entry?.registered_at||a.exit?.registered_at)??Infinity)-(timestamp(b.entry?.registered_at||b.exit?.registered_at)??Infinity));
   }
   function reading(trips, plate, target, toleranceMs=15*60000) {
-    const time=timestamp(target);if(time===null)return null;
+    const time = timestamp(target);
+    const registration = plateKey(plate);
+    if (time === null || !registration) return null;
     const candidates=[],seen=new Set();
     for(const trip of trips) {
-      if(plateKey(trip.registration)!==plateKey(plate))continue;
+      if(plateKey(trip.registration)!==registration)continue;
       for(const [date,value] of [[trip.start,trip.startOdometerKm],[trip.end,trip.endOdometerKm]]) {
         const at=timestamp(date);
         if(at===null||typeof value!=='number'||!Number.isFinite(value)||value<0||Math.abs(at-time)>toleranceMs)continue;
@@ -79,6 +81,11 @@
   }
   function mileage(session,trips,partial=false) {
     if(partial||session.flags.length||!session.entry||!session.exit)return {start:null,end:null,distance:null,reason:partial?'partial_history':'incomplete_shift'};
+    const entryPlate = plateKey(session.entry.vehicle_plate);
+    const exitPlate = plateKey(session.exit.vehicle_plate);
+    if (entryPlate && exitPlate && entryPlate !== exitPlate) {
+      return {start:null,end:null,distance:null,reason:'inconsistent_readings'};
+    }
     const start=reading(trips,session.entry.vehicle_plate,session.entry.registered_at);
     const end=reading(trips,session.exit.vehicle_plate,session.exit.registered_at);
     if(!start||!end)return {start,end,distance:null,reason:'missing_reading'};

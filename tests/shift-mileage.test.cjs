@@ -58,6 +58,16 @@ for (const file of ['../shift-mileage.js', '../teste/shift-mileage.js', '../supa
     { registration: 'AA00AA', start: at(8), end: at(12), startOdometerKm: 100, endOdometerKm: 180 },
     { registration: 'AA00AA', start: at(10), end: at(14), startOdometerKm: 140, endOdometerKm: 220 },
   ];
+  const trip = readings[0];
+  for (const plate of [null, '---']) {
+    const [shift] = sessions(pair('one', 'car', plate, 8, 12));
+    assert.equal(mileage(shift, [{ ...trip, registration: '' }]).distance, null);
+  }
+  const [contradictory] = sessions([first[0], { ...first[1], vehicle_plate: 'BB-11-BB' }]);
+  assert.equal(mileage(contradictory, [trip, { ...trip, registration: 'BB11BB', endOdometerKm: 8000 }]).distance, null);
+  const [consistent] = sessions([first[0], { ...first[1], vehicle_plate: ' aa00aa ' }]);
+  assert.equal(mileage(consistent, readings).distance, 80);
+
   for (const second of [
     pair('two', 'car', 'AA00AA', 10, 14),
     pair('two', 'other-id', ' aa00aa ', 10, 14),

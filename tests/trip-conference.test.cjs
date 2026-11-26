@@ -103,3 +103,15 @@ test('checks all available service times before confirming a declaration', () =>
   const valid = { ...trip, accepted_at: null, pickup_at: at('15'), dropoff_at: at('30'), observed_at: at('05') };
   assert.equal(run({ trips: [valid] }).groups[0].compatibleDeclarations, 1);
 });
+
+test('a short service at handover matches only the declaration it overlaps', () => {
+  const at = time => '2026-11-10T' + time + ':00Z';
+  const shifts = [...events, {...events[0],id:'e2',registered_at:at('12:00')}, {...events[1],id:'x2',registered_at:at('16:00')}];
+  for (const [from, to, expected] of [['11:56','12:00','10:00'], ['12:00','12:04','12:00'], ['12:01','12:04','12:00']]) {
+    const service = {...trip,accepted_at:at(from),finished_at:at(to)};
+    const matches = run({events:shifts,trips:[service]}).groups[0].services[0].matches;
+    assert.deepEqual(matches.map(match=>match.entry),[Date.parse(at(expected))]);
+  }
+  const crossing = {...trip,accepted_at:at('11:59'),finished_at:at('12:06')};
+  assert.equal(run({events:shifts,trips:[crossing]}).groups[0].services[0].matches.length,1);
+});

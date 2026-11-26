@@ -34,6 +34,17 @@ for(const file of ['../native-shifts.js','../teste/native-shifts.js']){
  assert.equal(mixed.counts.uber,1);
  assert.ok(mixed.flags.includes('trip_time_conflict'));
  assert.equal(reviewTrips(s,[{...reversed,driver_id:'other',vehicle_id:'other'}],d).state,'pending');
+ for (const [accepted_at, finished_at] of [
+   ['2026-11-10T07:55:00Z',s.started_at],
+   [s.ended_at,'2026-11-10T16:05:00Z']
+ ]) {
+   const adjacent={...t,source_trip_id:'adjacent',accepted_at,finished_at};
+   assert.equal(reviewTrips(s,[t,adjacent],d).counts.uber,1);
+   assert.equal(reviewTrips(s,[t,{...adjacent,driver_id:'next-driver'}],d).state,'checked_available_data');
+ }
+ const crossing={...t,accepted_at:'2026-11-10T15:59:00Z',finished_at:'2026-11-10T16:03:00Z'};
+ assert.equal(reviewTrips(s,[crossing],d).counts.uber,1);
+ assert.equal(reviewTrips({...s,ended_at:null},[t],d).counts.uber,0);
  const undated={...t,accepted_at:null,finished_at:null};
  assert.equal(reviewTrips(s,[undated],d).state,'pending');
  assert.ok(reviewTrips(s,[undated],d).flags.includes('undated_driver_trips'));

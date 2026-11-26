@@ -42,6 +42,8 @@
        continue;
      }
      const a = times[0], b = times[times.length - 1];
+     // A trip ending at entry or starting at exit belongs outside this shift.
+     if (a < b && (b === start || a === end)) continue;
      if(own&&((t.driver_id&&t.driver_id!==shift.driver_id)||(uuid&&t.platform_driver_uuid&&t.platform_driver_uuid!==uuid))){flags.add('trip_identity_conflict');conflicts++;}
      if(sameVehicle&&((t.vehicle_id&&t.vehicle_id!==shift.vehicle_id)||(plate(t.vehicle_plate)&&plate(t.vehicle_plate)!==plate(shift.vehicle_plate)))){flags.add('trip_vehicle_identity_conflict');conflicts++;}
      if(own){counts[t.platform]++;if(!sameVehicle){flags.add('trip_vehicle_mismatch');conflicts++;}}

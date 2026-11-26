@@ -36,3 +36,5 @@ Service timestamps are checked in the order of acceptance, pickup, drop-off and 
 The form register and the shift mileage view read import rows with stable ordering and exact counts. A changing or missing total, duplicate or missing row ID, or fewer rows than expected marks the form history as partial. Received identifiable rows remain visible once each, and partial form history withholds mileage even when CarTrack returned both odometer readings.
 
 A form entry or exit with an outstanding source review flag withholds both mileage and declaration matching. Form parsing requires a nonempty driver name and registration that each resolve to one distinct internal ID. Duplicate normalized registrations belonging to different vehicles leave the vehicle unresolved for review.
+
+For a service with a known positive duration, the declaration and service must share time before the five-minute boundary allowance can apply. A trip ending exactly at the next shift’s entry, or starting exactly at the previous shift’s exit, does not by itself link the adjacent shift or raise a driver mismatch in native review. A single recorded instant retains the existing matching rules.

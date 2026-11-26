@@ -87,7 +87,12 @@
       g.firstObserved=Math.min(g.firstObserved,first);g.lastObserved=Math.max(g.lastObserved,last);
       if(serviceStart===null)g.missingServiceStart++;
       if(serviceEnd===null)g.missingServiceEnd++;
-      const matching=declarations.filter(s=>s.entry&&s.exit&&!s.flags.length&&s.entry.driver_id===driver.id&&s.entry.vehicle_id===vehicle.id&&stamp(s.entry.registered_at)<=first+300000&&stamp(s.exit.registered_at)>=last-300000);
+      const matching = declarations.filter(s => {
+        if (!s.entry || !s.exit || s.flags.length || s.entry.driver_id !== driver.id || s.entry.vehicle_id !== vehicle.id) return false;
+        const entry = stamp(s.entry.registered_at), exit = stamp(s.exit.registered_at);
+        if (first < last && (last <= entry || first >= exit)) return false;
+        return entry <= first + 300000 && exit >= last - 300000;
+      });
       const matches=[...new Map(matching.map(s=>{
         const m={source:s.source,entry:stamp(s.entry.registered_at),exit:stamp(s.exit.registered_at)};
         return [m.source+'|'+m.entry+'|'+m.exit,m];

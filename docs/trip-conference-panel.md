@@ -32,3 +32,5 @@ CarTrack mileage requires a nonempty normalized registration at each boundary. I
 For completed services, a form declaration stays pending when its entry plate, exit plate or registered vehicle plate contradict another available plate. If the declaration has no plate, confirmed internal IDs can still match a service. Linking to CarTrack always requires a nonempty normalized registration.
 
 Service timestamps are checked in the order of acceptance, pickup, drop-off and finish. Equal timestamps and missing stages are allowed. A reversal is reported as inconsistent in the conference. During native shift review, a related trip with reversed times overlapping the shift is withheld from the counts and flagged for review. The import observation time is independent of this sequence.
+
+The form register and the shift mileage view read import rows with stable ordering and exact counts. A changing or missing total, duplicate or missing row ID, or fewer rows than expected marks the form history as partial. Received identifiable rows remain visible once each, and partial form history withholds mileage even when CarTrack returned both odometer readings.

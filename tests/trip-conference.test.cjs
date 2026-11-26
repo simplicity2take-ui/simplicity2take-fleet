@@ -54,3 +54,35 @@ test('service details retain original times and every compatible source without 
   const point=run({trips:[{...trip,accepted_at:null}]}).groups[0].services[0];assert.equal(point.acceptedAt,null);assert.equal(point.pickupAt,null);assert.equal(point.matches.length,1);
   const partial=run({partial:true}).groups[0].services[0];assert.equal(partial.state,'partial');assert.deepEqual(partial.matches,[]);
 });
+
+test('compares declared plates with the identified service vehicle', () => {
+  for (const module of ['../trip-conference.js', '../teste/trip-conference.js']) {
+    const summarize = require(module).summarize;
+    function group(entryPlate, exitPlate) {
+      const declared = events.map((event, i) => ({ ...event, vehicle_plate: i ? exitPlate : entryPlate }));
+      return summarize({ trips: [trip], drivers, vehicles, events: declared, start, end }).groups[0];
+    }
+    for (const [entry, exit] of [['AA00AA', 'BB11BB'], ['BB11BB', 'AA00AA'], ['BB11BB', 'BB11BB']]) {
+      const result = group(entry, exit);
+      assert.equal(result.bolt, 1);
+      assert.equal(result.declarationPending, 1);
+      assert.deepEqual(result.services[0].matches, []);
+    }
+    assert.equal(group(' aa00aa ', 'AA-00-AA').compatibleDeclarations, 1);
+    assert.equal(group(null, null).compatibleDeclarations, 1);
+  }
+});
+
+test('an empty registration cannot establish presence in the CarTrack roster', () => {
+  const vehicle = { ...vehicles[0], plate: '' };
+  const service = { ...trip, vehicle_plate: null };
+  const result = run({ vehicles: [vehicle], trips: [service], cartrack: [{registration: null}] });
+  assert.equal(result.groups[0].cartrackMatches, 0);
+});
+
+test('lists both vehicles when one confirmed vehicle lacks a plate', () => {
+  const secondTrip = { ...trip, id: 't2', source_trip_id: 's2', vehicle_id: 'v2', platform_vehicle_uuid: 'bv2', vehicle_plate: null };
+  const result = run({ vehicles: [vehicles[0], { ...vehicles[1], plate: null }], trips: [trip, secondTrip] });
+  assert.equal(result.completed, 2);
+  assert.equal(result.groups.find(group => group.vehicleId === 'v2').cartrackMatches, 0);
+});

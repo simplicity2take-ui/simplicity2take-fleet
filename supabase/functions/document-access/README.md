@@ -38,3 +38,9 @@ Before production deployment, verify:
 A função entrega ao portal uma resposta privada com o conteúdo integral recebido, até 12 MiB, após verificar o tipo de ficheiro e a assinatura inicial de PDF, JPEG ou PNG. Uma resposta parcial do Drive ou uma interrupção da leitura devolve HTTP 502. Quando o tamanho anunciado se refere aos bytes sem compressão, a função confirma também que recebeu esse número de bytes. O limite aplica-se aos bytes efetivamente lidos, mesmo quando falta o cabeçalho de tamanho. Uma transferência acima do limite é cancelada e devolve HTTP 413.
 
 Com Node 24, executar `node --test tests/document-access-runtime.test.cjs`. O teste percorre a função de leitura dos dois portais com ficheiros fictícios e respostas locais que simulam o Drive. Valida os bytes entregues e os erros de transporte. A abertura visual num dispositivo e as permissões da conta de serviço utilizada pela empresa exigem validação própria.
+
+## Verificação do visualizador e da sessão
+
+Com Playwright, Chromium e a versão 3.11.174 de PDF.js disponíveis, executar `node tests/document-preview-browser.cjs` na raiz do projeto. O teste pode usar instalações locais através de `FLEET_PLAYWRIGHT_MODULE`, `FLEET_CHROMIUM_PATH` e `FLEET_PDFJS_BUILD` (a pasta com `pdf.min.js` e `pdf.worker.min.js`). Serve os ficheiros do repositório no próprio teste e simula os serviços externos.
+
+O cenário do motorista abre um PDF de duas páginas e uma imagem no portal principal e no piloto. Confirma que uma resposta pendente não reabre o visualizador depois de o fechar ou de terminar a sessão. O cenário do administrador confirma que um download pendente é descartado ao terminar a sessão e que a resposta tardia não volta a preencher a cache.

@@ -1,4 +1,4 @@
-const documentBlobCache = new Map();
+let documentBlobCache = new Map();
 let closeDocumentPreview = null;
 
 const state = {
@@ -756,6 +756,7 @@ async function startAuthenticatedSession(user) {
     await supabaseClient.auth.signOut();
     throw new Error("Conta inativa.");
   }
+  resetDocumentSession();
   state.profile = { ...profile, email: profile.email || user.email };
   state.sessionUserId = user.id;
   await loadBackendData();
@@ -769,8 +770,8 @@ async function startAuthenticatedSession(user) {
 }
 
 async function logout() {
+  resetDocumentSession();
   await supabaseClient.auth.signOut();
-  documentBlobCache.clear();
   state.sessionUserId = null;
   nativeShiftPortal.clear();
   tripConferencePortal.clear();
@@ -2860,17 +2861,36 @@ function fileToBase64(file) {
   });
 }
 
+function resetDocumentSession() {
+  closeDocumentPreview?.();
+  document.querySelector("#documentViewerModal")?.close();
+  documentBlobCache.clear();
+  documentBlobCache = new Map();
+}
+
 async function fetchDocumentBlob(documentId) {
   const doc = visibleDocuments().find(item => item.id === documentId);
   if (!doc) throw new Error("Documento não encontrado ou sem autorização.");
-  const cacheAllowed = currentUser().role === "admin";
-  const cached = cacheAllowed ? documentBlobCache.get(documentId) : null;
-  if (cached) return { doc, data: cached };
+  const user = currentUser();
+  const sessionCache = documentBlobCache;
+  const cacheAllowed = user.role === "admin";
+  const checkAccess = () => {
+    const current = currentUser();
+    if (sessionCache !== documentBlobCache || !current || current.id !== user.id || current.role !== user.role) {
+      throw new Error("A sessão mudou. Volte a abrir o documento.");
+    }
+    if (!visibleDocuments().some(item => item.id === documentId)) throw new Error("Documento sem autorização.");
+  };
 
   const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
   if (sessionError) throw sessionError;
   const token = sessionData?.session?.access_token;
-  if (!token) throw new Error("Sessão terminada. Entre novamente para abrir o documento.");
+  if (!token || sessionData.session.user?.id !== user.id) {
+    throw new Error("Sessão terminada. Entre novamente para abrir o documento.");
+  }
+  checkAccess();
+  const cached = cacheAllowed ? sessionCache.get(documentId) : null;
+  if (cached) return { doc, data: cached };
   // Read raw bytes: functions.invoke treats image/jpeg and image/png as text.
   const response = await fetch(`${SUPABASE_URL}/functions/v1/document-access`, {
     method: "POST",
@@ -2884,7 +2904,8 @@ async function fetchDocumentBlob(documentId) {
   }
   const data = await response.blob();
   if (!data.size) throw new Error("O ficheiro recebido está vazio.");
-  if (cacheAllowed) documentBlobCache.set(documentId, data);
+  checkAccess();
+  if (cacheAllowed) sessionCache.set(documentId, data);
   return { doc, data };
 }
 
@@ -2980,7 +3001,11 @@ async function openDocument(documentId) {
 
 async function downloadDocument(documentId) {
   if (currentUser().role !== "admin") throw new Error("Apenas o administrador pode descarregar documentos.");
+  const sessionCache = documentBlobCache;
   const { doc, data } = await fetchDocumentBlob(documentId);
+  if (sessionCache !== documentBlobCache || currentUser()?.role !== "admin") {
+    throw new Error("A sessão mudou. Volte a abrir o documento.");
+  }
   const url = URL.createObjectURL(data);
   const link = document.createElement("a");
 
@@ -3246,11 +3271,12 @@ function bindPortalEvents() {
     }
   });
 
-  supabaseClient.auth.onAuthStateChange((event) => {
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_IN" && state.sessionUserId && session?.user?.id !== state.sessionUserId) {
+      resetDocumentSession();
+    }
     if (event === "SIGNED_OUT") {
-      closeDocumentPreview?.();
-      document.querySelector("#documentViewerModal")?.close();
-      documentBlobCache.clear();
+      resetDocumentSession();
       state.sessionUserId = null;
       nativeShiftPortal.clear();
       tripConferencePortal.clear();

@@ -252,8 +252,8 @@ for (const file of ['app.js', 'teste/app.js']) {
       const original = Buffer.from(encoded, 'base64');
       const ctx = vm.createContext({
         SUPABASE_URL: 'https://fixture.invalid', SUPABASE_PUBLISHABLE_KEY: 'fixture-public',
-        visibleDocuments: () => [{ id: documentId }], currentUser: () => ({ role: 'driver' }),
-        supabaseClient: { auth: { getSession: async () => ({ data: { session: { access_token: 'test-session' } } }) } },
+        documentBlobCache: new Map(), visibleDocuments: () => [{ id: documentId }], currentUser: () => ({ id: 'fixture-user', role: 'driver' }),
+        supabaseClient: { auth: { getSession: async () => ({ data: { session: { user: { id: 'fixture-user' }, access_token: 'test-session' } } }) } },
         fetch: async (url, options) => {
           assert.equal(url, 'https://fixture.invalid/functions/v1/document-access');
           const media = () => new Response(original, { headers: { 'content-type': mime } });

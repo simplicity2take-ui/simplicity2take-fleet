@@ -45,3 +45,9 @@ A migração inicial do repositório e a política descrita na auditoria usam no
 O teste `tests/document-rls-database.test.cjs` cria uma base PGlite em memória com os auxiliares e as políticas da migração inicial. Aplica duas vezes o SQL candidato, mantém uma permissão de leitura concorrente e verifica os resultados com identidades fictícias. Cobre documentos pessoais, partilhas concedidas e revogadas, atribuições que começam e terminam no próprio dia, documentos expirados, perfis e motoristas inativos, utilizadores sem motorista e acesso anónimo. Para repetir com Node 24, executar `npm ci --prefix tools/driver-lifecycle-tests` e depois `node --test tests/document-rls-database.test.cjs`.
 
 A validação cobre a seleção de metadados no esquema de teste. Continuam pendentes a comparação com o esquema instalado e a verificação das permissões efetivas no Google Drive.
+
+### Correspondência com o portal
+
+Os portais principal e piloto usam agora o dia civil de Lisboa para a validade dos documentos e para as atribuições. Ao consultar a lista ou voltar a abrir um documento, o portal reavalia as datas da atribuição mesmo que o motorista tenha iniciado sessão no dia anterior. Uma atribuição sem início continua visível ao administrador para revisão. Para o motorista, a consulta exige uma atribuição com início confirmado.
+
+Os dois portais aplicam as mesmas condições de titularidade, partilha da empresa e associação exclusiva à viatura. O teste `tests/vehicle-document-permissions.test.cjs` carrega dados fictícios pelo caminho normal de leitura e atravessa a meia-noite de Lisboa na mesma sessão. O teste `tests/validity-days.test.cjs` usa também um fuso horário do dispositivo diferente do de Lisboa. A função de leitura e a política SQL continuam a validar o acesso no servidor.

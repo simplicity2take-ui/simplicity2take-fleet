@@ -282,7 +282,12 @@ async function loadBackendData() {
     uberVehicleUuid: valueOf(row, "uber_vehicle_uuid"),
     uberVehicleEncryptedUuid: valueOf(row, "uber_vehicle_encrypted_uuid"),
     uberLastSyncedAt: valueOf(row, "uber_last_synced_at"),
-    driverIds: assignments.filter(item => item.vehicle_id === row.id && assignmentIsActive(item)).map(item => item.driver_id),
+    assignments: assignments.filter(item => item.vehicle_id === row.id),
+    get driverIds() {
+      const today = localDay(Date.now());
+      const allowMissingStart = state.profile?.role === "admin";
+      return this.assignments.filter(item => assignmentIsActive(item, today, allowMissingStart)).map(item => item.driver_id);
+    },
     raw: row
   }));
   state.documents = (documentsResult.data || []).map(row => ({
@@ -363,11 +368,10 @@ async function loadBackendData() {
   state.backendReady = true;
 }
 
-function assignmentIsActive(assignment) {
-  const today = new Date().toISOString().slice(0, 10);
-  const starts = assignment.active_from || "";
-  const ends = assignment.active_until || "";
-  return (!starts || starts <= today) && (!ends || ends >= today);
+function assignmentIsActive(assignment, today, allowMissingStart) {
+  const started = assignment.active_from ? assignment.active_from <= today : allowMissingStart;
+  return started &&
+    (assignment.active_until == null || assignment.active_until >= today);
 }
 
 function escapeHtml(value) {
@@ -447,13 +451,20 @@ function companyDocuments() {
 }
 
 function driverDocuments() {
-  const driverId = currentUser().driverId;
+  const user = currentUser();
+  if (user?.role !== "driver" || !user.driverId) return [];
+  const driver = state.drivers.find(item => item.id === user.driverId);
+  if (!driver || (driver.raw ? driver.raw.status : driver.status) !== "Ativo") return [];
+  if (state.profile && (state.profile.status !== "Ativo" || driver.profileId !== state.profile.id)) return [];
+
   const assignedVehicleIds = new Set(driverVehicles().map(vehicle => vehicle.id));
-  return state.documents.filter(doc =>
-    (Boolean(driverId) && doc.driverId === driverId) ||
-    (Boolean(doc.vehicleId) && assignedVehicleIds.has(doc.vehicleId)) ||
-    (Boolean(driverId) && !doc.driverId && (doc.viewerDriverIds || []).includes(driverId))
-  );
+  const now = new Date();
+  return state.documents.filter(doc => {
+    if (doc.expiryDate && !(daysUntil(doc.expiryDate, now) >= 0)) return false;
+    if (doc.vehicleId) return !doc.driverId && assignedVehicleIds.has(doc.vehicleId);
+    if (doc.driverId) return doc.driverId === driver.id;
+    return (doc.viewerDriverIds || []).includes(driver.id);
+  });
 }
 
 function driverVehicles() {
@@ -467,7 +478,7 @@ function daysUntil(date, now = new Date()) {
   const year = Number(parts[1]), month = Number(parts[2]), day = Number(parts[3]);
   const expiry = new Date(Date.UTC(year, month - 1, day));
   if (expiry.getUTCFullYear() !== year || expiry.getUTCMonth() !== month - 1 || expiry.getUTCDate() !== day) return NaN;
-  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = Date.parse(localDay(now) + "T00:00:00Z");
   return (expiry.getTime() - today) / 86400000;
 }
 
@@ -2620,7 +2631,7 @@ async function saveVehicle(values, driverIds, id) {
   if (deleteError) throw deleteError;
   if (driverIds.length) {
     const { error: assignmentError } = await supabaseClient.from("vehicle_assignments").insert(
-      driverIds.map(driverId => ({ vehicle_id: vehicleId, driver_id: driverId, active_from: new Date().toISOString().slice(0, 10), active_until: null }))
+      driverIds.map(driverId => ({ vehicle_id: vehicleId, driver_id: driverId, active_from: localDay(Date.now()), active_until: null }))
     );
     if (assignmentError) throw assignmentError;
   }

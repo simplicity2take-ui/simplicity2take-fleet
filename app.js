@@ -1011,11 +1011,31 @@ function renderVehicles() {
     </div>
   `;
 }
+function vehicleOdometer(vehicle) {
+  const plate = normalizePlateSearch(vehicle.plate);
+  if (!plate) return "Matrícula por confirmar";
+  const matches = state.cartrackVehicles.filter(row => normalizePlateSearch(row.registration) === plate);
+  if (!matches.length) return "Sem leitura CarTrack";
+  if (matches.length !== 1 || state.vehicles.filter(row => normalizePlateSearch(row.plate) === plate).length !== 1) {
+    return "Correspondência CarTrack por confirmar";
+  }
+  const row = matches[0];
+  const raw = row.odometerKm;
+  const km = typeof raw === "string" && /^\d+(?:\.\d+)?$/.test(raw.trim()) ? Number(raw) : raw;
+  if (!Number.isFinite(km) || km < 0) return "Sem leitura de odómetro CarTrack";
+  const at = ShiftMileage.timestamp(row.eventTs);
+  if (at === null || at > Date.now()) return "Data da leitura CarTrack por confirmar";
+  const date = new Date(at).toLocaleString("pt-PT", {timeZone:"Europe/Lisbon"});
+  const status = cartrackTimestampIsStale(row.eventTs) ? " · Leitura antiga" : "";
+  return `${km.toLocaleString("pt-PT")} km · CarTrack · ${date} (Lisboa)${status}`;
+}
+
 function vehicleAccessPanel(vehicle, admin) {
   const docs = state.documents.filter(doc => doc.vehicleId === vehicle.id && (admin || driverDocuments().some(item => item.id === doc.id)));
   return `
     <article class="panel vehicle-access-panel">
       <div class="panel-heading"><div><span class="eyebrow">Documentos da viatura</span><h2>${escapeHtml(vehicle.plate)}</h2><p class="section-copy">${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)} · VIN ${escapeHtml(vehicle.vin || "—")}</p></div><span class="tag ${vehicle.status === "Ativo" ? "active" : "expiring"}">${escapeHtml(vehicle.status)}</span></div>
+      ${admin ? `<p class="section-copy">Odómetro: ${escapeHtml(vehicleOdometer(vehicle))}</p>` : ""}
       ${vehicleDocumentsPanel(vehicle)}
     </article>
   `;
@@ -1038,7 +1058,7 @@ function vehicleRow(vehicle, admin) {
 
   return `
     <tr>
-      <td><strong>${escapeHtml(vehicle.plate)}</strong></td>
+      <td><strong>${escapeHtml(vehicle.plate)}</strong>${admin ? `<details><summary>Odómetro</summary>${escapeHtml(vehicleOdometer(vehicle))}</details>` : ""}</td>
       <td>${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)}</td>
       <td>${escapeHtml(vehicle.year)}</td>
       <td>${escapeHtml(vehicle.vin)}</td>

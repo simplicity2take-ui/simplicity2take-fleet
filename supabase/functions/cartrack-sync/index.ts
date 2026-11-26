@@ -65,30 +65,64 @@ function eventTime(value: unknown): string | null {
   throw new SyncFailure("validation", "A CarTrack devolveu uma data de leitura inválida.", 502);
 }
 
+function pageNumber(value: unknown): number | null {
+  if (typeof value === "string" && /^\d+$/.test(value)) value = Number(value);
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
 async function readRows(path: string, stage: string, headers: Record<string, string>): Promise<ProviderRow[]> {
-  let data: unknown;
-  try {
-    const response = await fetch(BASE + path, { headers });
-    if (!response.ok) throw new Error();
-    data = (await response.json())?.data;
-  } catch {
-    throw new SyncFailure(stage, "Não foi possível ler a resposta CarTrack.", 502);
-  }
-  if (!Array.isArray(data)) throw new SyncFailure(stage, "A lista recebida da CarTrack é inválida.", 502);
+  const rows: ProviderRow[] = [];
   const seen = new Set<string>();
-  for (const row of data) {
-    if (!row || typeof row !== "object" || Array.isArray(row) ||
-        (row.registration != null && typeof row.registration !== "string")) {
-      throw new SyncFailure(stage, "A lista recebida da CarTrack é inválida.", 502);
+  const paginationError = () => new SyncFailure(stage, "A paginação CarTrack está incompleta ou é inconsistente.", 502);
+  let lastPage: number | undefined;
+  let total: number | undefined;
+  for (let page = 1; ; page++) {
+    let payload;
+    try {
+      const address = BASE + path + (page === 1 ? "" : "&page=" + page);
+      const response = await fetch(address, { headers });
+      if (!response.ok) throw new Error();
+      payload = await response.json();
+    } catch {
+      throw new SyncFailure(stage, "Não foi possível ler a resposta CarTrack.", 502);
     }
-    const registration = registrationOf(row);
-    if (!registration) continue;
-    if (seen.has(registration)) {
-      throw new SyncFailure("validation", "A resposta CarTrack contém matrículas duplicadas.", 502);
+    const data = payload?.data;
+    if (!Array.isArray(data)) throw new SyncFailure(stage, "A lista recebida da CarTrack é inválida.", 502);
+    for (const row of data) {
+      if (!row || typeof row !== "object" || Array.isArray(row) ||
+          (row.registration != null && typeof row.registration !== "string")) {
+        throw new SyncFailure(stage, "A lista recebida da CarTrack é inválida.", 502);
+      }
+      rows.push(row);
+      const registration = registrationOf(row);
+      if (!registration) continue;
+      if (seen.has(registration)) {
+        throw new SyncFailure("validation", "A resposta CarTrack contém matrículas duplicadas.", 502);
+      }
+      seen.add(registration);
     }
-    seen.add(registration);
+    if (page > 1 && !data.length) throw paginationError();
+    const meta = payload.meta;
+    if (meta?.current_page != null && pageNumber(meta.current_page) !== page) throw paginationError();
+    if (meta?.total != null) {
+      const count = pageNumber(meta.total);
+      if (count === null || (total !== undefined && count !== total)) throw paginationError();
+      total = count;
+    }
+    if (meta?.last_page != null) {
+      const reportedLast = pageNumber(meta.last_page);
+      const last = reportedLast === 0 && page === 1 && !data.length ? 1 : reportedLast;
+      if (last === null || last < page || last > 100 || (lastPage !== undefined && last !== lastPage)) throw paginationError();
+      lastPage = last;
+    } else if (lastPage !== undefined) {
+      throw paginationError();
+    }
+    if (lastPage === undefined || page === lastPage) {
+      if (payload.links?.next || meta?.next_page_url || (total !== undefined && rows.length !== total)) throw paginationError();
+      return rows;
+    }
+    if (!data.length || (total !== undefined && rows.length >= total)) throw paginationError();
   }
-  return data;
 }
 
 Deno.serve(async (req: Request) => {

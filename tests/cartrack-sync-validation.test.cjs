@@ -12,7 +12,8 @@ const privateDetail = 'synthetic-private-detail';
 async function synchronize(vehicles, statuses, dbFailure = false) {
   const writes = [];
   let handler;
-  const responses = [vehicles, statuses];
+  const responses = [vehicles, statuses].flat();
+  const urls = [];
   const client = {
     async rpc(name, args) {
       if (name === 'verify_cartrack_sync_key') return { data: true };
@@ -24,7 +25,8 @@ async function synchronize(vehicles, statuses, dbFailure = false) {
   vm.runInNewContext(handlerSource, {
     Response, btoa, createClient: () => client,
     Deno: { env: { get: () => 'fixture' }, serve: callback => { handler = callback; } },
-    fetch: async () => {
+    fetch: async url => {
+      urls.push(url);
       const response = responses.shift();
       if (response instanceof Error) throw response;
       return response instanceof Response ? response : Response.json(response);
@@ -35,7 +37,7 @@ async function synchronize(vehicles, statuses, dbFailure = false) {
   }));
   const body = await response.json();
   assert.ok(!JSON.stringify(body).includes(privateDetail));
-  return { status: response.status, body, writes };
+  return { status: response.status, body, writes, urls };
 }
 
 const roster = { data: [{ vehicle_id: 7, registration: ' xx-00-aa ' }] };
@@ -155,4 +157,66 @@ test('invalid provider event times stop the batch before the database write', as
     assert.equal(result.body.stage, 'validation');
     assert.equal(result.writes.length, 0);
   }
+});
+
+const providerPage = (row, current, last) => ({
+  data: [row], meta: { current_page: current, last_page: last, total: last },
+});
+
+test('both lists include all advertised pages before the single write', async () => {
+  const second = { registration: 'BB-11-BB', vehicle_id: 8 };
+  const result = await synchronize(
+    [providerPage(roster.data[0], 1, 2), providerPage(second, 2, 2)],
+    [providerPage({ ...second, odometer: 96 }, 1, 2), providerPage(telemetry.data[0], 2, 2)],
+  );
+  assert.equal(result.status, 200);
+  assert.equal(result.writes.length, 1);
+  assert.equal(result.body.vehiclesSaved, 2);
+  assert.equal(result.body.statusesFound, 2);
+  assert.equal(result.writes[0].p_vehicles[0].odometer_km, 42);
+  assert.equal(result.writes[0].p_vehicles[1].odometer_km, 96);
+  const urls = result.urls.map(address => new URL(address));
+  assert.equal(urls[1].searchParams.get('page'), '2');
+  assert.equal(urls[1].searchParams.get('limit'), '1000');
+  assert.equal(urls[3].searchParams.get('page'), '2');
+  assert.equal(urls[3].searchParams.get('odometer_in_km'), 'true');
+});
+
+test('incomplete, inconsistent or repeated pages do not write a partial fleet', async () => {
+  const next = { registration: 'BB-11-BB' };
+  for (const last of [
+    new Response('', { status: 503 }), { data: [] }, { data: [next] },
+    providerPage(next, 1, 2), providerPage(next, 2, 3),
+    providerPage(roster.data[0], 2, 2), { ...providerPage(next, 2, 2), data: [] },
+  ]) {
+    for (const stage of ['vehicles', 'status']) {
+      const list = [providerPage(roster.data[0], 1, 2), last];
+      const r = stage === 'vehicles' ? await synchronize(list, telemetry) : await synchronize(roster, list);
+      assert.equal(r.status, 502);
+      assert.equal(r.writes.length, 0);
+    }
+  }
+});
+
+test('counts, continuation hints and page limits must agree before saving', async () => {
+  for (const extra of [
+    { meta: { current_page: 2 } }, { meta: { last_page: 101 } },
+    { meta: { last_page: 'bad' } }, { meta: { last_page: 1, total: 2 } },
+    { meta: { next_page_url: 'https://other.invalid/page' } },
+    { links: { next: 'https://other.invalid/page' } },
+  ]) {
+    const r = await synchronize({ ...roster, ...extra }, telemetry);
+    assert.equal(r.status, 502);
+    assert.equal(r.writes.length, 0);
+    assert.equal(r.urls.length, 1);
+  }
+  const emptyLast = await synchronize([
+    { data: roster.data, meta: { last_page: 2 } },
+    { data: [], meta: { last_page: 2 } },
+  ], telemetry);
+  assert.equal(emptyLast.status, 502);
+  assert.equal(emptyLast.writes.length, 0);
+  const r = await synchronize({ data: [], meta: { last_page: '0', total: '0' } }, telemetry);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.vehiclesSaved, 0);
 });

@@ -28,6 +28,12 @@ for(const file of ['../native-shifts.js','../teste/native-shifts.js']){
  assert.ok(session({...s,closure_kind:'admin'}).flags.includes('admin_closure_requires_review'));
  assert.equal(reviewTrips({...s,closure_kind:'admin'},[t],d).state,'review');
  assert.ok(reviewTrips(s,[{...t,accepted_at:'2026-11-10T07:00:00Z'}],d).flags.includes('trip_crosses_shift_boundary'));
+ const reversed={...t,pickup_at:'2026-11-10T11:10:00Z'};
+ const mixed=reviewTrips(s,[reversed,{...t,source_trip_id:'valid-trip'}],d);
+ assert.equal(mixed.state,'review');
+ assert.equal(mixed.counts.uber,1);
+ assert.ok(mixed.flags.includes('trip_time_conflict'));
+ assert.equal(reviewTrips(s,[{...reversed,driver_id:'other',vehicle_id:'other'}],d).state,'pending');
  const undated={...t,accepted_at:null,finished_at:null};
  assert.equal(reviewTrips(s,[undated],d).state,'pending');
  assert.ok(reviewTrips(s,[undated],d).flags.includes('undated_driver_trips'));

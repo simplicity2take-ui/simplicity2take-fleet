@@ -86,3 +86,20 @@ test('lists both vehicles when one confirmed vehicle lacks a plate', () => {
   assert.equal(result.completed, 2);
   assert.equal(result.groups.find(group => group.vehicleId === 'v2').cartrackMatches, 0);
 });
+
+test('checks all available service times before confirming a declaration', () => {
+  const at = minute => '2026-11-10T11:' + minute + ':00Z';
+  for (const times of [
+    { accepted_at: at('10'), pickup_at: at('05') },
+    { pickup_at: at('20'), dropoff_at: at('15') },
+    { dropoff_at: at('35'), finished_at: at('30') },
+    { pickup_at: at('35'), dropoff_at: null },
+  ]) {
+    const result = run({ trips: [{ ...trip, ...times }] });
+    assert.equal(result.invalidTimes, 1);
+    assert.equal(result.completed, 0);
+    assert.equal(result.groups.length, 0);
+  }
+  const valid = { ...trip, accepted_at: null, pickup_at: at('15'), dropoff_at: at('30'), observed_at: at('05') };
+  assert.equal(run({ trips: [valid] }).groups[0].compatibleDeclarations, 1);
+});

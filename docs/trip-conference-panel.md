@@ -30,3 +30,5 @@ When completed form declarations overlap for the same driver or vehicle, both de
 CarTrack mileage requires a nonempty normalized registration at each boundary. If the entry and exit name different registrations, their odometers cannot establish a distance for the shift, even if the declarations share an internal vehicle ID.
 
 For completed services, a form declaration stays pending when its entry plate, exit plate or registered vehicle plate contradict another available plate. If the declaration has no plate, confirmed internal IDs can still match a service. Linking to CarTrack always requires a nonempty normalized registration.
+
+Service timestamps are checked in the order of acceptance, pickup, drop-off and finish. Equal timestamps and missing stages are allowed. A reversal is reported as inconsistent in the conference. During native shift review, a related trip with reversed times overlapping the shift is withheld from the counts and flagged for review. The import observation time is independent of this sequence.

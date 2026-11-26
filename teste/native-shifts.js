@@ -28,9 +28,20 @@
      const uuid=t.platform==='uber'?driver.uber_driver_uuid:driver.bolt_driver_uuid;
      const own=t.driver_id===shift.driver_id||Boolean(uuid&&t.platform_driver_uuid===uuid);
      const sameVehicle=t.vehicle_id===shift.vehicle_id||Boolean(plate(t.vehicle_plate)&&plate(t.vehicle_plate)===plate(shift.vehicle_plate));
-     const a=stamp(t.accepted_at||t.pickup_at||t.finished_at||t.dropoff_at),b=stamp(t.finished_at||t.dropoff_at||t.pickup_at||t.accepted_at);
-     if(!Number.isFinite(a)||!Number.isFinite(b)){if(own)flags.add('undated_driver_trips');continue;}
-     if(a>end||b<start||(!own&&!sameVehicle))continue;
+     if (!own && !sameVehicle) continue;
+     const times = [t.accepted_at, t.pickup_at, t.dropoff_at, t.finished_at]
+       .filter(Boolean).map(stamp);
+     if (!times.length || !times.every(Number.isFinite)) {
+       if (own) flags.add('undated_driver_trips');
+       continue;
+     }
+     if (Math.min(...times) > end || Math.max(...times) < start) continue;
+     if (times.some((time, i) => i > 0 && time < times[i - 1])) {
+       flags.add('trip_time_conflict');
+       conflicts++;
+       continue;
+     }
+     const a = times[0], b = times[times.length - 1];
      if(own&&((t.driver_id&&t.driver_id!==shift.driver_id)||(uuid&&t.platform_driver_uuid&&t.platform_driver_uuid!==uuid))){flags.add('trip_identity_conflict');conflicts++;}
      if(sameVehicle&&((t.vehicle_id&&t.vehicle_id!==shift.vehicle_id)||(plate(t.vehicle_plate)&&plate(t.vehicle_plate)!==plate(shift.vehicle_plate)))){flags.add('trip_vehicle_identity_conflict');conflicts++;}
      if(own){counts[t.platform]++;if(!sameVehicle){flags.add('trip_vehicle_mismatch');conflicts++;}}

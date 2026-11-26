@@ -74,10 +74,13 @@
       if(!serviceTimes.some(at=>at>=start&&at<end))continue;
       const driver=resolve(t,'driver',t.platform,drivers),vehicle=resolve(t,'vehicle',t.platform,vehicles);
       if(!driver||!vehicle){result.identityPending.push({id:t.id,source_trip_id:t.source_trip_id,reason:'identity_unconfirmed'});continue;}
-      const first=Math.min(...serviceTimes),last=Math.max(...serviceTimes);
+      if (serviceTimes.some((time, i) => i > 0 && time < serviceTimes[i - 1])) {
+        result.invalidTimes++;
+        continue;
+      }
+      const first=serviceTimes[0],last=serviceTimes[serviceTimes.length - 1];
       const serviceStart=stamp(t.accepted_at)??stamp(t.pickup_at);
       const serviceEnd=stamp(t.finished_at)??stamp(t.dropoff_at);
-      if(serviceStart!==null&&serviceEnd!==null&&serviceEnd<serviceStart){result.invalidTimes++;continue;}
       const registration = registeredPlates.get(vehicle.id);
       const groupKey=driver.id+'|'+vehicle.id;
       if(!groups.has(groupKey))groups.set(groupKey,{driverId:driver.id,driverName:String(driver.full_name||'Motorista identificado'),vehicleId:vehicle.id,plate:vehicle.plate,uber:0,bolt:0,firstObserved:first,lastObserved:last,missingServiceStart:0,missingServiceEnd:0,compatibleDeclarations:0,declarationPending:0,services:[],cartrackMatches:registration ? cartrack.filter(c=>plate(c.registration)===registration).length : 0});

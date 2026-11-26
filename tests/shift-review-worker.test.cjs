@@ -3,11 +3,12 @@ const {stripTypeScriptTypes}=require('node:module');
 (async()=>{
  let handler,allow=true,writes=[],historyFails=false,historyPartial=false,queueCalls=0,staleWrite=false;
  const shift={id:'s',driver_id:'d',vehicle_id:'v',driver_name:'Synthetic driver',vehicle_plate:'AA-00-AA',started_at:'2026-11-10T08:00:00Z',ended_at:'2026-11-10T16:00:00Z'};
- const trip={platform:'uber',source_trip_id:'t',driver_id:'d',vehicle_id:'v',accepted_at:'2026-11-10T10:00:00Z',finished_at:'2026-11-10T11:00:00Z'};
+ const trip={id:'row-1',platform:'uber',source_trip_id:'t',driver_id:'d',vehicle_id:'v',accepted_at:'2026-11-10T10:00:00Z',finished_at:'2026-11-10T11:00:00Z'};
+ let tripPage = () => ({data:[trip],count:1,error:null});
  const db={rpc:async()=>({data:allow,error:null}),from:table=>{
-   let update=null;
-   const q={select(){return q},or(){return q},in(){return q},lte(){return q},order(){return q},limit(){return q},range(){return q},eq(){return q},is(){return q},single(){return q},update(value){update=value;return q},
-   then(resolve,reject){try{if(update){writes.push(update);return Promise.resolve({error:null,data:staleWrite?[]:[{id:shift.id}]}).then(resolve,reject)}if(table==='driver_shift_sessions'){queueCalls++;return Promise.resolve({data:[shift],error:null}).then(resolve,reject)}return Promise.resolve({data:table==='drivers'?{id:'d',uber_driver_uuid:'u'}:[trip],count:1,error:null}).then(resolve,reject)}catch(e){return Promise.reject(e).then(resolve,reject)}}};
+   let update=null,offset=0;
+   const q={select(){return q},or(){return q},in(){return q},lte(){return q},order(){return q},limit(){return q},range(from){offset=from;return q},eq(){return q},is(){return q},single(){return q},update(value){update=value;return q},
+   then(resolve,reject){try{if(update){writes.push(update);return Promise.resolve({error:null,data:staleWrite?[]:[{id:shift.id}]}).then(resolve,reject)}if(table==='platform_trip_records')return Promise.resolve(tripPage(offset)).then(resolve,reject);if(table==='driver_shift_sessions'){queueCalls++;return Promise.resolve({data:[shift],error:null}).then(resolve,reject)}return Promise.resolve({data:table==='drivers'?{id:'d',uber_driver_uuid:'u'}:[trip],count:1,error:null}).then(resolve,reject)}catch(e){return Promise.reject(e).then(resolve,reject)}}};
    return q;
  }};
  const context={console,Request,Response,AbortSignal,Date,Number,JSON,Set,Deno:{env:{get:key=>key==='SUPABASE_URL'?'https://synthetic.example.test':'fixture'},serve:fn=>handler=fn},createClient:()=>db,fetch:async(url,options)=>{
@@ -30,6 +31,24 @@ const {stripTypeScriptTypes}=require('node:module');
  assert.ok(writes.at(-1).trip_review.flags.includes('platform_coverage_unconfirmed'));
  const verified=structuredClone(writes.at(-1).cartrack_review);
  for(const payload of writes)assert.deepEqual(Object.keys(payload).sort(),['cartrack_review','next_review_at','reviewed_at','trip_review']);
+ const secondTrip={...trip,id:'row-2',source_trip_id:'t2'};
+ for (const [label, firstTotal, lastTotal, lastRow, partial] of [
+   ['stable',2,2,secondTrip,false],
+   ['changed',3,2,secondTrip,true],
+   ['missing initial total',null,2,secondTrip,true],
+   ['missing final total',2,null,secondTrip,true],
+   ['repeated row',2,2,trip,true],
+   ['missing row ID',2,2,{...secondTrip,id:null},true],
+   ['short result',2,2,null,true],
+ ]) {
+   tripPage=offset=>({data:offset===0?[trip]:lastRow?[lastRow]:[],count:offset===0?firstTotal:lastTotal,error:null});
+   assert.equal((await call('scoped-test-key')).status,200);
+   const review=writes.at(-1).trip_review;
+   assert.equal(review.state,partial?'pending':'checked_available_data',label);
+   assert.equal(review.flags.includes('partial_trip_history'),partial,label);
+   if(!partial)assert.equal(review.counts.uber,2,label);
+ }
+ tripPage=()=>({data:[trip],count:1,error:null});
  historyFails=true;assert.equal((await call('scoped-test-key')).status,200);assert.equal(writes.at(-1).cartrack_review.state,'pending');
  historyFails=false;historyPartial=true;assert.equal((await call('scoped-test-key')).status,200);assert.equal(writes.at(-1).cartrack_review.distance,null);
  shift.cartrack_review=verified;historyFails=true;historyPartial=false;

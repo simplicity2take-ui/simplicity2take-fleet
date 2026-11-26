@@ -37,13 +37,26 @@ Deno.serve(async(req)=>{
      const filters=['accepted_at','pickup_at','dropoff_at','finished_at'].map(field=>`and(${field}.gte.${a},${field}.lte.${b})`);
      filters.push(`and(accepted_at.lte.${b},finished_at.gte.${a})`,`and(pickup_at.lte.${b},dropoff_at.gte.${a})`);
      let total:number|null=null;
+     const rowIds=new Set<string>();
      while(trips.length<5000){
        const page=await db.from('platform_trip_records').select('*',{count:'exact'}).in('platform',['uber','bolt']).or(filters.join(','))
          .order('id').range(trips.length,Math.min(trips.length+500,5000)-1);
-       if(page.error)throw Error('trip_history_unavailable');total=page.count??total;
-       if(!page.data?.length)break;trips.push(...page.data);if(total!==null&&trips.length>=total)break;
+       if(page.error || !Array.isArray(page.data))throw Error('trip_history_unavailable');
+       if(page.count === null || !Number.isSafeInteger(page.count) || page.count < 0) {
+         tripPartial=true;
+       } else if(total === null) {
+         total=page.count;
+       } else if(total !== page.count) {
+         tripPartial=true;
+       }
+       for(const row of page.data) {
+         if(!row.id || rowIds.has(row.id))tripPartial=true;
+         rowIds.add(row.id);
+       }
+       trips.push(...page.data);
+       if(!page.data.length || tripPartial || (total !== null && trips.length>=total))break;
      }
-     tripPartial=total===null||total>trips.length;
+     tripPartial ||= total !== trips.length;
      const tripReview=(globalThis as any).NativeShifts.reviewTrips(shift,trips,driver.data,tripPartial);
      let cartrackReview:any={state:'pending',reason:'missing_history'};
      // Excessively old open/late shifts remain reviewable without an unbounded API query.

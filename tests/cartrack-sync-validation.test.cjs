@@ -39,7 +39,7 @@ async function synchronize(vehicles, statuses, dbFailure = false) {
 }
 
 const roster = { data: [{ vehicle_id: 7, registration: ' xx-00-aa ' }] };
-const telemetry = { data: [{ vehicle_id: 7, registration: '  XX-00-aa', odometer: 42 }] };
+const telemetry = { data: [{ vehicle_id: 7, registration: '  XX-00-aa', odometer: 42, event_ts: '2026-07-10T23:45:00+01:00' }] };
 
 test('sync matches normalized identities and keeps the original telemetry payload', async () => {
   const result = await synchronize(roster, telemetry);
@@ -104,7 +104,7 @@ test('matching plates require compatible provider IDs when both lists supply an 
 
 test('missing telemetry stays unknown and a recorded zero remains zero', async () => {
   for (const [input, expected] of [[null, null], [undefined, null], ['  ', null], [0, 0], ['0', 0], [' 83.5 ', 83.5]]) {
-    const reading = { registration: 'XX-00-AA', odometer: input, speed: input };
+    const reading = { registration: 'XX-00-AA', odometer: input, speed: input, event_ts: telemetry.data[0].event_ts };
     const result = await synchronize(roster, { data: [reading] });
     assert.equal(result.status, 200);
     const batch = result.writes[0];
@@ -124,5 +124,35 @@ test('invalid telemetry on any plate prevents the batch write', async () => {
       assert.equal(result.body.stage, 'validation');
       assert.equal(result.writes.length, 0);
     }
+  }
+});
+
+test('undated status is preserved on the vehicle without adding a dated mileage reading', async () => {
+  for (const missing of [null, undefined, '', '  ']) {
+    const data = [
+      { ...telemetry.data[0], event_ts: missing },
+      { registration: 'BB-11-BB', event_ts: telemetry.data[0].event_ts, odometer: 28 },
+    ];
+    const result = await synchronize(roster, { data });
+    assert.equal(result.status, 200);
+    const { p_vehicles: [vehicle], p_snapshots: snapshots } = result.writes[0];
+    assert.equal(vehicle.odometer_km, 42);
+    assert.equal(vehicle.event_ts, null);
+    assert.ok(vehicle.last_synced_at);
+    assert.equal(result.body.statusesFound, 2);
+    assert.equal(result.body.snapshotsSaved, 1);
+    assert.equal(result.body.statusesWithoutEventTime, 1);
+    assert.equal(snapshots.length, 1);
+    assert.equal(snapshots[0].registration, 'BB-11-BB');
+    assert.equal(snapshots[0].observed_at, '2026-07-10T22:45:00.000Z');
+  }
+});
+
+test('invalid provider event times stop the batch before the database write', async () => {
+  for (const value of ['not a date', true, {}, []]) {
+    const result = await synchronize(roster, { data: [{ ...telemetry.data[0], event_ts: value }] });
+    assert.equal(result.status, 502);
+    assert.equal(result.body.stage, 'validation');
+    assert.equal(result.writes.length, 0);
   }
 });

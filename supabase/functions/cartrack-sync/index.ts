@@ -32,7 +32,7 @@ type ProviderRow = {
   terminal_serial?: string;
   vehicle_name?: string;
   default_timezone?: string;
-  event_ts?: string;
+  event_ts?: string | number;
   odometer?: number | string;
   speed?: number | string;
   ignition?: boolean;
@@ -54,6 +54,15 @@ function telemetryNumber(value: unknown): number | null {
     throw new SyncFailure("validation", "A CarTrack devolveu uma leitura de quilometragem ou velocidade inválida.", 502);
   }
   return value;
+}
+
+function eventTime(value: unknown): string | null {
+  if (value == null || (typeof value === "string" && !value.trim())) return null;
+  if (typeof value === "string" || typeof value === "number") {
+    const timestamp = new Date(value);
+    if (Number.isFinite(timestamp.getTime())) return timestamp.toISOString();
+  }
+  throw new SyncFailure("validation", "A CarTrack devolveu uma data de leitura inválida.", 502);
 }
 
 async function readRows(path: string, stage: string, headers: Record<string, string>): Promise<ProviderRow[]> {
@@ -113,44 +122,44 @@ Deno.serve(async (req: Request) => {
     const headers = { Accept: "application/json", Authorization: "Basic " + btoa(username + ":" + password) };
     const vehicles = await readRows("/vehicles?limit=1000", "vehicles", headers);
     const statuses = await readRows("/vehicles/status?odometer_in_km=true", "status", headers);
-    const byRegistration = new Map(statuses.map(row => [registrationOf(row), row]));
+    const readings = statuses.filter(row => registrationOf(row)).map(row => ({
+      registration: registrationOf(row),
+      vehicle_id: row.vehicle_id ?? null,
+      observed_at: eventTime(row.event_ts),
+      odometer_km: telemetryNumber(row.odometer),
+      speed_kmh: telemetryNumber(row.speed),
+      ignition: row.ignition ?? null,
+      idling: row.idling ?? null,
+      raw: row
+    }));
+    const byRegistration = new Map(readings.map(reading => [reading.registration, reading]));
     const now = new Date().toISOString();
 
     const rows = vehicles.map(v => {
       const registration = registrationOf(v);
-      const s: ProviderRow = byRegistration.get(registration) ?? {};
-      if (v.vehicle_id != null && s.vehicle_id != null && String(v.vehicle_id) !== String(s.vehicle_id)) {
+      const reading = byRegistration.get(registration);
+      if (v.vehicle_id != null && reading?.vehicle_id != null && String(v.vehicle_id) !== String(reading.vehicle_id)) {
         throw new SyncFailure("validation", "Os identificadores da viatura CarTrack não coincidem.", 502);
       }
-      const eventTs = s.event_ts ? new Date(s.event_ts).toISOString() : null;
       return {
-        vehicle_id: v.vehicle_id ?? s.vehicle_id ?? null,
+        vehicle_id: v.vehicle_id ?? reading?.vehicle_id ?? null,
         registration,
         terminal_id: v.terminal_id ?? null,
         terminal_serial: v.terminal_serial ?? null,
         vehicle_name: v.vehicle_name ?? null,
         default_timezone: v.default_timezone ?? null,
-        odometer_km: telemetryNumber(s.odometer),
-        speed_kmh: telemetryNumber(s.speed),
-        ignition: s.ignition ?? null,
-        idling: s.idling ?? null,
-        event_ts: eventTs,
+        odometer_km: reading?.odometer_km ?? null,
+        speed_kmh: reading?.speed_kmh ?? null,
+        ignition: reading?.ignition ?? null,
+        idling: reading?.idling ?? null,
+        event_ts: reading?.observed_at ?? null,
         last_synced_at: now,
-        raw: { vehicle:v, status:s },
+        raw: { vehicle:v, status:reading?.raw ?? {} },
         updated_at: now
       };
     }).filter(x => x.registration);
 
-    const snapshots = statuses.map(s => ({
-      registration:registrationOf(s),
-      vehicle_id:s.vehicle_id ?? null,
-      observed_at:s.event_ts ? new Date(s.event_ts).toISOString() : now,
-      odometer_km:telemetryNumber(s.odometer),
-      speed_kmh:telemetryNumber(s.speed),
-      ignition:s.ignition ?? null,
-      idling:s.idling ?? null,
-      raw:s
-    })).filter(x => x.registration);
+    const snapshots = readings.filter(reading => reading.observed_at !== null);
 
     const { error: syncError } = await supabase.rpc("sync_cartrack_data", {
       p_vehicles: rows,
@@ -164,6 +173,7 @@ Deno.serve(async (req: Request) => {
       statusesFound:statuses.length,
       vehiclesSaved:rows.length,
       snapshotsSaved:snapshots.length,
+      statusesWithoutEventTime:readings.length - snapshots.length,
       message:"Cartrack ligado com sucesso. Dados de veículos e estado atual sincronizados."
     }, 200);
   } catch (error) {

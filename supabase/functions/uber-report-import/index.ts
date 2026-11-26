@@ -186,26 +186,35 @@ Deno.serve(async (req) => {
       if (missingTripHeaders.length) throw new Error("CSV de viagens incompleto. Colunas em falta: " + missingTripHeaders.join(", ") + ".");
       const driverRows = await getRestRows("drivers?select=id,uber_driver_uuid,full_name&limit=1000");
       const vehicleRows = await getRestRows("vehicles?select=id,uber_vehicle_uuid,plate&limit=1000");
-      const driversByUuid = new Map(driverRows.filter((item: any) => item.uber_driver_uuid).map((item: any) => [item.uber_driver_uuid, item.id]));
-      const normalizePersonName = (value: string) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-PT");
-      const driverIdsByName = new Map<string, string[]>();
-      for (const driver of driverRows as any[]) {
-        const normalizedName = normalizePersonName(driver.full_name || "");
-        if (!normalizedName) continue;
-        const ids = driverIdsByName.get(normalizedName) || [];
-        ids.push(driver.id);
-        driverIdsByName.set(normalizedName, ids);
-      }
-      const vehiclesByUuid = new Map(vehicleRows.filter((item: any) => item.uber_vehicle_uuid).map((item: any) => [item.uber_vehicle_uuid, item.id]));
-      const vehiclesByPlate = new Map(vehicleRows.filter((item: any) => item.plate).map((item: any) => [String(item.plate).replace(/[^A-Z0-9]/gi, "").toUpperCase(), item.id]));
+      const uniqueIdentityMap = (items: any[], identity: (item: any) => string) => {
+        const idsByIdentity = new Map<string, string[]>();
+        for (const item of items) {
+          const key = identity(item);
+          if (!key) continue;
+          const ids = idsByIdentity.get(key) || [];
+          ids.push(item.id);
+          idsByIdentity.set(key, ids);
+        }
+        return new Map(Array.from(idsByIdentity.entries())
+          .filter(([, ids]) => ids.length === 1)
+          .map(([key, ids]) => [key, ids[0]]));
+      };
+      const normalizePlate = (value: string) => String(value || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+      // Source UUIDs are authoritative. Names are display data and must never choose
+      // an internal driver; a vehicle is linked only when UUID and plate agree.
+      const driversByUuid = uniqueIdentityMap(driverRows, (item: any) => String(item.uber_driver_uuid || "").trim());
+      const vehiclesByIdentity = uniqueIdentityMap(vehicleRows, (item: any) => {
+        const uuid = String(item.uber_vehicle_uuid || "").trim();
+        const normalizedPlate = normalizePlate(item.plate);
+        return uuid && normalizedPlate ? uuid + "|" + normalizedPlate : "";
+      });
       const normalized = rows.map(r => {
         const tripId = (r["UUID da viagem"] || "").trim();
         const driverUuid = (r["UUID do motorista"] || "").trim();
-        const driverName = ((r["Nome próprio do motorista"] || "") + " " + (r["Apelido do motorista"] || "")).trim();
-        const nameMatches = driverIdsByName.get(normalizePersonName(driverName)) || [];
-        const matchedDriverId = driversByUuid.get(driverUuid) || (nameMatches.length === 1 ? nameMatches[0] : null);
+        const matchedDriverId = driversByUuid.get(driverUuid) || null;
         const vehicleUuid = (r["UUID do veículo"] || "").trim();
         const plate = (r["Matrícula"] || "").trim();
+        const vehicleIdentity = vehicleUuid && normalizePlate(plate) ? vehicleUuid + "|" + normalizePlate(plate) : "";
         const status = (r["Estado da viagem"] || "").trim().toLowerCase();
         const requestedAt = localLisbonTimestamp(r["Hora do pedido de viagem"] || "");
         const arrivedAt = localLisbonTimestamp(r["Hora de chegada da viagem"] || "");
@@ -214,7 +223,7 @@ Deno.serve(async (req) => {
           platform: "uber",
           source_trip_id: tripId,
           driver_id: matchedDriverId,
-          vehicle_id: vehiclesByUuid.get(vehicleUuid) || vehiclesByPlate.get(plate.replace(/[^A-Z0-9]/gi, "").toUpperCase()) || null,
+          vehicle_id: vehiclesByIdentity.get(vehicleIdentity) || null,
           platform_driver_uuid: driverUuid || null,
           platform_vehicle_uuid: vehicleUuid || null,
           vehicle_plate: plate || null,
@@ -264,21 +273,24 @@ Deno.serve(async (req) => {
           headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
         });
       }
-      const response = await fetch(SUPABASE_URL + "/rest/v1/platform_trip_records?on_conflict=platform,source_trip_id", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SERVICE_ROLE_KEY,
-          Authorization: "Bearer " + SERVICE_ROLE_KEY,
-          Prefer: "resolution=merge-duplicates,return=minimal"
-        },
-        body: JSON.stringify(uniqueTrips)
-      });
-      const responseText = await response.text();
-      if (!response.ok) throw new Error("Falha ao guardar viagens Uber (" + response.status + "): " + responseText);
+      const tripsToInsert = uniqueTrips.filter((row: any) => !existingIds.has(String(row.source_trip_id)));
+      if (tripsToInsert.length) {
+        const response = await fetch(SUPABASE_URL + "/rest/v1/platform_trip_records?on_conflict=platform,source_trip_id", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SERVICE_ROLE_KEY,
+            Authorization: "Bearer " + SERVICE_ROLE_KEY,
+            Prefer: "resolution=ignore-duplicates,return=minimal"
+          },
+          body: JSON.stringify(tripsToInsert)
+        });
+        const responseText = await response.text();
+        if (!response.ok) throw new Error("Falha ao guardar viagens Uber (" + response.status + "): " + responseText);
+      }
       return new Response(JSON.stringify({
         ok: true, type, rows: uniqueTrips.length,
-        result: { saved: uniqueTrips.length, skipped: rows.length - uniqueTrips.length, linkedDrivers, linkedVehicles, duplicateRowsInCsv, alreadyImported, newTrips }
+        result: { saved: tripsToInsert.length, skipped: rows.length - tripsToInsert.length, linkedDrivers, linkedVehicles, duplicateRowsInCsv, alreadyImported, newTrips }
       }), { headers: { "Content-Type": "application/json" } });
     }
 

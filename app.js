@@ -1493,13 +1493,17 @@ async function loadShiftMileage() {
       if(total!==null&&events.length>=total)break;
     }
     partial=total===null?events.length===5000:total>events.length;
+    const checkPage=ShiftMileage.historyPagination();
     for(let page=1;page<=10;page++){
       const {data,error}=await supabaseClient.functions.invoke("cartrack-history",{body:{start:new Date(start).toISOString(),end:new Date(end).toISOString(),page}});
       if(!current())return;
       if(error||!data?.success||!Array.isArray(data.trips))throw new Error("Não foi possível obter as leituras históricas Cartrack.");
       trips.push(...data.trips);
-      const lastPage=data.meta?.last_page==null?NaN:Number(data.meta.last_page);
-      if((Number.isInteger(lastPage)&&lastPage>0&&page>=lastPage)||data.trips.length===0||(!Number.isFinite(lastPage)&&data.trips.length<1000))break;
+      const status=checkPage(page,data,true);
+      if(status!=='next'){
+        if(status==='partial')partial=true;
+        break;
+      }
       if(page===10)partial=true;
     }
     if(current())state.shiftMileage={day,filter,dayStart,dayEnd,events,trips,partial};

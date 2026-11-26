@@ -62,17 +62,16 @@ Deno.serve(async(req)=>{
      // Excessively old open/late shifts remain reviewable without an unbounded API query.
      if(Date.parse(b)-Date.parse(a)<=31*86400000){
        try{
-         const history:any[]=[];let complete=false;let expected:number|null=null;
+         const history:any[]=[];let complete=false;
+         const checkPage=(globalThis as any).ShiftMileage.historyPagination();
          for(let page=1;page<=3;page++){
            const response=await fetch(url+'/functions/v1/cartrack-history',{method:'POST',headers:{'Content-Type':'application/json','x-cartrack-sync-key':key},body:JSON.stringify({start:a,end:b,page}),signal:AbortSignal.timeout(50000)});
            if(!response.ok)throw Error('history_failed');const payload=await response.json();
            if(payload.success!==true||!Array.isArray(payload.trips))throw Error('invalid_history');
-           history.push(...payload.trips);expected=Number.isInteger(payload.meta?.total)?payload.meta.total:expected;
-           const last=Number(payload.meta?.last_page);
-           if(Number.isInteger(last)&&last>0&&last===page){complete=true;break;}
+           history.push(...payload.trips);
+           const status=checkPage(page,payload);
+           if(status!=='next'){complete=status==='complete';break;}
          }
-         const unique=new Set(history.map(t=>String(t.id)));
-         if(unique.size!==history.length||(expected!==null&&expected!==history.length))complete=false;
          const result=(globalThis as any).ShiftMileage.mileage((globalThis as any).NativeShifts.session(shift),history,!complete);
          cartrackReview={...result,state:result.distance===null?'pending':'calculated',source:'cartrack',confirmed_at:result.distance===null?null:checked};
        }catch{cartrackReview={state:'pending',reason:'history_unavailable',source:'cartrack'};}

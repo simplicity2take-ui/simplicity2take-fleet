@@ -5,6 +5,7 @@ const {stripTypeScriptTypes}=require('node:module');
  const shift={id:'s',driver_id:'d',vehicle_id:'v',driver_name:'Synthetic driver',vehicle_plate:'AA-00-AA',started_at:'2026-11-10T08:00:00Z',ended_at:'2026-11-10T16:00:00Z'};
  const trip={id:'row-1',platform:'uber',source_trip_id:'t',driver_id:'d',vehicle_id:'v',accepted_at:'2026-11-10T10:00:00Z',finished_at:'2026-11-10T11:00:00Z'};
  let tripPage = () => ({data:[trip],count:1,error:null});
+ let historyPage;
  const db={rpc:async()=>({data:allow,error:null}),from:table=>{
    let update=null,offset=0;
    const q={select(){return q},or(){return q},in(){return q},lte(){return q},order(){return q},limit(){return q},range(from){offset=from;return q},eq(){return q},is(){return q},single(){return q},update(value){update=value;return q},
@@ -15,6 +16,7 @@ const {stripTypeScriptTypes}=require('node:module');
    assert.equal(url,'https://synthetic.example.test/functions/v1/cartrack-history');
    assert.equal(options.headers['x-cartrack-sync-key'],'scoped-test-key');
    if(historyFails)return new Response('{}',{status:502});
+   if(historyPage)return Response.json(historyPage(JSON.parse(options.body).page));
    return new Response(JSON.stringify({success:true,trips:[{id:1,registration:'AA-00-AA',start:'2026-11-10T08:00:00Z',end:'2026-11-10T16:00:00Z',startOdometerKm:1000,endOdometerKm:1120}],meta:{last_page:historyPartial?99:1,total:historyPartial?999:1}}));
  }};
  vm.createContext(context);
@@ -31,6 +33,22 @@ const {stripTypeScriptTypes}=require('node:module');
  assert.ok(writes.at(-1).trip_review.flags.includes('platform_coverage_unconfirmed'));
  const verified=structuredClone(writes.at(-1).cartrack_review);
  for(const payload of writes)assert.deepEqual(Object.keys(payload).sort(),['cartrack_review','next_review_at','reviewed_at','trip_review']);
+ const odometers={registration:'AA-00-AA',start:shift.started_at,end:shift.ended_at,startOdometerKm:1000,endOdometerKm:1120};
+ for(const [label, firstMeta, secondMeta, secondId, distance] of [
+   ['stable',{last_page:2,total:2},{last_page:2,total:2},2,120],
+   ['optional total',{last_page:'2'},{last_page:'2'},2,120],
+   ['shrinking total',{last_page:2,total:3},{last_page:2,total:2},2,null],
+   ['shrinking last page',{last_page:3},{last_page:2},2,null],
+   ['wrong page',{last_page:2},{last_page:2,current_page:1},2,null],
+   ['missing ID',{last_page:2},{last_page:2},null,null],
+   ['duplicate ID',{last_page:2},{last_page:2},'1',null],
+ ]) {
+   historyPage=page=>({success:true,trips:[{...odometers,id:page===1?1:secondId}],meta:page===1?firstMeta:secondMeta});
+   assert.equal((await call('scoped-test-key')).status,200,label);
+   assert.equal(writes.at(-1).cartrack_review.distance,distance,label);
+   if(distance===null)assert.equal(writes.at(-1).cartrack_review.reason,'partial_history',label);
+ }
+ historyPage=null;
  const secondTrip={...trip,id:'row-2',source_trip_id:'t2'};
  for (const [label, firstTotal, lastTotal, lastRow, partial] of [
    ['stable',2,2,secondTrip,false],

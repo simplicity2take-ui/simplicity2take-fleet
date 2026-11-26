@@ -92,7 +92,41 @@
     if(end.at<=start.at||end.km<start.km)return {start,end,distance:null,reason:'inconsistent_readings'};
     return {start,end,distance:end.km-start.km,reason:null};
   }
-  const api={sessions,reading,mileage,timestamp};
+  // Track one CarTrack query across pages before trusting either odometer boundary.
+  function historyPagination() {
+    const ids = new Set();
+    let lastPage, total;
+    function integer(value) {
+      if (typeof value !== 'number' && !(typeof value === 'string' && /^\d+$/.test(value))) return NaN;
+      const n = Number(value);
+      return Number.isSafeInteger(n) && n >= 0 ? n : NaN;
+    }
+    return function check(page, payload, allowShortPage = false) {
+      const meta = payload.meta || {};
+      const last = meta.last_page == null ? null : integer(meta.last_page);
+      if (page === 1) lastPage = last;
+      if (last !== lastPage || (last !== null && last < page)) return 'partial';
+      if (meta.current_page != null && integer(meta.current_page) !== page) return 'partial';
+      if (meta.total != null) {
+        const count = integer(meta.total);
+        if (!Number.isFinite(count) || (total !== undefined && total !== count)) return 'partial';
+        total = count;
+      }
+      for (const trip of payload.trips) {
+        const id = trip?.id;
+        if (!(typeof id === 'string' && id.trim()) && !Number.isSafeInteger(id)) return 'partial';
+        const key = String(id).trim();
+        if (ids.has(key)) return 'partial';
+        ids.add(key);
+      }
+      if (total !== undefined && ids.size > total) return 'partial';
+      if (last === null && !allowShortPage) return 'partial';
+      const finished = last === null ? payload.trips.length < 1000 : page === last;
+      if (finished) return total === undefined || ids.size === total ? 'complete' : 'partial';
+      return payload.trips.length ? 'next' : 'partial';
+    };
+  }
+  const api={sessions,reading,mileage,timestamp,historyPagination};
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.ShiftMileage=api;
 })(typeof globalThis==='undefined'?this:globalThis);

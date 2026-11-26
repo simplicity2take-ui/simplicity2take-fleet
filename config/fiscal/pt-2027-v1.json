@@ -1,0 +1,17 @@
+{
+  "versao": "PT-2027-v1",
+  "exercicio": 2027,
+  "revisaoContabilistica": "pendente",
+  "iucAnual": {
+    "fonte": "https://diariodarepublica.pt/dr/detalhe/decreto-lei/161-2026-1154275218",
+    "disposicao": "Artigos 6.º e 7.º",
+    "limiteCentimos": 50000,
+    "mesAteLimite": 10,
+    "mesesAcimaLimite": [7, 10],
+    "mesIntegralOpcional": 7
+  },
+  "reservaPrestadores": {
+    "origem": "Parâmetro interno de tesouraria solicitado em #105 e #106",
+    "pontosBasePorDefeito": 1000
+  }
+}

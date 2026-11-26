@@ -10,4 +10,8 @@ These logs are subject to existing platform retention. They are not permanent da
 
 Every trace keeps coverage_verified=false. Neither a successful upload, a filename interval, a source hash nor the earliest/latest trip proves a complete export. Logs cannot alone authorize driver inactivity. Confirmed identities, complete source scope and successful coverage of both platforms remain required. No existing trips, lifecycle states, assignments or historical dates are changed by installing this handler.
 
+For individual trip reports, internal driver links now require one unambiguous exact Uber driver UUID. Display names never select a driver. Internal vehicle links require the report UUID and normalized plate to identify the same unique vehicle; a partial or conflicting match remains unlinked and visible in the preview counts. This prevents a plausible name or plate from silently assigning a trip to the wrong fleet record.
+
+The write path inserts only trip IDs that were absent during the preflight lookup and uses conflict-ignore semantics as a final concurrency guard. Reimporting the same file therefore performs no second trip write and never overwrites the driver, vehicle, status, times or distance of an existing trip. The response reports existing rows separately from newly saved rows.
+
 Regression: tests/uber-import-authorization.test.cjs exercises authorization before body access, invalid periods, preview behavior, successful and failed writes, malformed input, trace correlation and exclusion of private CSV content. Tests mock all network writes. Rollback source is the handler in main commit 980d72c38a9ba262b4621efc22278443982b1ec8, verified identical to installed version 23 before this change.

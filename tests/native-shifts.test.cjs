@@ -8,7 +8,18 @@ for(const file of ['../native-shifts.js','../teste/native-shifts.js']){
  assert.equal(qrToken('not-a-qr',origin),'');
  const s={driver_id:'driver-a',vehicle_id:'vehicle-a',vehicle_plate:'AA-00-AA',driver_name:'Test',started_at:'2026-11-10T08:00:00Z',ended_at:'2026-11-10T16:00:00Z'};
  const d={uber_driver_uuid:'uber-a',bolt_driver_uuid:'bolt-a'};
- const t={platform:'uber',source_trip_id:'trip-a',driver_id:'driver-a',vehicle_id:'vehicle-a',accepted_at:'2026-11-10T10:00:00Z',finished_at:'2026-11-10T11:00:00Z'};
+ const t={order_status:'completed',platform:'uber',source_trip_id:'trip-a',driver_id:'driver-a',vehicle_id:'vehicle-a',accepted_at:'2026-11-10T10:00:00Z',finished_at:'2026-11-10T11:00:00Z'};
+ for (const platform of ['uber','bolt']) {
+   for (const status of ['rider_cancelled','rejected','failed',null,undefined]) {
+     const request = {...t, platform, order_status:status};
+     const onlyRequest = reviewTrips(s,[request],d);
+     assert.equal(onlyRequest.counts[platform],0, String(status));
+     assert.equal(onlyRequest.state,'pending');
+     const otherDriver = {...request,source_trip_id:'other',driver_id:'other'};
+     assert.equal(reviewTrips(s,[otherDriver,t],d).state,'checked_available_data');
+     assert.equal(reviewTrips(s,[request,t],d).counts.uber,1);
+   }
+ }
  assert.equal(session(s).flags.length,0);
  assert.equal(session({...s,ended_at:null}).exit,null);
  assert.ok(session({...s,ended_at:'2026-11-12T16:00:00Z'}).flags.includes('invalid_or_long_shift'));

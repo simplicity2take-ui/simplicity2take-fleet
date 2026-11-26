@@ -23,7 +23,7 @@
    if(partial)flags.add('partial_trip_history');
    const seen=new Set();
    for(const t of trips){
-     if(!['uber','bolt'].includes(t.platform))continue;
+     if (t.order_status !== 'completed' || !['uber','bolt'].includes(t.platform)) continue;
      const key=t.platform+'|'+t.source_trip_id;if(seen.has(key))continue;seen.add(key);
      const uuid=t.platform==='uber'?driver.uber_driver_uuid:driver.bolt_driver_uuid;
      const own=t.driver_id===shift.driver_id||Boolean(uuid&&t.platform_driver_uuid===uuid);

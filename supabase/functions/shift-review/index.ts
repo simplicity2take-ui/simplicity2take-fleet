@@ -35,26 +35,35 @@ Deno.serve(async(req)=>{
      const a=new Date(Date.parse(shift.started_at)-15*60000).toISOString(),b=new Date(Date.parse(shift.ended_at)+15*60000).toISOString();
      const trips:any[]=[];let tripPartial=false;
      const filters=['accepted_at','pickup_at','dropoff_at','finished_at'].map(field=>`and(${field}.gte.${a},${field}.lte.${b})`);
-     filters.push(`and(accepted_at.lte.${b},finished_at.gte.${a})`,`and(pickup_at.lte.${b},dropoff_at.gte.${a})`);
+     // Imported trips may have only one opening and one closing timestamp.
+     for (const opening of ['accepted_at','pickup_at']) {
+       for (const closing of ['dropoff_at','finished_at']) {
+         filters.push(`and(${opening}.lte.${b},${closing}.gte.${a})`);
+       }
+     }
      let total:number|null=null;
      const rowIds=new Set<string>();
-     while(trips.length<5000){
-       const page=await db.from('platform_trip_records').select('*',{count:'exact'}).in('platform',['uber','bolt']).or(filters.join(','))
-         .order('id').range(trips.length,Math.min(trips.length+500,5000)-1);
+     let offset = 0;
+     while (offset < 5000) {
+       const page=await db.from('platform_trip_records').select('*',{count:'exact'}).in('platform',['uber','bolt']).eq('order_status','completed').or(filters.join(','))
+         .order('id').range(offset, Math.min(offset + 500, 5000) - 1);
        if(page.error || !Array.isArray(page.data))throw Error('trip_history_unavailable');
        if(page.count === null || !Number.isSafeInteger(page.count) || page.count < 0) {
          tripPartial=true;
-       } else if(total === null) {
-         total=page.count;
-       } else if(total !== page.count) {
-         tripPartial=true;
+       } else {
+         if (total !== null && total !== page.count) tripPartial = true;
+         total = page.count;
        }
-       for(const row of page.data) {
-         if(!row.id || rowIds.has(row.id))tripPartial=true;
+       for (const row of page.data) {
+         if (!row?.id || rowIds.has(row.id)) {
+           tripPartial = true;
+           continue;
+         }
          rowIds.add(row.id);
+         trips.push(row);
        }
-       trips.push(...page.data);
-       if(!page.data.length || tripPartial || (total !== null && trips.length>=total))break;
+       offset += page.data.length;
+       if (!page.data.length || (total !== null && offset >= total)) break;
      }
      tripPartial ||= total !== trips.length;
      const tripReview=(globalThis as any).NativeShifts.reviewTrips(shift,trips,driver.data,tripPartial);

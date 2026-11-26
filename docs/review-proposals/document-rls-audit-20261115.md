@@ -37,3 +37,11 @@ Os testes [document-rls-proposal.test.cjs](../../tests/document-rls-proposal.tes
 - Fazer a aplicação apenas após aprovação explícita; verificar o efeito real com duas sessões de testes independentes.
 
 **Estado:** proposta em GitHub; nenhuma alteração aplicada à base de dados de produção.
+
+## Validação isolada em 26/11/2026
+
+A migração inicial do repositório e a política descrita na auditoria usam nomes diferentes para a leitura de documentos. No PostgreSQL, uma política permissiva de leitura pode conceder acesso mesmo quando outra o recusa. A proposta substitui os dois nomes conhecidos e adiciona uma política restritiva para as leituras de utilizadores autenticados. A regra verifica também o papel e o estado do perfil e mantém a consulta de documentos expirados pelo administrador ativo.
+
+O teste `tests/document-rls-database.test.cjs` cria uma base PGlite em memória com os auxiliares e as políticas da migração inicial. Aplica duas vezes o SQL candidato, mantém uma permissão de leitura concorrente e verifica os resultados com identidades fictícias. Cobre documentos pessoais, partilhas concedidas e revogadas, atribuições que começam e terminam no próprio dia, documentos expirados, perfis e motoristas inativos, utilizadores sem motorista e acesso anónimo. Para repetir com Node 24, executar `npm ci --prefix tools/driver-lifecycle-tests` e depois `node --test tests/document-rls-database.test.cjs`.
+
+A validação cobre a seleção de metadados no esquema de teste. Continuam pendentes a comparação com o esquema instalado e a verificação das permissões efetivas no Google Drive.

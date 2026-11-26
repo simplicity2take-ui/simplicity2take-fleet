@@ -20,6 +20,7 @@ function setup(file,page){
     isVehicleQrMode:()=>false,closeDocumentPreview:null,documentBlobCache:new Map()};
   c.currentUser=()=>c.state.profile;c.window=c;vm.createContext(c);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../trip-conference-ui.js'),'utf8'),c);
+  vm.runInContext(source.slice(source.indexOf('function resetDocumentSession('),source.indexOf('async function fetchDocumentBlob(')),c);
   vm.runInContext(source.slice(source.indexOf('function localDay('),source.indexOf('function activityReportRange(')),c);
   vm.runInContext(source.slice(source.indexOf('const tripConferencePortal ='),source.indexOf('async function loadNativeShiftAccess(')),c);
   vm.runInContext(source.slice(source.indexOf('function cartrackDistanceSummary('),source.indexOf('\nasync function syncCartrack(')),c);

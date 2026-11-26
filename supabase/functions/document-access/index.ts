@@ -213,17 +213,24 @@ Deno.serve(async (request) => {
     const serviceAccount = JSON.parse(serviceAccountJson);
     const token = await driveAccessToken(serviceAccount);
     const fileId = encodeURIComponent(document.drive_file_id);
-    const driveResponse = await fetch(
-      "https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media",
-      { headers: { Authorization: "Bearer " + token } },
-    );
-    if (!driveResponse.ok) {
-      console.error("Google Drive file retrieval failed", driveResponse.status);
+    let driveResponse: Response;
+    try {
+      driveResponse = await fetch(
+        "https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media",
+        { headers: { Authorization: "Bearer " + token } },
+      );
+    } catch {
       return json({ error: "Não foi possível obter o ficheiro do Google Drive." }, 502);
     }
+    if (driveResponse.status !== 200 || driveResponse.headers.has("content-range")) {
+      await driveResponse.body?.cancel().catch(() => {});
+      return json({ error: "Não foi possível obter o ficheiro completo do Google Drive." }, 502);
+    }
     const maxDocumentBytes = 12 * 1024 * 1024;
-    const declaredLength = Number(driveResponse.headers.get("content-length"));
-    if (Number.isFinite(declaredLength) && declaredLength > maxDocumentBytes) {
+    const lengthHeader = driveResponse.headers.get("content-length");
+    const declaredLength = lengthHeader === null ? null : Number(lengthHeader);
+    if (declaredLength !== null && declaredLength > maxDocumentBytes) {
+      await driveResponse.body?.cancel().catch(() => {});
       return json({ error: "Documento demasiado grande para visualização." }, 413);
     }
     if (!driveResponse.body) {
@@ -232,15 +239,26 @@ Deno.serve(async (request) => {
     const reader = driveResponse.body.getReader();
     const chunks: Uint8Array[] = [];
     let totalBytes = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      totalBytes += value.byteLength;
-      if (totalBytes > maxDocumentBytes) {
-        await reader.cancel();
-        return json({ error: "Documento demasiado grande para visualização." }, 413);
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > maxDocumentBytes) {
+          await reader.cancel().catch(() => {});
+          return json({ error: "Documento demasiado grande para visualização." }, 413);
+        }
+        chunks.push(value);
       }
-      chunks.push(value);
+    } catch {
+      return json({ error: "A leitura do ficheiro do Google Drive foi interrompida." }, 502);
+    } finally {
+      reader.releaseLock();
+    }
+    // Fetch may decode the stream while retaining the encoded Content-Length.
+    const encoding = driveResponse.headers.get("content-encoding")?.toLowerCase();
+    if ((!encoding || encoding === "identity") && declaredLength !== null && totalBytes !== declaredLength) {
+      return json({ error: "O Google Drive devolveu um ficheiro incompleto." }, 502);
     }
     const bytes = new Uint8Array(totalBytes);
     let offset = 0;

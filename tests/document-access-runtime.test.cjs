@@ -5,6 +5,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { stripTypeScriptTypes } = require('node:module');
 
+const { webcrypto, generateKeyPairSync } = require('node:crypto');
+const serviceAccount = JSON.stringify({
+  client_email: 'fixture@example.invalid',
+  private_key: generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }),
+});
+
 const documentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const source = stripTypeScriptTypes(fs.readFileSync(
   path.join(__dirname, '..', 'supabase/functions/document-access/index.ts'), 'utf8'
@@ -67,24 +73,35 @@ async function invoke(options = {}) {
   });
   const context = {
     createClient, Request, Response, Headers, TextEncoder, TextDecoder, URLSearchParams,
-    Uint8Array, ArrayBuffer, Intl, Date,
+    Uint8Array, ArrayBuffer, Intl, Date, atob, btoa, crypto: webcrypto,
     Deno: {
       env: { get(name) {
         if (name === 'GOOGLE_SERVICE_ACCOUNT_JSON') {
           traces.tokenConfigRead++;
-          return null; // Authorized requests stop before contacting Google.
+          return scenario.media ? serviceAccount : null;
         }
         return 'test-value';
       } },
       serve(callback) { handler = callback; }
     },
-    fetch() { traces.networkCalls++; throw new Error('Tests must never reach the network'); },
+    async fetch(url, options) {
+      traces.networkCalls++;
+      assert.ok(scenario.media, 'Unexpected external request');
+      if (url === 'https://oauth2.googleapis.com/token') {
+        const claim = JSON.parse(Buffer.from(options.body.get('assertion').split('.')[1], 'base64url'));
+        assert.equal(claim.scope, 'https://www.googleapis.com/auth/drive.readonly');
+        return Response.json({ access_token: 'fixture-token' });
+      }
+      assert.equal(url, 'https://www.googleapis.com/drive/v3/files/drive-file-example?alt=media');
+      assert.equal(options.headers.Authorization, 'Bearer fixture-token');
+      return scenario.media();
+    },
     console: { error() {} }
   };
   vm.runInNewContext(source, context);
   assert.equal(typeof handler, 'function');
   const headers = scenario.authUser ? { Authorization: 'Bearer test-session' } : {};
-  const request = new Request('https://fixture.example.test/documents', {
+  const request = options.request || new Request('https://fixture.example.test/documents', {
     method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
     body: JSON.stringify({ document_id: options.requestedDocumentId || documentId })
   });
@@ -214,5 +231,92 @@ test('authorization checks never use external network resources', async () => {
   for (const scenario of cases) {
     const { traces } = await invoke(scenario);
     assert.equal(traces.networkCalls, 0);
+  }
+});
+
+// A blank PDF page and two one-pixel images, generated for these tests.
+const samples = {
+  'application/pdf': 'JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZHVjZXIgKHB5cGRmKQo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWdlcyAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUmVzb3VyY2VzIDw8Cj4+Ci9NZWRpYUJveCBbIDAuMCAwLjAgMzIgMzIgXQovUGFyZW50IDIgMCBSCj4+CmVuZG9iagp4cmVmCjAgNQowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA1NCAwMDAwMCBuIAowMDAwMDAwMTEzIDAwMDAwIG4gCjAwMDAwMDAxNjIgMDAwMDAgbiAKdHJhaWxlcgo8PAovU2l6ZSA1Ci9Sb290IDMgMCBSCi9JbmZvIDEgMCBSCj4+CnN0YXJ0eHJlZgoyNTQKJSVFT0YK',
+  'image/jpeg': '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAAP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AP//Z',
+  'image/png': 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR42mNoAAAAggCB2kUIOwAAAABJRU5ErkJggg==',
+};
+
+function readMedia(media, extra = {}) {
+  return invoke({ viewers: ['driver-1'], media, ...extra });
+}
+
+for (const file of ['app.js', 'teste/app.js']) {
+  test(file + ' receives the original PDF, JPEG and PNG via document-access', async () => {
+    const app = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+    for (const [mime, encoded] of Object.entries(samples)) {
+      const original = Buffer.from(encoded, 'base64');
+      const ctx = vm.createContext({
+        SUPABASE_URL: 'https://fixture.invalid', SUPABASE_PUBLISHABLE_KEY: 'fixture-public',
+        documentBlobCache: new Map(), visibleDocuments: () => [{ id: documentId }], currentUser: () => ({ id: 'fixture-user', role: 'driver' }),
+        supabaseClient: { auth: { getSession: async () => ({ data: { session: { user: { id: 'fixture-user' }, access_token: 'test-session' } } }) } },
+        fetch: async (url, options) => {
+          assert.equal(url, 'https://fixture.invalid/functions/v1/document-access');
+          const media = () => new Response(original, { headers: { 'content-type': mime } });
+          const { response, traces } = await readMedia(media, { request: new Request(url, options) });
+          assert.equal(traces.networkCalls, 2);
+          assert.equal(response.headers.get('cache-control'), 'private, no-store');
+          assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+          return response;
+        },
+      });
+      vm.runInContext(app.slice(app.indexOf('async function fetchDocumentBlob('), app.indexOf('async function openDocument(')), ctx);
+      const { data } = await ctx.fetchDocumentBlob(documentId);
+      assert.equal(data.type, mime);
+      assert.deepEqual(Buffer.from(await data.arrayBuffer()), original);
+    }
+  });
+}
+
+test('a partial or interrupted Drive transfer never becomes a downloadable document', async () => {
+  const pdf = Buffer.from(samples['application/pdf'], 'base64');
+  for (const media of [
+    () => new Response(pdf.subarray(0, 20), { status: 206, headers: { 'content-type': 'application/pdf' } }),
+    () => new Response(pdf.subarray(0, 20), { headers: { 'content-type': 'application/pdf', 'content-range': 'bytes 0-19/1000' } }),
+    () => new Response(pdf.subarray(0, 20), { headers: { 'content-type': 'application/pdf', 'content-length': String(pdf.length) } }),
+    () => { throw new Error('private fixture transport details'); },
+    () => new Response('private fixture upstream details', { status: 404 }),
+    () => new Response(new ReadableStream({ start(c) { c.error(new Error('private fixture transport details')); } })),
+  ]) {
+    const { response } = await readMedia(media);
+    assert.equal(response.status, 502);
+    assert.match(response.headers.get('content-type'), /json/);
+    assert.doesNotMatch(await response.text(), /private fixture|%PDF/);
+  }
+});
+
+test('transfer length checks allow decoded content and reject mismatched file signatures', async () => {
+  const pdf = Buffer.from(samples['application/pdf'], 'base64');
+  const decoded = await readMedia(() => new Response(pdf, { headers: {
+    'content-type': 'application/pdf', 'content-encoding': 'gzip', 'content-length': '42',
+  } }));
+  assert.equal(decoded.response.status, 200);
+  assert.deepEqual(Buffer.from(await decoded.response.arrayBuffer()), pdf);
+  const mismatched = await readMedia(() => new Response(pdf, { headers: { 'content-type': 'image/png' } }));
+  assert.equal(mismatched.response.status, 415);
+});
+
+test('the 12 MiB download limit accepts the boundary and cancels excess transfers', async () => {
+  const limit = 12 * 1024 * 1024;
+  const exact = new Uint8Array(limit);
+  exact.set(Buffer.from(samples['application/pdf'], 'base64'));
+  const atLimit = await readMedia(() => new Response(exact, { headers: { 'content-type': 'application/pdf' } }));
+  assert.equal(atLimit.response.status, 200);
+  assert.equal((await atLimit.response.arrayBuffer()).byteLength, limit);
+
+  for (const declared of [true, false]) {
+    let cancelled = false;
+    const body = new ReadableStream({
+      start(c) { if (!declared) { c.enqueue(exact); c.enqueue(Uint8Array.of(1)); } },
+      cancel() { cancelled = true; },
+    });
+    const { response } = await readMedia(() => new Response(body, { headers: declared ? { 'content-length': String(limit + 1) } : {} }));
+    assert.equal(response.status, 413);
+    assert.equal(cancelled, true);
+    assert.equal(body.locked, false);
   }
 });

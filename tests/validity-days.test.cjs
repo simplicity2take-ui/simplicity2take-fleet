@@ -1,7 +1,8 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
-process.env.TZ='Europe/Lisbon';
+process.env.TZ='America/Los_Angeles';
 for(const file of ['app.js','teste/app.js']){
  const source=fs.readFileSync(require('node:path').join(__dirname,'..',file),'utf8'),context={Date};vm.createContext(context);
+ vm.runInContext(source.slice(source.indexOf('function localDay('),source.indexOf('function reportDayShift(')),context);
  vm.runInContext(source.slice(source.indexOf('function daysUntil('),source.indexOf('\nfunction visibleDocuments(')),context);
  for(const [expiry,now,expected] of [
   ['2026-07-10','2026-07-11T00:30:00+01:00',-1],

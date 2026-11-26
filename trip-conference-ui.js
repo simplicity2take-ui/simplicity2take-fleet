@@ -38,19 +38,30 @@
       ownerId=user.id;const epoch=++version;day=options.day;filter=String(options.filter||'').slice(0,200);followToday=options.followToday===true;lastAttempt=now();lastChecked=null;busy=true;error='';result=null;changed();
       const current=()=>version===epoch&&getUser()?.id===user.id&&getUser()?.role==='admin';
       async function read(make){
-        const rows=[],ids=new Set();let expected=null,partial=false;
-        while(rows.length<5000){
-          if(!current())throw Error('stale');
-          const page=await make().range(rows.length,Math.min(rows.length+500,5000)-1);
-          if(!current())throw Error('stale');
-          if(page.error||!Array.isArray(page.data))throw Error('read_failed');
-          if(Number.isInteger(page.count)){if(expected!==null&&expected!==page.count)partial=true;expected=page.count;}
-          else partial=true;
-          for(const r of page.data){if(ids.has(r.id))partial=true;ids.add(r.id);}
-          rows.push(...page.data);
-          if(!page.data.length||expected!==null&&rows.length>=expected)break;
+        const rows = [], ids = new Set();
+        let offset = 0, expected = null, partial = false;
+        while (offset < 5000) {
+          if (!current()) throw Error('stale');
+          const page = await make().range(offset, Math.min(offset + 500, 5000) - 1);
+          if (!current()) throw Error('stale');
+          if (page.error || !Array.isArray(page.data)) throw Error('read_failed');
+          if (!Number.isSafeInteger(page.count) || page.count < 0) partial = true;
+          else {
+            if (expected !== null && expected !== page.count) partial = true;
+            expected = page.count;
+          }
+          for (const row of page.data) {
+            if (!row?.id || ids.has(row.id)) {
+              partial = true;
+              continue;
+            }
+            ids.add(row.id);
+            rows.push(row);
+          }
+          offset += page.data.length;
+          if (!page.data.length || (expected !== null && offset >= expected)) break;
         }
-        return {rows,partial:partial||expected===null||expected!==rows.length};
+        return { rows, partial: partial || expected !== rows.length };
       }
       try{
         const start=new Date(period.start).toISOString(),end=new Date(period.end).toISOString();

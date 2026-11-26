@@ -53,3 +53,21 @@ test('automatic day follows Lisbon midnight but an explicitly chosen day/filter 
   await s.portal.load({day:'2026-11-10',filter:'AA00AA'});day='2026-11-12';clock+=86400000;await s.portal.ensureLoaded();assert.match(s.portal.render(),/value="2026-11-10"/);assert.match(s.portal.render(),/value="AA00AA"/);
   s.portal.clear();await s.portal.ensureLoaded();assert.match(s.portal.render(),/value="2026-11-12"/);
 });
+
+test('unidentifiable and repeated database rows leave the conference partial and advance the page offset', async () => {
+  const trip = tables.platform_trip_records[0];
+  for (const invalidId of [null, trip.id]) {
+    const offsets = [];
+    const s = setup(async (table, offset, end) => {
+      if (table !== 'platform_trip_records') return {data: tables[table].slice(offset, end + 1), count: tables[table].length};
+      offsets.push(offset);
+      if (offset === 0) return {data: [trip, {...trip, id: invalidId, source_trip_id: 'unverified'}], count: 3};
+      return {data: [{...trip, id: 'another-row', source_trip_id: 'another-service'}], count: 3};
+    });
+    await s.portal.load({day: '2026-11-10'});
+    const html = s.portal.render();
+    assert.deepEqual(offsets, [0, 2]);
+    assert.match(html, /2 serviços concluídos identificados/);
+    assert.match(html, /Consulta parcial: declaração por confirmar/);
+  }
+});

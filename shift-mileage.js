@@ -27,6 +27,9 @@
     // A new entry can contradict an earlier pair even if it has no closing exit.
     // Keep the declared events, but withhold mileage until the conflict is reviewed.
     for (const session of result) {
+      if (session.entry?.review_flags?.length || session.exit?.review_flags?.length) {
+        session.flags.push('source_review_pending');
+      }
       if (!session.entry || !session.exit) continue;
       const start=timestamp(session.entry.registered_at), end=timestamp(session.exit.registered_at);
       const conflict=rows.some(row=>{

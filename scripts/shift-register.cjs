@@ -17,31 +17,41 @@ function registeredTime(value, flags, timezone='Atlantic/Canary') {
   return new Date(candidates[0]).toISOString();
 }
 
+function indexIdentities(records, keyOf) {
+  const index = new Map();
+  for (const record of records) {
+    const key = keyOf(record);
+    if (!key || !record.id) continue;
+    if (!index.has(key)) index.set(key, new Set());
+    index.get(key).add(record.id);
+  }
+  return index;
+}
+
+function resolveIdentity(candidates, kind, flags) {
+  if (candidates?.size === 1) return candidates.values().next().value;
+  flags.push((candidates?.size ? 'ambiguous_' : 'unmatched_') + kind);
+  return null;
+}
+
 function parseRows(rows, drivers, vehicles, firstRow=2, source) {
   if (!source?.fileId || !source?.sheetId || !source?.url || !source?.timezone) throw new Error("Source metadata is required");
-  const byName = new Map();
-  for (const driver of drivers) {
-    const key=normalizeName(driver.full_name);
-    if (!byName.has(key)) byName.set(key,[]);
-    byName.get(key).push(driver.id);
-  }
-  const byPlate = new Map(vehicles.map(vehicle=>[normalizePlate(vehicle.plate),vehicle.id]));
+  const byName = indexIdentities(drivers, driver => normalizeName(driver.full_name));
+  const byPlate = indexIdentities(vehicles, vehicle => normalizePlate(vehicle.plate));
   return rows.map((row,index) => {
     const flags=[];
     const [timestamp='',kind='',name='',plate=''] = row.map(value=>String(value ?? ''));
     const event = normalizeName(kind);
     const eventKind = event==='entradaturno' ? 'entry' : event==='saidaturno' ? 'exit' : null;
     if (!eventKind) flags.push('unknown_event_kind');
-    const matches=byName.get(normalizeName(name)) || [];
-    if (matches.length!==1) flags.push(matches.length ? 'ambiguous_driver' : 'unmatched_driver');
-    const vehicleId=byPlate.get(normalizePlate(plate)) || null;
-    if (!vehicleId) flags.push('unmatched_vehicle');
+    const driverId = resolveIdentity(byName.get(normalizeName(name)), 'driver', flags);
+    const vehicleId = resolveIdentity(byPlate.get(normalizePlate(plate)), 'vehicle', flags);
     return {
       source_file_id:source.fileId,source_sheet_id:source.sheetId,source_row:firstRow+index,
       source_url:source.url,source_timezone:source.timezone,
       source_hash:createHash('sha256').update(JSON.stringify(row.slice(0,4).map(value=>String(value ?? '')))).digest('hex'),
       source_timestamp:timestamp,registered_at:registeredTime(timestamp,flags,source.timezone),event_kind:eventKind,
-      driver_name:name,vehicle_plate:plate,driver_id:matches.length===1?matches[0]:null,vehicle_id:vehicleId,
+      driver_name:name,vehicle_plate:plate,driver_id:driverId,vehicle_id:vehicleId,
       review_flags:flags
     };
   });

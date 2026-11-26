@@ -58,6 +58,13 @@ for (const file of ['../shift-mileage.js', '../teste/shift-mileage.js', '../supa
     { registration: 'AA00AA', start: at(8), end: at(12), startOdometerKm: 100, endOdometerKm: 180 },
     { registration: 'AA00AA', start: at(10), end: at(14), startOdometerKm: 140, endOdometerKm: 220 },
   ];
+  for (const flagged of [0, 1]) {
+    const events = first.map((row, index) => ({...row, review_flags: index === flagged ? ['source_changed_pending_review'] : []}));
+    const [shift] = sessions(events);
+    assert.equal(mileage(shift, readings).distance, null, file + ' must withhold mileage pending source review');
+    assert.ok(shift.flags.includes('source_review_pending'));
+    assert.equal(events[flagged].review_flags.length, 1);
+  }
   const trip = readings[0];
   for (const plate of [null, '---']) {
     const [shift] = sessions(pair('one', 'car', plate, 8, 12));

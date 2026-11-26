@@ -34,3 +34,5 @@ For completed services, a form declaration stays pending when its entry plate, e
 Service timestamps are checked in the order of acceptance, pickup, drop-off and finish. Equal timestamps and missing stages are allowed. A reversal is reported as inconsistent in the conference. During native shift review, a related trip with reversed times overlapping the shift is withheld from the counts and flagged for review. The import observation time is independent of this sequence.
 
 The form register and the shift mileage view read import rows with stable ordering and exact counts. A changing or missing total, duplicate or missing row ID, or fewer rows than expected marks the form history as partial. Received identifiable rows remain visible once each, and partial form history withholds mileage even when CarTrack returned both odometer readings.
+
+A form entry or exit with an outstanding source review flag withholds both mileage and declaration matching. Form parsing requires a nonempty driver name and registration that each resolve to one distinct internal ID. Duplicate normalized registrations belonging to different vehicles leave the vehicle unresolved for review.

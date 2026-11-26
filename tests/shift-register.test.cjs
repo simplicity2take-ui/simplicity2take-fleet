@@ -28,3 +28,16 @@ assert.ok(ambiguous.review_flags.includes('ambiguous_driver'));
 assert.ok(ambiguous.review_flags.includes('unmatched_vehicle'));
 assert.ok(ambiguous.review_flags.includes('invalid_timestamp'));
 console.log('PASS shift provenance, idempotence, timestamp/DST ambiguity, exact unique identity matching and review flags');
+
+const duplicatePlates = [...vehicles, {id:'other-car', plate:' aa00aa '}];
+for (const roster of [duplicatePlates, [...duplicatePlates].reverse()]) {
+  const [event] = parseRows(source, drivers, roster);
+  assert.equal(event.vehicle_id, null);
+  assert.ok(event.review_flags.includes('ambiguous_vehicle'));
+}
+const [blank] = parseRows([['2026/11/10 11:50:15','SAIDA TURNO','','---']],
+  [{id:'unnamed',full_name:''}], [{id:'unregistered',plate:null}]);
+assert.equal(blank.driver_id, null);
+assert.equal(blank.vehicle_id, null);
+assert.ok(blank.review_flags.includes('unmatched_driver'));
+assert.ok(blank.review_flags.includes('unmatched_vehicle'));

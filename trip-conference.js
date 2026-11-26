@@ -45,7 +45,6 @@
     }
     // Native and form declarations are one review set; conflicting sources cannot validate each other.
     for(const s of declarations){
-      if(s.entry?.review_flags?.length||s.exit?.review_flags?.length)s.flags.push('source_review_pending');
       if(!s.entry||!s.exit)continue;
       const a=stamp(s.entry.registered_at),b=stamp(s.exit.registered_at);
       if(a===null||b===null)continue;

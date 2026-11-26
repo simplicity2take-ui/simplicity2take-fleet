@@ -101,3 +101,28 @@ test('matching plates require compatible provider IDs when both lists supply an 
     assert.equal(result.writes[0].p_vehicles[0].vehicle_id, 7);
   }
 });
+
+test('missing telemetry stays unknown and a recorded zero remains zero', async () => {
+  for (const [input, expected] of [[null, null], [undefined, null], ['  ', null], [0, 0], ['0', 0], [' 83.5 ', 83.5]]) {
+    const reading = { registration: 'XX-00-AA', odometer: input, speed: input };
+    const result = await synchronize(roster, { data: [reading] });
+    assert.equal(result.status, 200);
+    const batch = result.writes[0];
+    for (const row of [batch.p_vehicles[0], batch.p_snapshots[0]]) {
+      assert.equal(row.odometer_km, expected);
+      assert.equal(row.speed_kmh, expected);
+    }
+  }
+});
+
+test('invalid telemetry on any plate prevents the batch write', async () => {
+  for (const field of ['odometer', 'speed']) {
+    for (const value of [false, [], {}, 'unknown', -1, '1e999', '0x10']) {
+      const bad = { registration: 'BB-11-BB', [field]: value };
+      const result = await synchronize(roster, { data: [...telemetry.data, bad] });
+      assert.equal(result.status, 502);
+      assert.equal(result.body.stage, 'validation');
+      assert.equal(result.writes.length, 0);
+    }
+  }
+});

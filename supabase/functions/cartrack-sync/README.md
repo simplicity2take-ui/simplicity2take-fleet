@@ -14,6 +14,8 @@ Para pausar, um administrador da base pode usar cron.alter_job com active=false.
 
 A sincronização compara as matrículas em maiúsculas e sem espaços nas extremidades. Uma matrícula repetida na mesma lista, ou identificadores de viatura contraditórios para a mesma matrícula, interrompem o lote antes da chamada a `sync_cartrack_data`. Uma lista vazia com `data: []` é válida. Uma resposta sem lista ou com formato inválido interrompe a sincronização.
 
+A quilometragem e a velocidade aceitam números finitos não negativos, incluindo zero e representações decimais em texto. Uma leitura ausente ou em branco fica sem valor. Uma leitura malformada ou negativa interrompe o lote antes da gravação, incluindo quando pertence a uma matrícula presente apenas na lista de estados.
+
 As falhas de leitura do fornecedor devolvem HTTP 502. Uma falha de gravação devolve HTTP 500. O campo `stage` identifica a etapa conhecida (`vehicles`, `status`, `validation` ou `database`). O corpo da resposta do fornecedor e os detalhes internos da base de dados ficam excluídos da mensagem.
 
 Para verificar a sincronização manual, a agendada e a validação dos lotes com dados fictícios, executar `node --test tests/cartrack-{scheduler-auth,sync-validation}.test.cjs` em Bash com Node 24.

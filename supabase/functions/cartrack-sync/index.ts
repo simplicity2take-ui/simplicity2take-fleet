@@ -43,6 +43,19 @@ function registrationOf(row: ProviderRow) {
   return (row.registration ?? "").trim().toUpperCase();
 }
 
+function telemetryNumber(value: unknown): number | null {
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text) return null;
+    if (/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(text)) value = Number(text);
+  }
+  if (value == null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new SyncFailure("validation", "A CarTrack devolveu uma leitura de quilometragem ou velocidade inválida.", 502);
+  }
+  return value;
+}
+
 async function readRows(path: string, stage: string, headers: Record<string, string>): Promise<ProviderRow[]> {
   let data: unknown;
   try {
@@ -117,8 +130,8 @@ Deno.serve(async (req: Request) => {
         terminal_serial: v.terminal_serial ?? null,
         vehicle_name: v.vehicle_name ?? null,
         default_timezone: v.default_timezone ?? null,
-        odometer_km: s.odometer == null ? null : Number(s.odometer),
-        speed_kmh: s.speed == null ? null : Number(s.speed),
+        odometer_km: telemetryNumber(s.odometer),
+        speed_kmh: telemetryNumber(s.speed),
         ignition: s.ignition ?? null,
         idling: s.idling ?? null,
         event_ts: eventTs,
@@ -132,8 +145,8 @@ Deno.serve(async (req: Request) => {
       registration:registrationOf(s),
       vehicle_id:s.vehicle_id ?? null,
       observed_at:s.event_ts ? new Date(s.event_ts).toISOString() : now,
-      odometer_km:s.odometer == null ? null : Number(s.odometer),
-      speed_kmh:s.speed == null ? null : Number(s.speed),
+      odometer_km:telemetryNumber(s.odometer),
+      speed_kmh:telemetryNumber(s.speed),
       ignition:s.ignition ?? null,
       idling:s.idling ?? null,
       raw:s

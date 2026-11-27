@@ -8,7 +8,18 @@ for(const file of ['../native-shifts.js','../teste/native-shifts.js']){
  assert.equal(qrToken('not-a-qr',origin),'');
  const s={driver_id:'driver-a',vehicle_id:'vehicle-a',vehicle_plate:'AA-00-AA',driver_name:'Test',started_at:'2026-11-10T08:00:00Z',ended_at:'2026-11-10T16:00:00Z'};
  const d={uber_driver_uuid:'uber-a',bolt_driver_uuid:'bolt-a'};
- const t={platform:'uber',source_trip_id:'trip-a',driver_id:'driver-a',vehicle_id:'vehicle-a',accepted_at:'2026-11-10T10:00:00Z',finished_at:'2026-11-10T11:00:00Z'};
+ const t={order_status:'completed',platform:'uber',source_trip_id:'trip-a',driver_id:'driver-a',vehicle_id:'vehicle-a',accepted_at:'2026-11-10T10:00:00Z',finished_at:'2026-11-10T11:00:00Z'};
+ for (const platform of ['uber','bolt']) {
+   for (const status of ['rider_cancelled','rejected','failed',null,undefined]) {
+     const request = {...t, platform, order_status:status};
+     const onlyRequest = reviewTrips(s,[request],d);
+     assert.equal(onlyRequest.counts[platform],0, String(status));
+     assert.equal(onlyRequest.state,'pending');
+     const otherDriver = {...request,source_trip_id:'other',driver_id:'other'};
+     assert.equal(reviewTrips(s,[otherDriver,t],d).state,'checked_available_data');
+     assert.equal(reviewTrips(s,[request,t],d).counts.uber,1);
+   }
+ }
  assert.equal(session(s).flags.length,0);
  assert.equal(session({...s,ended_at:null}).exit,null);
  assert.ok(session({...s,ended_at:'2026-11-12T16:00:00Z'}).flags.includes('invalid_or_long_shift'));
@@ -28,6 +39,30 @@ for(const file of ['../native-shifts.js','../teste/native-shifts.js']){
  assert.ok(session({...s,closure_kind:'admin'}).flags.includes('admin_closure_requires_review'));
  assert.equal(reviewTrips({...s,closure_kind:'admin'},[t],d).state,'review');
  assert.ok(reviewTrips(s,[{...t,accepted_at:'2026-11-10T07:00:00Z'}],d).flags.includes('trip_crosses_shift_boundary'));
+ const reversed={...t,pickup_at:'2026-11-10T11:10:00Z'};
+ const mixed=reviewTrips(s,[reversed,{...t,source_trip_id:'valid-trip'}],d);
+ assert.equal(mixed.state,'review');
+ assert.equal(mixed.counts.uber,1);
+ assert.ok(mixed.flags.includes('trip_time_conflict'));
+ assert.equal(reviewTrips(s,[{...reversed,driver_id:'other',vehicle_id:'other'}],d).state,'pending');
+ for (const [accepted_at, finished_at] of [
+   ['2026-11-10T07:55:00Z',s.started_at],
+   [s.ended_at,'2026-11-10T16:05:00Z']
+ ]) {
+   const adjacent={...t,source_trip_id:'adjacent',accepted_at,finished_at};
+   assert.equal(reviewTrips(s,[t,adjacent],d).counts.uber,1);
+   assert.equal(reviewTrips(s,[t,{...adjacent,driver_id:'next-driver'}],d).state,'checked_available_data');
+ }
+ const nextShift={...s,started_at:s.ended_at,ended_at:'2026-11-10T23:00:00Z'};
+ const finishOnly={...t,accepted_at:null,dropoff_at:s.ended_at,finished_at:s.ended_at};
+ const startOnly={...t,accepted_at:null,pickup_at:s.ended_at,finished_at:null};
+ assert.equal(reviewTrips(s,[finishOnly],d).counts.uber,1);
+ assert.equal(reviewTrips(nextShift,[finishOnly],d).counts.uber,0);
+ assert.equal(reviewTrips(s,[startOnly],d).counts.uber,0);
+ assert.equal(reviewTrips(nextShift,[startOnly],d).counts.uber,1);
+ const crossing={...t,accepted_at:'2026-11-10T15:59:00Z',finished_at:'2026-11-10T16:03:00Z'};
+ assert.equal(reviewTrips(s,[crossing],d).counts.uber,1);
+ assert.equal(reviewTrips({...s,ended_at:null},[t],d).counts.uber,0);
  const undated={...t,accepted_at:null,finished_at:null};
  assert.equal(reviewTrips(s,[undated],d).state,'pending');
  assert.ok(reviewTrips(s,[undated],d).flags.includes('undated_driver_trips'));

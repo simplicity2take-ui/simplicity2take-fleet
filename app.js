@@ -1479,27 +1479,21 @@ async function loadShiftMileage() {
   state.shiftMileage=request;renderActivity();
   const current=()=>state.shiftMileage===request&&state.sessionUserId===userId&&state.profile?.role==="admin";
   try {
-    const events=[],trips=[];let partial=false,total=null;
-    while(events.length<5000){
-      const result=await supabaseClient.from("vehicle_shift_events").select("*",{count:"exact"})
-        .gte("registered_at",new Date(start).toISOString()).lt("registered_at",new Date(end).toISOString())
-        .order("registered_at",{ascending:true}).order("id",{ascending:true})
-        .range(events.length,Math.min(events.length+500,5000)-1);
-      if(!current())return;
-      if(result.error)throw new Error("Não foi possível carregar os turnos para esta consulta.");
-      total=result.count??total;
-      if(!result.data?.length)break;
-      events.push(...result.data);
-      if(total!==null&&events.length>=total)break;
-    }
-    partial=total===null?events.length===5000:total>events.length;
+    const form = await readShiftEvents(new Date(start).toISOString(), new Date(end).toISOString(), current);
+    if (!form || !current()) return;
+    const events = form.rows, trips = [];
+    let partial = form.partial;
+    const checkPage=ShiftMileage.historyPagination();
     for(let page=1;page<=10;page++){
       const {data,error}=await supabaseClient.functions.invoke("cartrack-history",{body:{start:new Date(start).toISOString(),end:new Date(end).toISOString(),page}});
       if(!current())return;
       if(error||!data?.success||!Array.isArray(data.trips))throw new Error("Não foi possível obter as leituras históricas Cartrack.");
       trips.push(...data.trips);
-      const lastPage=data.meta?.last_page==null?NaN:Number(data.meta.last_page);
-      if((Number.isInteger(lastPage)&&lastPage>0&&page>=lastPage)||data.trips.length===0||(!Number.isFinite(lastPage)&&data.trips.length<1000))break;
+      const status=checkPage(page,data,true);
+      if(status!=='next'){
+        if(status==='partial')partial=true;
+        break;
+      }
       if(page===10)partial=true;
     }
     if(current())state.shiftMileage={day,filter,dayStart,dayEnd,events,trips,partial};
@@ -1507,6 +1501,33 @@ async function loadShiftMileage() {
   if(state.activeView==="activity"&&state.sessionUserId===userId&&state.profile?.role==="admin")renderActivity();
 }
 
+
+async function readShiftEvents(start, end, current) {
+  const rows = [], ids = new Set();
+  let expected = null, partial = false, offset = 0;
+  while (offset < 5000) {
+    const page = await supabaseClient.from("vehicle_shift_events").select("*", {count:"exact"})
+      .gte("registered_at", start).lt("registered_at", end)
+      .order("registered_at", {ascending:true}).order("id", {ascending:true})
+      .range(offset, Math.min(offset + 500, 5000) - 1);
+    if (!current()) return null;
+    if (page.error || !Array.isArray(page.data)) throw new Error("Não foi possível carregar os registos de turno importados.");
+    if (!Number.isSafeInteger(page.count) || page.count < 0) partial = true;
+    else if (expected === null) expected = page.count;
+    else if (expected !== page.count) partial = true;
+    for (const row of page.data) {
+      if (!row.id || ids.has(row.id)) {
+        partial = true;
+        continue;
+      }
+      ids.add(row.id);
+      rows.push(row);
+    }
+    offset += page.data.length;
+    if (!page.data.length || (expected !== null && offset >= expected)) break;
+  }
+  return {rows, partial: partial || expected !== rows.length};
+}
 
 function renderShiftRegister() {
   const history = state.shiftRegister;
@@ -1518,7 +1539,7 @@ function renderShiftRegister() {
     <p class="section-copy">Registos submetidos pelos motoristas no formulário Google. A hora é a submissão, não uma confirmação automática da hora de entrega da viatura. A falta de entrada ou saída não prova ausência de trabalho. Os quilómetros do formulário não são utilizados.</p>
     <div class="row-actions"><label>Dia dos registos <input id="shiftRegisterDay" type="date" value="${escapeHtml(state.shiftRegisterDay || localDay(Date.now()))}" max="${localDay(Date.now())}"></label><label>Motorista ou matrícula do turno <input id="shiftRegisterFilter" type="search" value="${escapeHtml(state.shiftRegisterFilter || "")}" placeholder="Ex.: Álvaro ou AC-85-ZT"></label><button type="button" class="secondary-button" data-shift-register ${history?.loading ? "disabled" : ""}>${history?.loading ? "A consultar…" : "Consultar turnos"}</button></div>
     ${history?.error ? `<p role="alert">${escapeHtml(history.error)}</p>` : ""}
-    ${history?.rides ? `<p class="section-copy">${rows.length} registos apresentados. ${history.partial ? "Resultado parcial: existem mais registos." : "Todas as páginas recebidas."} O histórico é uma cópia importada do Google Drive; esta consulta não atualiza o ficheiro de origem.</p><div class="table-wrap"><table><thead><tr><th>Motorista declarado</th><th>Matrícula declarada</th><th>Registo</th><th>Hora de submissão (Lisboa)</th><th>Conferência</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHtml(row.driver_name)}</td><td>${escapeHtml(row.vehicle_plate)}</td><td>${row.event_kind === "entry" ? "Entrada de turno" : row.event_kind === "exit" ? "Saída de turno" : "Rever tipo"}</td><td>${escapeHtml(date(row.registered_at))}</td><td>Linha ${Number(row.source_row)}${row.review_flags?.length ? " · Rever associação ou data" : ""}</td></tr>`).join("") || '<tr><td colspan="5">Sem registos importados para este dia e pesquisa. Não significa que não houve turno.</td></tr>'}</tbody></table></div>` : ""}
+    ${history?.rides ? `<p class="section-copy">${rows.length} registos apresentados. ${history.partial ? "Resultado parcial. Não foi possível confirmar todos os registos." : "Todas as páginas recebidas."} O histórico é uma cópia importada do Google Drive; esta consulta não atualiza o ficheiro de origem.</p><div class="table-wrap"><table><thead><tr><th>Motorista declarado</th><th>Matrícula declarada</th><th>Registo</th><th>Hora de submissão (Lisboa)</th><th>Conferência</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHtml(row.driver_name)}</td><td>${escapeHtml(row.vehicle_plate)}</td><td>${row.event_kind === "entry" ? "Entrada de turno" : row.event_kind === "exit" ? "Saída de turno" : "Rever tipo"}</td><td>${escapeHtml(date(row.registered_at))}</td><td>Linha ${Number(row.source_row)}${row.review_flags?.length ? " · Rever associação ou data" : ""}</td></tr>`).join("") || '<tr><td colspan="5">Sem registos importados para este dia e pesquisa. Não significa que não houve turno.</td></tr>'}</tbody></table></div>` : ""}
   </article>`;
 }
 
@@ -1539,21 +1560,8 @@ async function loadShiftRegister() {
   try {
     const start = new Date(reportMidnight(day)).toISOString();
     const end = new Date(reportMidnight(reportDayShift(day, 1))).toISOString();
-    const rides = [];
-    let total = null;
-    while (rides.length < 5000) {
-      const result = await supabaseClient.from("vehicle_shift_events").select("*", { count: "exact" })
-        .gte("registered_at", start).lt("registered_at", end)
-        .order("registered_at", { ascending: true }).order("id", { ascending: true })
-        .range(rides.length, Math.min(rides.length + 500, 5000) - 1);
-      if (!current()) return;
-      if (result.error) throw new Error("Não foi possível carregar os registos de turno importados.");
-      total = result.count ?? total;
-      if (!result.data?.length) break;
-      rides.push(...result.data);
-      if (total !== null && rides.length >= total) break;
-    }
-    if (current()) state.shiftRegister = { day, rides, partial: total === null ? rides.length === 5000 : total > rides.length };
+    const form = await readShiftEvents(start, end, current);
+    if (form && current()) state.shiftRegister = {day, rides:form.rows, partial:form.partial};
   } catch (error) {
     if (current()) state.shiftRegister = { day, error: error.message };
   }

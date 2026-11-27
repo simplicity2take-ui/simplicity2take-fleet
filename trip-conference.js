@@ -3,6 +3,7 @@
   const shifts=typeof module==='object'&&module.exports?require('./shift-mileage.js'):root.ShiftMileage;
   const plate=value=>String(value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   const text=value=>String(value??'').trim();
+  const nativeShifts=typeof module==='object'&&module.exports?require('./native-shifts.js'):root.NativeShifts;
   const stamp=shifts.timestamp;
   function resolve(row,kind,platform,entities){
     const id=row[kind+'_id'],uuid=text(row['platform_'+kind+'_uuid']);
@@ -25,9 +26,22 @@
     if(!id&&!uuid&&kind==='vehicle'&&!plate(row.vehicle_plate))return null;
     return candidates.length===1?candidates[0]:null;
   }
-  function summarize({trips=[],drivers=[],vehicles=[],events=[],nativeSessions=[],cartrack=[],start,end,partial=false}){
+  function summarize({trips=[],drivers=[],vehicles=[],events=[],nativeSessions=[],cartrack=[],start,end,partial=false,vehicleRosterPartial=false}){
     if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)throw Error('invalid_period');
     const declarations=shifts.sessions(events).map(s=>({...s,source:'form'}));
+    const registeredPlates = new Map(vehicles.map(vehicle => [vehicle.id, plate(vehicle.plate)]));
+    const seenPlates = new Set();
+    const repeatedPlates = new Set();
+    for (const registration of registeredPlates.values()) {
+      if (seenPlates.has(registration)) repeatedPlates.add(registration);
+      seenPlates.add(registration);
+    }
+    for (const declaration of declarations) {
+      const { entry, exit } = declaration;
+      if (!entry || !exit) continue;
+      const plates = [registeredPlates.get(entry.vehicle_id), plate(entry.vehicle_plate), plate(exit.vehicle_plate)];
+      if (new Set(plates.filter(Boolean)).size > 1) declaration.flags.push('conflicting_vehicle_plate');
+    }
     let excludedTestSessions=0;
     for(const s of nativeSessions){
       if(s.is_test){excludedTestSessions++;continue;}
@@ -38,7 +52,6 @@
     }
     // Native and form declarations are one review set; conflicting sources cannot validate each other.
     for(const s of declarations){
-      if(s.entry?.review_flags?.length||s.exit?.review_flags?.length)s.flags.push('source_review_pending');
       if(!s.entry||!s.exit)continue;
       const a=stamp(s.entry.registered_at),b=stamp(s.exit.registered_at);
       if(a===null||b===null)continue;
@@ -50,13 +63,20 @@
       }))s.flags.push('conflicting_declaration');
     }
     const result={groups:[],completed:0,excludedNonCompleted:0,undated:0,invalidTimes:0,identityPending:[],duplicateTrips:0,excludedTestSessions,partial,coverageVerified:false};
+    const ambiguous = nativeShifts.conflictingTripOwners(trips);
     const groups=new Map(),seen=new Set();
     for(const t of trips){
       if(!['uber','bolt'].includes(t.platform))continue;
       // A missing source ID cannot be safely deduplicated or compared.
-      if(!text(t.source_trip_id)){result.identityPending.push({id:t.id,reason:'missing_source_trip_id'});continue;}
-      const key=t.platform+'|'+t.source_trip_id;
+      const sourceId = text(t.source_trip_id);
+      if(!sourceId){result.identityPending.push({id:t.id,reason:'missing_source_trip_id'});continue;}
+      const key=t.platform+'|'+sourceId;
       if(seen.has(key)){result.duplicateTrips++;result.partial=true;continue;}seen.add(key);
+      if (ambiguous.has(key)) {
+        result.identityPending.push({source_trip_id:sourceId, platform:t.platform, reason:'conflicting_trip_owners'});
+        result.partial=true;
+        continue;
+      }
       const recorded=[t.accepted_at,t.pickup_at,t.dropoff_at,t.finished_at,t.observed_at].map(stamp).filter(x=>x!==null);
       if(!recorded.length){result.undated++;continue;}
       // This is a dated-record view, not a claim to capture every service spanning the day.
@@ -67,17 +87,30 @@
       if(!serviceTimes.some(at=>at>=start&&at<end))continue;
       const driver=resolve(t,'driver',t.platform,drivers),vehicle=resolve(t,'vehicle',t.platform,vehicles);
       if(!driver||!vehicle){result.identityPending.push({id:t.id,source_trip_id:t.source_trip_id,reason:'identity_unconfirmed'});continue;}
-      const first=Math.min(...serviceTimes),last=Math.max(...serviceTimes);
+      if (serviceTimes.some((time, i) => i > 0 && time < serviceTimes[i - 1])) {
+        result.invalidTimes++;
+        continue;
+      }
+      const first=serviceTimes[0],last=serviceTimes[serviceTimes.length - 1];
       const serviceStart=stamp(t.accepted_at)??stamp(t.pickup_at);
       const serviceEnd=stamp(t.finished_at)??stamp(t.dropoff_at);
-      if(serviceStart!==null&&serviceEnd!==null&&serviceEnd<serviceStart){result.invalidTimes++;continue;}
+      const registration = registeredPlates.get(vehicle.id);
       const groupKey=driver.id+'|'+vehicle.id;
-      if(!groups.has(groupKey))groups.set(groupKey,{driverId:driver.id,driverName:String(driver.full_name||'Motorista identificado'),vehicleId:vehicle.id,plate:vehicle.plate,uber:0,bolt:0,firstObserved:first,lastObserved:last,missingServiceStart:0,missingServiceEnd:0,compatibleDeclarations:0,declarationPending:0,services:[],cartrackMatches:cartrack.filter(c=>plate(c.registration)===plate(vehicle.plate)).length});
+      if(!groups.has(groupKey))groups.set(groupKey,{driverId:driver.id,driverName:String(driver.full_name||'Motorista identificado'),vehicleId:vehicle.id,plate:vehicle.plate,uber:0,bolt:0,firstObserved:first,lastObserved:last,missingServiceStart:0,missingServiceEnd:0,compatibleDeclarations:0,declarationPending:0,services:[],fleetPlateUnconfirmed:vehicleRosterPartial || repeatedPlates.has(registration),cartrackMatches:registration ? cartrack.filter(c=>plate(c.registration)===registration).length : 0});
       const g=groups.get(groupKey);g[t.platform]++;result.completed++;
       g.firstObserved=Math.min(g.firstObserved,first);g.lastObserved=Math.max(g.lastObserved,last);
       if(serviceStart===null)g.missingServiceStart++;
       if(serviceEnd===null)g.missingServiceEnd++;
-      const matching=declarations.filter(s=>s.entry&&s.exit&&!s.flags.length&&s.entry.driver_id===driver.id&&s.entry.vehicle_id===vehicle.id&&stamp(s.entry.registered_at)<=first+300000&&stamp(s.exit.registered_at)>=last-300000);
+      const matching = declarations.filter(s => {
+        if (!s.entry || !s.exit || s.flags.length || s.entry.driver_id !== driver.id || s.entry.vehicle_id !== vehicle.id) return false;
+        const entry = stamp(s.entry.registered_at), exit = stamp(s.exit.registered_at);
+        if (first === last && serviceStart === null) return entry < last && last <= exit;
+        if (first === last && serviceEnd === null) return entry <= first && first < exit;
+        // A start and finish at one instant give no direction at a handover.
+        if (first === last) return entry < first && first < exit;
+        if (last <= entry || first >= exit) return false;
+        return entry <= first + 300000 && exit >= last - 300000;
+      });
       const matches=[...new Map(matching.map(s=>{
         const m={source:s.source,entry:stamp(s.entry.registered_at),exit:stamp(s.exit.registered_at)};
         return [m.source+'|'+m.entry+'|'+m.exit,m];
@@ -89,7 +122,7 @@
       g.services.sort((a,b)=>a.firstObserved-b.firstObserved||a.platform.localeCompare(b.platform));
       if(result.partial){g.declarationPending+=g.compatibleDeclarations;g.compatibleDeclarations=0;for(const s of g.services){s.matches=[];s.state='partial';}}
     }
-    result.groups=[...groups.values()].sort((a,b)=>a.driverName.localeCompare(b.driverName,'pt')||a.plate.localeCompare(b.plate));
+    result.groups=[...groups.values()].sort((a,b)=>a.driverName.localeCompare(b.driverName,'pt')||text(a.plate).localeCompare(text(b.plate)));
     return result;
   }
   const api={summarize};

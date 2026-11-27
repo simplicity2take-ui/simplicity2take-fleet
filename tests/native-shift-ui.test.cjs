@@ -11,7 +11,9 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
   if(name==='fleet_shift_admin_close'){rows[0]={...rows[0],ended_at:'2026-11-10T16:00:00Z',closure_kind:'admin',closure_note:args.p_note};return {data:rows[0]};}
   rows[0]={...rows[0],ended_at:'2026-11-10T16:00:00Z'};return {data:rows[0]};
  }};
- const c={console,URL,Date,Number,JSON,crypto:{randomUUID:()=>String(++counter)},navigator:{onLine:true},sessionStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},window:{location:{origin:'https://fleet.example.test'}}};
+ const listeners={};
+ const document={addEventListener:(name,handler)=>{listeners[name]=handler;}};
+ const c={document,console,URL,Date,Number,JSON,crypto:{randomUUID:()=>String(++counter)},navigator:{onLine:true},sessionStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},window:{location:{origin:'https://fleet.example.test'}}};
  vm.createContext(c);
  for(const path of ['native-shifts.js','native-shift-ui.js'])vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'..',path),'utf8'),c);
  const portal=c.NativeShiftPortal.create({client,getUser:()=>selectedUser,escapeHtml:s=>String(s??'').replaceAll('<','&lt;').replaceAll('>','&gt;'),changed(){}});
@@ -20,6 +22,15 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
  await portal.lookup('a'.repeat(32));assert.ok(portal.render().includes('&lt;script&gt;'));
  await portal.lookup('invalid-qr');assert.ok(!portal.render().includes('Iniciar turno'));assert.ok(!portal.render().includes('AA-00-AA'));
  await portal.lookup('a'.repeat(32));
+ const replacement='b'.repeat(32);
+ listeners.input({target:{id:'nativeShiftQr',value:replacement,closest:()=>null}});
+ assert.ok(!portal.render().includes('Iniciar turno'));
+ const beforeNewLookup=calls.length;
+ await portal.submit('start');
+ assert.equal(calls.length,beforeNewLookup);
+ await portal.load();
+ assert.ok(portal.render().includes('value="'+replacement+'"'));
+ await portal.lookup(replacement);
  loadFails=true;await portal.load();assert.ok(portal.render().includes('Turno por confirmar'));assert.ok(!portal.render().includes('Pronto para começar'));
  const beforeOfflineLoad=calls.length;await portal.submit('start');assert.equal(calls.length,beforeOfflineLoad);
  loadFails=false;await portal.load();
@@ -45,6 +56,38 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
  assert.ok(details.includes('Leitura final: 10/11/2026, 15:59:00'));
  assert.ok(details.includes('100 km'));assert.ok(details.includes('112.5 km'));
  rows[0].cartrack_review.distance=NaN;await portal.load();assert.ok(portal.adminPanel().includes('Quilómetros Cartrack por confirmar'));
- portal.clear();selectedUser=null;assert.ok(!portal.render().includes('AA-00-AA'));
+ let finishLookup;
+ client.rpc=()=>new Promise(resolve=>{finishLookup=resolve;});
+ selectedUser={id:'u',role:'driver'};
+ const delayed=portal.lookup('a'.repeat(32));
+ portal.clear();
+ finishLookup({data:{id:'old',plate:'OLD-QR'}});
+ await delayed;
+ assert.ok(!portal.render().includes('OLD-QR'));
+ assert.ok(!portal.render().includes(replacement));
+ // An earlier session's completion cannot clear the new session's pending action.
+ for (const action of ['start','admin_close']) {
+   rows=[];
+   selectedUser={id:'u',role:action==='start'?'driver':'admin'};
+   await portal.load();
+   client.rpc=async()=>({data:{id:'v',plate:'AA-00-AA'}});
+   if(action==='start')await portal.lookup('a'.repeat(32));
+   const responses=[];
+   client.rpc=()=>new Promise(resolve=>responses.push(resolve));
+   const previous=action==='start'?portal.submit('start'):portal.adminClose('old-shift','Synthetic closure reason');
+   assert.equal(responses.length,1);
+   portal.clear();
+   selectedUser={id:'u',role:'driver'};
+   await portal.load();
+   const current=portal.lookup(replacement);
+   responses[0]({data:{id:'old-shift'}});
+   await previous;
+   assert.match(portal.render(),/data-native-shift-lookup disabled/);
+   responses[1]({data:{id:'new-vehicle',plate:'BB-11-BB'}});
+   await current;
+   assert.ok(portal.render().includes('BB-11-BB'));
+   portal.clear();
+ }
+ selectedUser=null;assert.ok(!portal.render().includes('AA-00-AA'));
  console.log('PASS driver shift UI: safe QR lookup, escaping, duplicate-click prevention, server-only arguments, pending mileage, offline rejection, lost-response recovery and logout clear');
 })().catch(e=>{console.error(e);process.exitCode=1});

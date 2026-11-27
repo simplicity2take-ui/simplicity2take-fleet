@@ -35,31 +35,52 @@ Deno.serve(async(req)=>{
      const a=new Date(Date.parse(shift.started_at)-15*60000).toISOString(),b=new Date(Date.parse(shift.ended_at)+15*60000).toISOString();
      const trips:any[]=[];let tripPartial=false;
      const filters=['accepted_at','pickup_at','dropoff_at','finished_at'].map(field=>`and(${field}.gte.${a},${field}.lte.${b})`);
-     filters.push(`and(accepted_at.lte.${b},finished_at.gte.${a})`,`and(pickup_at.lte.${b},dropoff_at.gte.${a})`);
-     let total:number|null=null;
-     while(trips.length<5000){
-       const page=await db.from('platform_trip_records').select('*',{count:'exact'}).in('platform',['uber','bolt']).or(filters.join(','))
-         .order('id').range(trips.length,Math.min(trips.length+500,5000)-1);
-       if(page.error)throw Error('trip_history_unavailable');total=page.count??total;
-       if(!page.data?.length)break;trips.push(...page.data);if(total!==null&&trips.length>=total)break;
+     // Imported trips may have only one opening and one closing timestamp.
+     for (const opening of ['accepted_at','pickup_at']) {
+       for (const closing of ['dropoff_at','finished_at']) {
+         filters.push(`and(${opening}.lte.${b},${closing}.gte.${a})`);
+       }
      }
-     tripPartial=total===null||total>trips.length;
+     let total:number|null=null;
+     const rowIds=new Set<string>();
+     let offset = 0;
+     while (offset < 5000) {
+       const page=await db.from('platform_trip_records').select('*',{count:'exact'}).in('platform',['uber','bolt']).eq('order_status','completed').or(filters.join(','))
+         .order('id').range(offset, Math.min(offset + 500, 5000) - 1);
+       if(page.error || !Array.isArray(page.data))throw Error('trip_history_unavailable');
+       if(page.count === null || !Number.isSafeInteger(page.count) || page.count < 0) {
+         tripPartial=true;
+       } else {
+         if (total !== null && total !== page.count) tripPartial = true;
+         total = page.count;
+       }
+       for (const row of page.data) {
+         if (!row?.id || rowIds.has(row.id)) {
+           tripPartial = true;
+           continue;
+         }
+         rowIds.add(row.id);
+         trips.push(row);
+       }
+       offset += page.data.length;
+       if (!page.data.length || (total !== null && offset >= total)) break;
+     }
+     tripPartial ||= total !== trips.length;
      const tripReview=(globalThis as any).NativeShifts.reviewTrips(shift,trips,driver.data,tripPartial);
      let cartrackReview:any={state:'pending',reason:'missing_history'};
      // Excessively old open/late shifts remain reviewable without an unbounded API query.
      if(Date.parse(b)-Date.parse(a)<=31*86400000){
        try{
-         const history:any[]=[];let complete=false;let expected:number|null=null;
+         const history:any[]=[];let complete=false;
+         const checkPage=(globalThis as any).ShiftMileage.historyPagination();
          for(let page=1;page<=3;page++){
            const response=await fetch(url+'/functions/v1/cartrack-history',{method:'POST',headers:{'Content-Type':'application/json','x-cartrack-sync-key':key},body:JSON.stringify({start:a,end:b,page}),signal:AbortSignal.timeout(50000)});
            if(!response.ok)throw Error('history_failed');const payload=await response.json();
            if(payload.success!==true||!Array.isArray(payload.trips))throw Error('invalid_history');
-           history.push(...payload.trips);expected=Number.isInteger(payload.meta?.total)?payload.meta.total:expected;
-           const last=Number(payload.meta?.last_page);
-           if(Number.isInteger(last)&&last>0&&last===page){complete=true;break;}
+           history.push(...payload.trips);
+           const status=checkPage(page,payload);
+           if(status!=='next'){complete=status==='complete';break;}
          }
-         const unique=new Set(history.map(t=>String(t.id)));
-         if(unique.size!==history.length||(expected!==null&&expected!==history.length))complete=false;
          const result=(globalThis as any).ShiftMileage.mileage((globalThis as any).NativeShifts.session(shift),history,!complete);
          cartrackReview={...result,state:result.distance===null?'pending':'calculated',source:'cartrack',confirmed_at:result.distance===null?null:checked};
        }catch{cartrackReview={state:'pending',reason:'history_unavailable',source:'cartrack'};}

@@ -25,10 +25,16 @@
     if(!id&&!uuid&&kind==='vehicle'&&!plate(row.vehicle_plate))return null;
     return candidates.length===1?candidates[0]:null;
   }
-  function summarize({trips=[],drivers=[],vehicles=[],events=[],nativeSessions=[],cartrack=[],start,end,partial=false}){
+  function summarize({trips=[],drivers=[],vehicles=[],events=[],nativeSessions=[],cartrack=[],start,end,partial=false,vehicleRosterPartial=false}){
     if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)throw Error('invalid_period');
     const declarations=shifts.sessions(events).map(s=>({...s,source:'form'}));
     const registeredPlates = new Map(vehicles.map(vehicle => [vehicle.id, plate(vehicle.plate)]));
+    const seenPlates = new Set();
+    const repeatedPlates = new Set();
+    for (const registration of registeredPlates.values()) {
+      if (seenPlates.has(registration)) repeatedPlates.add(registration);
+      seenPlates.add(registration);
+    }
     for (const declaration of declarations) {
       const { entry, exit } = declaration;
       if (!entry || !exit) continue;
@@ -82,7 +88,7 @@
       const serviceEnd=stamp(t.finished_at)??stamp(t.dropoff_at);
       const registration = registeredPlates.get(vehicle.id);
       const groupKey=driver.id+'|'+vehicle.id;
-      if(!groups.has(groupKey))groups.set(groupKey,{driverId:driver.id,driverName:String(driver.full_name||'Motorista identificado'),vehicleId:vehicle.id,plate:vehicle.plate,uber:0,bolt:0,firstObserved:first,lastObserved:last,missingServiceStart:0,missingServiceEnd:0,compatibleDeclarations:0,declarationPending:0,services:[],cartrackMatches:registration ? cartrack.filter(c=>plate(c.registration)===registration).length : 0});
+      if(!groups.has(groupKey))groups.set(groupKey,{driverId:driver.id,driverName:String(driver.full_name||'Motorista identificado'),vehicleId:vehicle.id,plate:vehicle.plate,uber:0,bolt:0,firstObserved:first,lastObserved:last,missingServiceStart:0,missingServiceEnd:0,compatibleDeclarations:0,declarationPending:0,services:[],fleetPlateUnconfirmed:vehicleRosterPartial || repeatedPlates.has(registration),cartrackMatches:registration ? cartrack.filter(c=>plate(c.registration)===registration).length : 0});
       const g=groups.get(groupKey);g[t.platform]++;result.completed++;
       g.firstObserved=Math.min(g.firstObserved,first);g.lastObserved=Math.max(g.lastObserved,last);
       if(serviceStart===null)g.missingServiceStart++;

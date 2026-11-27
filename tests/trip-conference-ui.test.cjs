@@ -71,3 +71,22 @@ test('unidentifiable and repeated database rows leave the conference partial and
     assert.match(html, /Consulta parcial: declaração por confirmar/);
   }
 });
+
+test('CarTrack links require an unambiguous Fleet plate in a complete vehicle list', async () => {
+  const car = tables.vehicles[0];
+  for (const [fleet, count, confirmed] of [
+    [[car], 1, true],
+    [[car, {...car, id:'other', bolt_vehicle_uuid:'other', plate:' aa00aa '}], 2, false],
+    [[car], null, false]
+  ]) {
+    const s = setup(async table => table === 'vehicles'
+      ? {data:fleet, count}
+      : {data:tables[table], count:tables[table].length},
+      {getCartrack:()=>[{registration:'AA00AA'}]});
+    await s.portal.load({day:'2026-11-10'});
+    const html = s.portal.render();
+    assert.match(html, /1 serviços concluídos identificados/);
+    assert.equal(html.includes('Consultar leituras Cartrack'), confirmed);
+    if (!confirmed) assert.match(html, /Correspondência Cartrack por confirmar/);
+  }
+});

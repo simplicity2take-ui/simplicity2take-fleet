@@ -1016,30 +1016,34 @@ function renderVehicles() {
   `;
 }
 function vehicleOdometer(vehicle) {
+  return vehicleOdometerDetails(vehicle).label;
+}
+
+function vehicleOdometerDetails(vehicle) {
   const plate = normalizePlateSearch(vehicle.plate);
-  if (!plate) return "Matrícula por confirmar";
+  if (!plate) return {label:"Matrícula por confirmar"};
   const matches = state.cartrackVehicles.filter(row => normalizePlateSearch(row.registration) === plate);
-  if (!matches.length) return "Sem leitura CarTrack";
+  if (!matches.length) return {label:"Sem leitura CarTrack"};
   if (matches.length !== 1 || state.vehicles.filter(row => normalizePlateSearch(row.plate) === plate).length !== 1) {
-    return "Correspondência CarTrack por confirmar";
+    return {label:"Correspondência CarTrack por confirmar"};
   }
   const row = matches[0];
   const km = row.odometerKm;
-  if (!Number.isFinite(km) || km < 0) return "Sem leitura de odómetro CarTrack";
+  if (!Number.isFinite(km) || km < 0) return {label:"Sem leitura de odómetro CarTrack"};
   const at = ShiftMileage.timestamp(row.eventTs);
-  if (at === null || at > Date.now()) return "Data da leitura CarTrack por confirmar";
+  if (at === null || at > Date.now()) return {label:"Data da leitura CarTrack por confirmar"};
   const status = cartrackTimestampIsStale(at) ? " · Leitura antiga" : "";
   const display = (value, time) => `${value.toLocaleString("pt-PT")} km · CarTrack · ${new Date(time).toLocaleString("pt-PT", {timeZone:"Europe/Lisbon"})} (Lisboa)`;
   const current = display(km, at) + status;
   const key = odometerHistoryKey(plate, row.vehicleId);
   const history = state.vehicleOdometerHistory?.get(key) || [];
   for (const previous of history) {
-    if (previous.at > at) return `${current} · Existe uma leitura posterior: ${display(previous.km, previous.at)}. Confirmar odómetro.`;
+    if (previous.at > at) return {label:`${current} · Existe uma leitura posterior: ${display(previous.km, previous.at)}. Confirmar odómetro.`};
     if (previous.km > km || (previous.at === at && previous.km !== km)) {
-      return `${current} · Divergência com a leitura de ${display(previous.km, previous.at)}. Confirmar odómetro.`;
+      return {label:`${current} · Divergência com a leitura de ${display(previous.km, previous.at)}. Confirmar odómetro.`};
     }
   }
-  return current;
+  return {label:current, reading:{km, at}};
 }
 
 function recordedOdometer(stored, source) {
@@ -3042,7 +3046,7 @@ function bindPortalEvents() {
     if (target.dataset.manualOdometer) {
       const vehicle = state.vehicles.find(row => row.id === target.dataset.manualOdometer);
       if (state.profile?.role === 'admin' && vehicle) {
-        return window.FleetManualOdometer.open({vehicle, client:supabaseClient, getUser:()=>state.profile, cartrack:vehicleOdometer(vehicle)});
+        return window.FleetManualOdometer.open({vehicle, client:supabaseClient, getUser:()=>state.profile, cartrack:vehicleOdometerDetails(vehicle)});
       }
       return;
     }

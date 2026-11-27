@@ -2,7 +2,7 @@
 
 Na administração em **Veículos → Leituras manuais**, o administrador consegue ver a indicação CarTrack e as últimas dez leituras manuais da viatura. Introduz os quilómetros inteiros que vê no painel nesse momento. O servidor fixa a hora de registo e a identidade do autor. Uma medição histórica, o odómetro de aquisição e uma distância percorrida têm significados diferentes e ficam fora deste formulário.
 
-O registo manual mantém a sua origem numa tabela própria. Um valor inesperado continua disponível para investigação. O portal apresenta as duas origens em paralelo. A deteção automática de divergências entre origens e o registo de retificações são trabalho subsequente.
+O registo manual mantém a sua origem numa tabela própria. Um valor inesperado continua disponível para investigação. O portal compara cada uma das dez leituras manuais apresentadas com a leitura CarTrack identificada na ficha. Sinaliza um valor inferior a uma observação CarTrack anterior, um valor superior a uma observação CarTrack posterior e valores diferentes no mesmo instante. Desconsidera diferenças inferiores a 1 km, porque a introdução manual usa quilómetros inteiros. A comparação depende de matrícula inequívoca, data válida e histórico CarTrack coerente. O aviso pede conferência humana e preserva os dois valores originais. As retificações auditadas continuam pendentes.
 
 ## Dependência e verificação
 

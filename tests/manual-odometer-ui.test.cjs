@@ -12,7 +12,7 @@ test('admin manual reading retries retain the request id and a previous dialog c
     querySelectorAll(){return [status,heading,auto,list];}, showModal(){this.open=true;},close(){this.open=false;}
   };
   const store = new Map(), calls = [];
-  const c={window:{},document:{getElementById:()=>dialog,createElement:()=>({})},crypto:{randomUUID:()=>String(calls.length+1)},
+  const c={window:{},Date:class extends Date {static now(){return Date.parse('2026-11-26T18:00:00Z');}},document:{getElementById:()=>dialog,createElement:()=>({})},crypto:{randomUUID:()=>String(calls.length+1)},
     sessionStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)}};
   vm.runInNewContext(fs.readFileSync(require.resolve('../vehicle-manual-odometer.js'),'utf8'),c);
   const controller=c.window.FleetManualOdometer;
@@ -26,7 +26,7 @@ test('admin manual reading retries retain the request id and a previous dialog c
       data=[{km:0,recorded_by:user.id,recorded_at:'2026-11-26T12:00:00Z'}];
       return {data:data[0].recorded_at};
     }};
-  const options={client,vehicle:{id:'v',plate:'AA-00-AA'},getUser:()=>user,cartrack:'Sem leitura CarTrack'};
+  const options={client,vehicle:{id:'v',plate:'AA-00-AA'},getUser:()=>user,cartrack:{label:'Sem leitura CarTrack'}};
   await controller.open(options);
   assert.equal(reads,0);
   user.role='admin';
@@ -40,6 +40,23 @@ test('admin manual reading retries retain the request id and a previous dialog c
   assert.deepEqual(calls[0],calls[1]);
   assert.match(status.textContent,/Leitura registada/);
   assert.match(list.items[0].textContent,/0 km.*Registada por si/);
+  const before = Date.parse('2026-07-01T10:00:00Z');
+  const after = before + 3600000;
+  options.cartrack = {label:'CarTrack', reading:{at:before, km:100.5}};
+  const manual = (km, at) => ({km, recorded_at:new Date(at).toISOString(), recorded_by:user.id});
+  data = [manual(0, after), manual(10, before), manual(101, before - 1000), manual('100.0', after), manual(102, after)];
+  await controller.open(options);
+  assert.match(list.items[0].textContent,/inferior ao CarTrack anterior/);
+  assert.match(list.items[1].textContent,/mesmo instante/);
+  assert.doesNotMatch(list.items[2].textContent,/Confirmar/);
+  assert.doesNotMatch(list.items[3].textContent,/Confirmar/);
+  assert.doesNotMatch(list.items[4].textContent,/Confirmar/);
+  options.cartrack.reading = {at:after, km:97};
+  await controller.open(options);
+  assert.match(list.items[2].textContent,/superior ao CarTrack posterior/);
+  options.cartrack = {label:'Correspondência por confirmar'};
+  await controller.open(options);
+  assert.ok(list.items.every(item=>!item.textContent.includes('Confirmar')));
   let finish;
   read=()=>new Promise(resolve=>{finish=resolve;});
   const opening=controller.open(options);

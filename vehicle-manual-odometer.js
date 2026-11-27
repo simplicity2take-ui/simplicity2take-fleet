@@ -11,6 +11,19 @@
     for (const node of dialog.querySelectorAll('[data-value]')) node.textContent = '';
   }
 
+  function comparisonNote(manualKm, manualTime, automatic) {
+    if (!automatic || !Number.isSafeInteger(manualKm) || manualKm < 0 ||
+        !Number.isFinite(manualTime) || manualTime > Date.now()) return '';
+    // The dashboard reading is entered in whole km. A fractional difference
+    // below one km can result from the two displays' precision.
+    const difference = manualKm - automatic.km;
+    if (Math.abs(difference) < 1) return '';
+    if (manualTime === automatic.at) return ' · Confirmar: valores diferentes no mesmo instante.';
+    if (manualTime > automatic.at && difference < 0) return ' · Confirmar: inferior ao CarTrack anterior.';
+    if (manualTime < automatic.at && difference > 0) return ' · Confirmar: superior ao CarTrack posterior.';
+    return '';
+  }
+
   async function open({vehicle, client, getUser, cartrack}) {
     const user = getUser();
     if (user?.role !== 'admin' || !user.id || !vehicle?.id) return;
@@ -26,7 +39,7 @@
     const current = () => active === context && dialog.open && getUser()?.id === user.id && getUser()?.role === 'admin';
     let ready = false;
     dialog.querySelector('h2').textContent = 'Leituras manuais · ' + vehicle.plate;
-    dialog.querySelector('[data-cartrack]').textContent = cartrack;
+    dialog.querySelector('[data-cartrack]').textContent = cartrack.label;
     dialog.querySelector('[data-close]').onclick = clear;
     dialog.onclose = () => { if (!dialog.open) clear(); };
     dialog.showModal();
@@ -43,8 +56,11 @@
         if (error || !Array.isArray(data)) throw Error('read');
         list.replaceChildren(...data.map(row => {
           const li = document.createElement('li');
-          const at = new Date(row.recorded_at).toLocaleString('pt-PT', {timeZone:'Europe/Lisbon'});
+          const date = new Date(row.recorded_at);
+          const km = typeof row.km === 'string' && /^\d+(?:\.0+)?$/.test(row.km) ? Number(row.km) : row.km;
+          const at = date.toLocaleString('pt-PT', {timeZone:'Europe/Lisbon'});
           li.textContent = `${Number(row.km).toLocaleString('pt-PT')} km · ${at} (Lisboa) · ${row.recorded_by === user.id ? 'Registada por si' : 'Outro administrador'}`;
+          li.textContent += comparisonNote(km, date.getTime(), cartrack.reading);
           return li;
         }));
         status.textContent = saved ? 'Leitura registada.' : data.length ? '' : 'Sem leituras manuais.';

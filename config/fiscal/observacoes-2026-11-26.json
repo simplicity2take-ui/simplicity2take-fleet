@@ -1,0 +1,38 @@
+[
+  {
+    "entidade": "DR",
+    "referencia": "Lei 64/2025, art. 3.º",
+    "estado": "publicada",
+    "dataEvento": "2025-11-07",
+    "efeitosDesde": "2027-01-01",
+    "impacto": "A disposição transitória prevê 18% para a taxa dos n.os 1 e 5 do artigo 87.º do CIRC nos períodos que comecem em 2027. Confirmar o regime do sujeito passivo, taxas reduzidas e alterações posteriores antes de simular IRC.",
+    "fonte": "https://diariodarepublica.pt/dr/detalhe/lei/64-2025-944874408"
+  },
+  {
+    "entidade": "DR",
+    "referencia": "Decreto-Lei 161/2026, arts. 6.º e 7.º",
+    "estado": "publicada",
+    "dataEvento": "2026-08-04",
+    "efeitosDesde": "2027-01-01",
+    "impacto": "Calendário transitório de pagamento do IUC com base no total da liquidação anual por sujeito passivo.",
+    "fonte": "https://diariodarepublica.pt/dr/detalhe/decreto-lei/161-2026-1154275218"
+  },
+  {
+    "entidade": "AR",
+    "referencia": "PPL 110/XVII/2.ª · OE 2027",
+    "estado": "aprovada",
+    "dataEvento": "2026-11-24",
+    "efeitosDesde": null,
+    "impacto": "Aprovação em votação final global. Aguardar identificação do diploma publicado e das datas de efeitos de cada disposição.",
+    "fonte": "https://app.parlamento.pt/WebUtils/docs/doc.pdf?Fich=XVII_2_21_2026-11-24_ResultadoVotacoes_2026-11-24.pdf&Inline=true&Path=CqXry0Lp0A39oZpnstX0C%2Fq0UPSgbCf6jLDEAK04cXiPPIxBaZIiebqclck2QYNjJCWOFx1oRHSSDzdJ3Y%2BBb6lpRrHx4U8yy3a3XvdECLasiXlcKoNGp2G4No0TSoXutlfY6lcDGWb1n097DuLsQcnkNE8aYoMqZx77UkPzrvwf5I6sg%2FKIAqyKaY0oJdhsD6WYRqIz2QahLoxUv5JwPErVjQ2QmaxlEmdVxoV04KSukmCNj2Y9zPr0y3snQ0XOuZHSkBcncIQ%2F723qVMz4QR%2Brt522bAkUKWYZytq5t8zWGmq84JhNbBNv8fRuVbLH5ElbAVxWlwNQJ%2FKMi4Zmduv7L4LrMVEJAO4oTfwa96qDaoGLmC51v9mZtGV4qe2WAOLsJ%2BrnVb5sEm%2Bz20NeqOmAirMsJr6odnaM1JAe2EkyVM2EYP0iJ%2B0kP7LSVqkbzrKgCKvIpwaGj88qo%2By7mw%3D%3D"
+  },
+  {
+    "entidade": "GAIA",
+    "referencia": "Assembleia Municipal de 27-11-2026 · ponto 3.3",
+    "estado": "agendada",
+    "dataEvento": "2026-11-27",
+    "efeitosDesde": null,
+    "impacto": "Derrama de 2027 na ordem do dia. Recolher deliberação, taxa, isenções e exercício aplicável antes de parametrizar.",
+    "fonte": "https://assembleia.cm-gaia.pt/sessoes/111"
+  }
+]

@@ -15,6 +15,7 @@ test('vehicle list and details show a dated odometer for a uniquely identified v
   vm.createContext(c);
   for (const code of [functions('normalizePlateSearch','searchVehicles'),functions('cartrackTimestampIsStale','uberRideRows'),functions('vehicleOdometer','renderDrivers')]) vm.runInContext(code,c);
   const display = () => c.vehicleOdometer(vehicle);
+  assert.equal(c.vehicleOdometerDetails(vehicle).reading.km,0);
   assert.match(display(),/0 km · CarTrack/);
   assert.match(display(),/13:00:00 \(Lisboa\)/);
   assert.doesNotMatch(display(),/antiga/);
@@ -35,9 +36,11 @@ test('vehicle list and details show a dated odometer for a uniquely identified v
     assert.match(display(),/Data da leitura CarTrack por confirmar/);
   }
   state.cartrackVehicles.push({...row,registration:vehicle.plate});
+  assert.equal(c.vehicleOdometerDetails(vehicle).reading, undefined);
   assert.match(display(),/Correspondência CarTrack por confirmar/);
   state.cartrackVehicles.pop();
   state.vehicles.push({plate:'AA00AA'});
+  assert.equal(c.vehicleOdometerDetails(vehicle).reading, undefined);
   assert.match(display(),/Correspondência CarTrack por confirmar/);
   state.cartrackVehicles=[];
   assert.match(display(),/Sem leitura CarTrack/);

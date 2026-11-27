@@ -764,6 +764,7 @@ async function logout() {
   await supabaseClient.auth.signOut();
   documentBlobCache.clear();
   state.sessionUserId = null;
+  window.FleetManualOdometer?.clear();
   nativeShiftPortal.clear();
   tripConferencePortal.clear();
   state.nativeShiftAvailable=false;
@@ -1015,30 +1016,34 @@ function renderVehicles() {
   `;
 }
 function vehicleOdometer(vehicle) {
+  return vehicleOdometerDetails(vehicle).label;
+}
+
+function vehicleOdometerDetails(vehicle) {
   const plate = normalizePlateSearch(vehicle.plate);
-  if (!plate) return "Matrícula por confirmar";
+  if (!plate) return {label:"Matrícula por confirmar"};
   const matches = state.cartrackVehicles.filter(row => normalizePlateSearch(row.registration) === plate);
-  if (!matches.length) return "Sem leitura CarTrack";
+  if (!matches.length) return {label:"Sem leitura CarTrack"};
   if (matches.length !== 1 || state.vehicles.filter(row => normalizePlateSearch(row.plate) === plate).length !== 1) {
-    return "Correspondência CarTrack por confirmar";
+    return {label:"Correspondência CarTrack por confirmar"};
   }
   const row = matches[0];
   const km = row.odometerKm;
-  if (!Number.isFinite(km) || km < 0) return "Sem leitura de odómetro CarTrack";
+  if (!Number.isFinite(km) || km < 0) return {label:"Sem leitura de odómetro CarTrack"};
   const at = ShiftMileage.timestamp(row.eventTs);
-  if (at === null || at > Date.now()) return "Data da leitura CarTrack por confirmar";
+  if (at === null || at > Date.now()) return {label:"Data da leitura CarTrack por confirmar"};
   const status = cartrackTimestampIsStale(at) ? " · Leitura antiga" : "";
   const display = (value, time) => `${value.toLocaleString("pt-PT")} km · CarTrack · ${new Date(time).toLocaleString("pt-PT", {timeZone:"Europe/Lisbon"})} (Lisboa)`;
   const current = display(km, at) + status;
   const key = odometerHistoryKey(plate, row.vehicleId);
   const history = state.vehicleOdometerHistory?.get(key) || [];
   for (const previous of history) {
-    if (previous.at > at) return `${current} · Existe uma leitura posterior: ${display(previous.km, previous.at)}. Confirmar odómetro.`;
+    if (previous.at > at) return {label:`${current} · Existe uma leitura posterior: ${display(previous.km, previous.at)}. Confirmar odómetro.`};
     if (previous.km > km || (previous.at === at && previous.km !== km)) {
-      return `${current} · Divergência com a leitura de ${display(previous.km, previous.at)}. Confirmar odómetro.`;
+      return {label:`${current} · Divergência com a leitura de ${display(previous.km, previous.at)}. Confirmar odómetro.`};
     }
   }
-  return current;
+  return {label:current, reading:{km, at}};
 }
 
 function recordedOdometer(stored, source) {
@@ -1105,7 +1110,7 @@ function vehicleRow(vehicle, admin) {
       <td>${escapeHtml(vehicle.vin)}</td>
       <td>${escapeHtml(vehicle.driverIds.map(driverName).join(", ") || "Sem motorista")}</td>
       <td><button class="mini-button" type="button" data-view-vehicle-docs="${escapeHtml(vehicle.id)}">Ver documentos</button><div class="vehicle-document-links">${documentSummary}</div></td>
-      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-qr-vehicle="${escapeHtml(vehicle.id)}">QR</button><button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}">+ Documento</button><button class="mini-button" type="button" data-edit-vehicle="${escapeHtml(vehicle.id)}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${escapeHtml(vehicle.id)}">Eliminar</button></div>` : "Consulta"}</td>
+      <td>${admin ? `<div class="row-actions"><button class="mini-button" type="button" data-manual-odometer="${escapeHtml(vehicle.id)}">Leituras manuais</button><button class="mini-button" type="button" data-qr-vehicle="${escapeHtml(vehicle.id)}">QR</button><button class="mini-button" type="button" data-open-vehicle-doc="${escapeHtml(vehicle.id)}">+ Documento</button><button class="mini-button" type="button" data-edit-vehicle="${escapeHtml(vehicle.id)}">Editar</button><button class="danger-button" type="button" data-delete-vehicle="${escapeHtml(vehicle.id)}">Eliminar</button></div>` : "Consulta"}</td>
     </tr>
   `;
 }
@@ -3038,6 +3043,14 @@ function bindPortalEvents() {
     const target = event.target.closest("button,[data-view],[data-open],[data-qr-vehicle],[data-open-doc],[data-open-vehicle-doc],[data-doc-driver],[data-open-document-id],[data-edit-document-id],[data-download-doc],[data-edit-driver],[data-edit-vehicle],[data-edit-document],[data-reset-password],[data-delete-driver],[data-delete-vehicle],[data-delete-document],[data-request-password],[data-bolt-activity-sync],[data-cartrack-sync],[data-bolt-sync]");
     if (!target) return;
 
+    if (target.dataset.manualOdometer) {
+      const vehicle = state.vehicles.find(row => row.id === target.dataset.manualOdometer);
+      if (state.profile?.role === 'admin' && vehicle) {
+        return window.FleetManualOdometer.open({vehicle, client:supabaseClient, getUser:()=>state.profile, cartrack:vehicleOdometerDetails(vehicle)});
+      }
+      return;
+    }
+
     if(target.dataset.nativeShiftAdminClose && currentUser().role==='admin'){
       const note=window.prompt('Encerrar este turno agora para libertar a viatura? A hora de agora não confirma a saída real. Indica o motivo (8 a 500 caracteres):');
       if(note!==null)return nativeShiftPortal.adminClose(target.dataset.nativeShiftAdminClose,note);
@@ -3175,6 +3188,7 @@ function bindPortalEvents() {
       document.querySelector("#documentViewerModal")?.close();
       documentBlobCache.clear();
       state.sessionUserId = null;
+      window.FleetManualOdometer?.clear();
       nativeShiftPortal.clear();
       tripConferencePortal.clear();
   state.nativeShiftAvailable=false;

@@ -98,7 +98,9 @@
         const entry = stamp(s.entry.registered_at), exit = stamp(s.exit.registered_at);
         if (first === last && serviceStart === null) return entry < last && last <= exit;
         if (first === last && serviceEnd === null) return entry <= first && first < exit;
-        if (first < last && (last <= entry || first >= exit)) return false;
+        // A start and finish at one instant give no direction at a handover.
+        if (first === last) return entry < first && first < exit;
+        if (last <= entry || first >= exit) return false;
         return entry <= first + 300000 && exit >= last - 300000;
       });
       const matches=[...new Map(matching.map(s=>{

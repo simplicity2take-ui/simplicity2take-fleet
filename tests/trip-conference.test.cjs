@@ -133,3 +133,22 @@ test('uses the recorded stage when a handover trip has only one observed instant
     assert.equal(group.missingServiceEnd,delta.finished_at ? 0 : 1);
   }
 });
+
+test('a completed trip with identical start and end stays unattributed at a shift boundary', () => {
+  const {reviewTrips} = require('../native-shifts.js');
+  const at = time => '2026-11-10T' + time + ':00Z';
+  const shifts = [...events, {...events[0], id:'e2', registered_at:at('12:00')},
+    {...events[1], id:'x2', registered_at:at('16:00')}];
+  for (const [time, expected] of [['09:59',[]], ['11:59',['10:00']], ['12:00',[]], ['12:01',['12:00']], ['16:01',[]]]) {
+    const service = {...trip, accepted_at:at(time), finished_at:at(time)};
+    const group = run({events:shifts, trips:[service]}).groups[0];
+    assert.equal(group.bolt, 1);
+    assert.deepEqual(group.services[0].matches.map(m=>m.entry), expected.map(t=>Date.parse(at(t))));
+    for (const [from,to] of [['10:00','12:00'],['12:00','16:00']]) {
+      const shift = {driver_id:'d1',vehicle_id:'v1',started_at:at(from),ended_at:at(to)};
+      const result = reviewTrips(shift,[service],drivers[0]);
+      assert.equal(result.counts.bolt, Number(expected.includes(from)));
+      if (time === '12:00') assert.equal(result.state, 'review');
+    }
+  }
+});

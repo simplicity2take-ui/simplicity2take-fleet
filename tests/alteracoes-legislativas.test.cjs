@@ -32,3 +32,17 @@ test('rejects an incomplete or repeated historical record before importing a new
   assert.deepEqual(importObservations([original], [original, observed, next]).map(row => row.id),
     [id, importObservations([], [next])[0].id]);
 });
+
+test('every checked-in observation batch passes the offline importer and replays identically', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const directory = path.join(__dirname, '../config/fiscal');
+  const files = fs.readdirSync(directory).filter(name => /^observacoes-.*\.json$/.test(name)).sort();
+  assert.ok(files.includes('observacoes-2026-11-26.json'));
+  let history = [];
+  for (const name of files) {
+    const batch = JSON.parse(fs.readFileSync(path.join(directory, name), 'utf8'));
+    history = importObservations(history, batch);
+    assert.deepEqual(importObservations(history, batch), history, name);
+  }
+});

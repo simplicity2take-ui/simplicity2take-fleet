@@ -42,3 +42,5 @@ Para requisitos TVDE e laborais, acompanhar o licenciamento de operadores, a cer
 ## Validação
 
 `node --test tests/previsao-fiscal.test.cjs tests/alteracoes-legislativas.test.cjs` corre casos fictícios de limiar, opção integral, versão errada, montantes inválidos, reserva configurável, repetição de importação e conservação das versões anteriores. A revisão fiscal para utilização operacional e a geração de contratos com modelos juridicamente validados estão pendentes.
+
+Os controlos automáticos do Fleet abrangem alterações isoladas aos ficheiros JSON de configuração fiscal. Reimportam os lotes de observações e comparam a configuração PT-2027-v1 com o hash da simulação de referência. Uma revisão das regras requer uma nova versão para conservar o resultado histórico.

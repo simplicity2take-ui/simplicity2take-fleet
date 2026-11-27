@@ -26,3 +26,9 @@ test('prudential reserve is configurable, rounded once, and preserves the rule a
   assert.equal(simulate(input).regrasSha256,hash);
   assert.equal(simulate(input).resultado.reservaTesourariaCentimos,20);
 });
+
+test('the historical PT-2027-v1 simulation retains its original rule snapshot', () => {
+  const result = simulate({...annual, totalCentimos:50000});
+  assert.equal(result.regrasSha256, 'dd4c41c930608b3876893a2fdfe181228a68f1b1d6ead0363f808d41147c54fd',
+    'Preservar PT-2027-v1 e atribuir uma nova versão às regras alteradas.');
+});

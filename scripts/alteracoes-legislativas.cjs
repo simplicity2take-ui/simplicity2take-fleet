@@ -24,14 +24,30 @@ function normalize(row) {
 }
 function importObservations(previous, observations) {
   if (!Array.isArray(previous) || !Array.isArray(observations)) throw Error('São necessárias duas listas de observações.');
-  const history = [], seen = new Set();
-  for (const input of [...previous,...observations]) {
+  const history = [];
+  const seen = new Set();
+  function identify(input) {
     const row = normalize(input);
     const id = crypto.createHash('sha256').update(JSON.stringify(row)).digest('hex');
-    if (input.id !== undefined && input.id !== id) throw Error('Observação anterior alterada.');
-    if (!seen.has(id)) {
-      seen.add(id);
-      history.push({id,...row});
+    if (input.id !== undefined && input.id !== id) throw Error('Identificador incompatível com a observação.');
+    return {id, ...row};
+  }
+
+  for (const input of previous) {
+    if (typeof input?.id !== 'string') throw Error('Identificador em falta no histórico.');
+    const record = identify(input);
+    if (Object.keys(record).some(key => record[key] !== input[key])) {
+      throw Error('Observação incompleta ou alterada no histórico.');
+    }
+    if (seen.has(record.id)) throw Error('Identificador duplicado no histórico.');
+    seen.add(record.id);
+    history.push({...input});
+  }
+  for (const input of observations) {
+    const record = identify(input);
+    if (!seen.has(record.id)) {
+      seen.add(record.id);
+      history.push(record);
     }
   }
   return history;

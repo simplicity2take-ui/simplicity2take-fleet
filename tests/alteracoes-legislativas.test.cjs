@@ -16,3 +16,19 @@ test('rejects unverified domains and malformed dates or states',()=>{
   for(const bad of [{fonte:'https://cm-gaia.pt.example.test/'},{entidade:'DR'},{dataEvento:'2026-02-30'},{estado:'rascunho'},{impacto:''}])
     assert.throws(()=>importObservations([], [{...observed,...bad}]));
 });
+
+test('rejects an incomplete or repeated historical record before importing a new stage', () => {
+  const [original] = importObservations([], [observed]);
+  const {id, ...withoutId} = original;
+  const next = {...observed, estado:'publicada'};
+  for (const history of [[withoutId], [{...withoutId, impacto:'Correção sem origem'}]]) {
+    assert.throws(() => importObservations(history, [next]), /identificador/i);
+  }
+  const {efeitosDesde, ...missingDateField} = original;
+  assert.throws(() => importObservations([missingDateField], [next]), /incompleta/i);
+  const annotated = {...original, notaRevisao:'Caso fictício'};
+  assert.deepEqual(importObservations([annotated], [observed])[0], annotated);
+  assert.throws(() => importObservations([original, original], [next]), /duplicad/i);
+  assert.deepEqual(importObservations([original], [original, observed, next]).map(row => row.id),
+    [id, importObservations([], [next])[0].id]);
+});

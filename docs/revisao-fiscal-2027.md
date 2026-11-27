@@ -35,7 +35,7 @@ A monitorização diária existente serve de ponto de recolha. O importador loca
 node scripts/alteracoes-legislativas.cjs historico.json config/fiscal/observacoes-2026-11-26.json > historico-revisto.json
 ```
 
-O histórico inicial contém `[]`. Guardar o novo ficheiro em controlo de versões após revisão. A recolha nativa agendada, o armazenamento por empresa, a notificação interna e o registo persistente da aprovação contabilística ainda são dependências do painel. As observações nunca ativam regras por si mesmas.
+O histórico inicial contém `[]`. Cada registo anterior deve conservar os campos normalizados e o identificador único produzido na importação. Se faltar um campo ou houver identificadores repetidos ou incompatíveis, a importação termina com erro antes de emitir resultados. Nesse caso, recuperar o histórico da última versão revista. Observações novas repetidas continuam a ser ignoradas. Guardar o novo ficheiro em controlo de versões após revisão. A recolha nativa agendada, o armazenamento por empresa, a notificação interna e o registo persistente da aprovação contabilística ainda são dependências do painel. As observações nunca ativam regras por si mesmas.
 
 Para requisitos TVDE e laborais, acompanhar o licenciamento de operadores, a certificação dos motoristas e as comunicações da ACT. O acesso direto ao portal ACT não foi confirmado nesta consulta; o diretório da Administração Pública identifica a entidade e os seus serviços. [IMT](https://www.imt-ip.pt/rodoviario/infraestruturas-rodoviarias/tvde/licenciamento-de-operadores-de-tvde/) · [ACT no gov.pt](https://www.gov.pt/servicos/pedir-informacoes-a-autoridade-para-as-condicoes-do-trabalho-act-)
 

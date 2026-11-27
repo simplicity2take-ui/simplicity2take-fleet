@@ -44,3 +44,5 @@ For a service with a known positive duration, the declaration and service must s
 A CarTrack link requires a single normalized plate in both the Fleet directory and the synchronized roster. If the Fleet vehicle query is partial or two Fleet vehicles share the plate, the panel marks a matching CarTrack registration as pending. A completed service identified by its Fleet and platform IDs still counts.
 
 When a completed service has the same timestamp for its start and end, the conference keeps it in the daily total. It can match a shift only strictly inside its interval. At handover the automatic reviewer flags the service for review and leaves it out of both shift counts. A single recorded start or end keeps its existing directional boundary rule.
+
+If completed records share a platform reference but disagree on driver ID, vehicle ID, platform UUID or normalized plate, both the panel and the shift reviewer withhold the disputed service from driver and vehicle counts. Other identifiable services still count. The panel records one pending identity per disputed reference.

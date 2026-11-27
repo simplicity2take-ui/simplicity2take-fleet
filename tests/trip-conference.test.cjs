@@ -178,3 +178,26 @@ test('source references distinguish platforms, ignore padding and require a usab
     assert.equal(panel.partial,true);
   }
 });
+
+test('conflicting ownership of a completed platform reference never chooses the first import', () => {
+  const {reviewTrips} = require('../native-shifts.js');
+  const shift = {driver_id:'d1',vehicle_id:'v1',vehicle_plate:vehicles[0].plate,
+    started_at:events[0].registered_at,ended_at:events[1].registered_at};
+  const unaffected = {...trip,source_trip_id:'other-service'};
+  for (const change of [
+    {driver_id:'d2',platform_driver_uuid:'b2'},
+    {vehicle_id:'v2',vehicle_plate:'BB-11-BB',platform_vehicle_uuid:'bv2'},
+    {platform_driver_uuid:'b2'}, {platform_vehicle_uuid:'bv2'}, {vehicle_plate:'BB11BB'}
+  ]) {
+    const different = {...trip,...change,id:'second',source_trip_id:' s1 '};
+    for (const records of [[trip,different,unaffected],[different,trip,unaffected]]) {
+      const panel = run({trips:records});
+      assert.equal(panel.completed,1);
+      assert.equal(panel.duplicateTrips,1);
+      assert.equal(panel.identityPending.length,1);
+      const review = reviewTrips(shift,records,drivers[0]);
+      assert.equal(review.counts.bolt,1);
+      assert.equal(review.state,'review');
+    }
+  }
+});

@@ -3,6 +3,7 @@
   const shifts=typeof module==='object'&&module.exports?require('./shift-mileage.js'):root.ShiftMileage;
   const plate=value=>String(value||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   const text=value=>String(value??'').trim();
+  const nativeShifts=typeof module==='object'&&module.exports?require('./native-shifts.js'):root.NativeShifts;
   const stamp=shifts.timestamp;
   function resolve(row,kind,platform,entities){
     const id=row[kind+'_id'],uuid=text(row['platform_'+kind+'_uuid']);
@@ -62,6 +63,7 @@
       }))s.flags.push('conflicting_declaration');
     }
     const result={groups:[],completed:0,excludedNonCompleted:0,undated:0,invalidTimes:0,identityPending:[],duplicateTrips:0,excludedTestSessions,partial,coverageVerified:false};
+    const ambiguous = nativeShifts.conflictingTripOwners(trips);
     const groups=new Map(),seen=new Set();
     for(const t of trips){
       if(!['uber','bolt'].includes(t.platform))continue;
@@ -70,6 +72,11 @@
       if(!sourceId){result.identityPending.push({id:t.id,reason:'missing_source_trip_id'});continue;}
       const key=t.platform+'|'+sourceId;
       if(seen.has(key)){result.duplicateTrips++;result.partial=true;continue;}seen.add(key);
+      if (ambiguous.has(key)) {
+        result.identityPending.push({source_trip_id:sourceId, platform:t.platform, reason:'conflicting_trip_owners'});
+        result.partial=true;
+        continue;
+      }
       const recorded=[t.accepted_at,t.pickup_at,t.dropoff_at,t.finished_at,t.observed_at].map(stamp).filter(x=>x!==null);
       if(!recorded.length){result.undated++;continue;}
       // This is a dated-record view, not a claim to capture every service spanning the day.

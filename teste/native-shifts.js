@@ -13,6 +13,23 @@
    const flags=!shift.ended_at?['missing_exit']:shift.closure_kind==='admin'?['admin_closure_requires_review']:!Number.isFinite(duration)||duration<=0||duration>36*3600000?['invalid_or_long_shift']:[];
    return {entry:event('entry',shift.started_at),exit:shift.ended_at?event('exit',shift.ended_at):null,flags};
  }
+ // A platform reference identifies one service. Inspect all completed copies
+ // before assigning any of them to a driver or vehicle.
+ function conflictingTripOwners(trips) {
+   const owners = new Map();
+   const ambiguous = new Set();
+   for (const trip of trips) {
+     if (trip.order_status !== 'completed' || !['uber','bolt'].includes(trip.platform)) continue;
+     const reference = String(trip.source_trip_id ?? '').trim();
+     if (!reference) continue;
+     const key = trip.platform + '|' + reference;
+     const identity = JSON.stringify([trip.driver_id, trip.platform_driver_uuid,
+       trip.vehicle_id, trip.platform_vehicle_uuid, plate(trip.vehicle_plate)]);
+     if (owners.has(key) && owners.get(key) !== identity) ambiguous.add(key);
+     else owners.set(key, identity);
+   }
+   return ambiguous;
+ }
  function reviewTrips(shift,trips,driver,partial=false){
    const flags=new Set(['platform_coverage_unconfirmed']),counts={uber:0,bolt:0};
    if(shift.is_test)flags.add('test_shift');
@@ -21,6 +38,7 @@
    if(end-start>36*3600000||end===start){flags.add('shift_duration_review');conflicts++;}
    if(shift.closure_kind==='admin'){flags.add('admin_closure_requires_review');conflicts++;}
    if(partial)flags.add('partial_trip_history');
+   const ambiguous = conflictingTripOwners(trips);
    const seen=new Set();
    for(const t of trips){
      if (t.order_status !== 'completed' || !['uber','bolt'].includes(t.platform)) continue;
@@ -58,6 +76,11 @@
        continue;
      }
      const key = t.platform + '|' + sourceId;
+     if (ambiguous.has(key)) {
+       flags.add('conflicting_trip_owners');
+       conflicts++;
+       continue;
+     }
      if (seen.has(key)) {
        flags.add('duplicate_source_trip_id');
        conflicts++;
@@ -72,6 +95,6 @@
    }
    return {state:conflicts?'review':partial||(!counts.uber&&!counts.bolt)?'pending':'checked_available_data',flags:[...flags],counts};
  }
- const api={qrToken,session,reviewTrips};
+ const api={qrToken,session,reviewTrips,conflictingTripOwners};
  if(typeof module==='object'&&module.exports)module.exports=api;else root.NativeShifts=api;
 })(typeof globalThis==='undefined'?this:globalThis);

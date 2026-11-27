@@ -24,7 +24,6 @@
    const seen=new Set();
    for(const t of trips){
      if (t.order_status !== 'completed' || !['uber','bolt'].includes(t.platform)) continue;
-     const key=t.platform+'|'+t.source_trip_id;if(seen.has(key))continue;seen.add(key);
      const uuid=t.platform==='uber'?driver.uber_driver_uuid:driver.bolt_driver_uuid;
      const own=t.driver_id===shift.driver_id||Boolean(uuid&&t.platform_driver_uuid===uuid);
      const sameVehicle=t.vehicle_id===shift.vehicle_id||Boolean(plate(t.vehicle_plate)&&plate(t.vehicle_plate)===plate(shift.vehicle_plate));
@@ -52,6 +51,19 @@
        conflicts++;
        continue;
      }
+     const sourceId = String(t.source_trip_id ?? '').trim();
+     if (!sourceId) {
+       flags.add('missing_source_trip_id');
+       conflicts++;
+       continue;
+     }
+     const key = t.platform + '|' + sourceId;
+     if (seen.has(key)) {
+       flags.add('duplicate_source_trip_id');
+       conflicts++;
+       continue;
+     }
+     seen.add(key);
      if(own&&((t.driver_id&&t.driver_id!==shift.driver_id)||(uuid&&t.platform_driver_uuid&&t.platform_driver_uuid!==uuid))){flags.add('trip_identity_conflict');conflicts++;}
      if(sameVehicle&&((t.vehicle_id&&t.vehicle_id!==shift.vehicle_id)||(plate(t.vehicle_plate)&&plate(t.vehicle_plate)!==plate(shift.vehicle_plate)))){flags.add('trip_vehicle_identity_conflict');conflicts++;}
      if(own){counts[t.platform]++;if(!sameVehicle){flags.add('trip_vehicle_mismatch');conflicts++;}}

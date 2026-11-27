@@ -66,8 +66,9 @@
     for(const t of trips){
       if(!['uber','bolt'].includes(t.platform))continue;
       // A missing source ID cannot be safely deduplicated or compared.
-      if(!text(t.source_trip_id)){result.identityPending.push({id:t.id,reason:'missing_source_trip_id'});continue;}
-      const key=t.platform+'|'+t.source_trip_id;
+      const sourceId = text(t.source_trip_id);
+      if(!sourceId){result.identityPending.push({id:t.id,reason:'missing_source_trip_id'});continue;}
+      const key=t.platform+'|'+sourceId;
       if(seen.has(key)){result.duplicateTrips++;result.partial=true;continue;}seen.add(key);
       const recorded=[t.accepted_at,t.pickup_at,t.dropoff_at,t.finished_at,t.observed_at].map(stamp).filter(x=>x!==null);
       if(!recorded.length){result.undated++;continue;}

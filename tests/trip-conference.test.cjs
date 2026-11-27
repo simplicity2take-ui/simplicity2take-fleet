@@ -26,7 +26,7 @@ test('open, contradictory, administrative and test declarations never validate o
   assert.equal(run({events:[events[0]]}).groups[0].declarationPending,1);
   assert.equal(run({events:[{...events[0],review_flags:['source_changed_pending_review']},events[1]]}).groups[0].declarationPending,1);
   assert.equal(run({events:[...events,{id:'other',event_kind:'entry',driver_id:'d2',vehicle_id:'v1',vehicle_plate:'AA-00-AA',registered_at:'2026-11-10T10:30:00Z'}]}).groups[0].declarationPending,1);
-  const native={id:'native',driver_id:'d1',vehicle_id:'v1',started_at:events[0].registered_at,ended_at:events[1].registered_at};
+  const native={id:'native',driver_id:'d1',vehicle_id:'v1',vehicle_plate:vehicles[0].plate,started_at:events[0].registered_at,ended_at:events[1].registered_at};
   assert.equal(run({events:[],nativeSessions:[native]}).groups[0].compatibleDeclarations,1);
   for(const delta of [{is_test:true},{closure_kind:'admin'},{started_at:'bad'},{ended_at:null}])assert.equal(run({events:[],nativeSessions:[{...native,...delta}]}).groups[0].declarationPending,1);
   assert.equal(run({nativeSessions:[{...native,vehicle_id:'v2'}]}).groups[0].declarationPending,1);
@@ -47,7 +47,7 @@ test('excludes observations outside the selected day and never changes inputs',(
   assert.equal(run({trips:[{...trip,accepted_at:'2026-11-09T11:00:00Z',finished_at:'2026-11-09T11:30:00Z',observed_at:'2026-11-10T12:00:00Z'}]}).completed,0);
 });
 test('service details retain original times and every compatible source without inventing missing starts',()=>{
-  const native={id:'native',driver_id:'d1',vehicle_id:'v1',started_at:events[0].registered_at,ended_at:events[1].registered_at};
+  const native={id:'native',driver_id:'d1',vehicle_id:'v1',vehicle_plate:vehicles[0].plate,started_at:events[0].registered_at,ended_at:events[1].registered_at};
   const r=run({nativeSessions:[native]}),s=r.groups[0].services[0];
   assert.equal(s.acceptedAt,Date.parse(trip.accepted_at));assert.equal(s.pickupAt,null);assert.equal(s.endedAt,Date.parse(trip.finished_at));
   assert.deepEqual(s.matches.map(m=>m.source).sort(),['app','form']);assert.equal(r.groups[0].compatibleDeclarations,1);
@@ -150,5 +150,31 @@ test('a completed trip with identical start and end stays unattributed at a shif
       assert.equal(result.counts.bolt, Number(expected.includes(from)));
       if (time === '12:00') assert.equal(result.state, 'review');
     }
+  }
+});
+
+test('source references distinguish platforms, ignore padding and require a usable value', () => {
+  const {reviewTrips} = require('../native-shifts.js');
+  const shift = {driver_id:'d1',vehicle_id:'v1',vehicle_plate:vehicles[0].plate,started_at:events[0].registered_at,ended_at:events[1].registered_at};
+  const otherPlatform = {...trip, platform:'uber', platform_driver_uuid:'u1', platform_vehicle_uuid:'uv1'};
+  const padded = {...trip, id:'padded',source_trip_id:'  '+trip.source_trip_id+' '};
+  for (const invalid of [null,'','   ']) {
+    const unidentified = {...trip,id:'unknown',source_trip_id:invalid};
+    const checked = reviewTrips(shift,[unidentified,trip],drivers[0]);
+    assert.equal(checked.counts.bolt,1);
+    assert.equal(checked.state,'review');
+    assert.ok(checked.flags.includes('missing_source_trip_id'));
+    assert.equal(run({trips:[unidentified,trip]}).completed,1);
+    const unrelated = {...unidentified,driver_id:'other',vehicle_id:'other',vehicle_plate:null,platform_driver_uuid:null};
+    assert.equal(reviewTrips(shift,[unrelated,trip],drivers[0]).state,'checked_available_data');
+  }
+  for (const records of [[trip,padded,otherPlatform],[padded,trip,otherPlatform]]) {
+    const checked = reviewTrips(shift,records,drivers[0]);
+    assert.deepEqual(checked.counts,{uber:1,bolt:1});
+    assert.equal(checked.state,'review');
+    const panel = run({trips:records});
+    assert.equal(panel.completed,2);
+    assert.equal(panel.duplicateTrips,1);
+    assert.equal(panel.partial,true);
   }
 });

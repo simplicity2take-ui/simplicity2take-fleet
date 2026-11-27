@@ -4,6 +4,8 @@ Na administração em **Veículos → Leituras manuais**, o administrador conseg
 
 O registo manual mantém a sua origem numa tabela própria. Um valor inesperado continua disponível para investigação. O portal compara cada uma das dez leituras manuais apresentadas com a leitura CarTrack identificada na ficha. Sinaliza um valor inferior a uma observação CarTrack anterior, um valor superior a uma observação CarTrack posterior e valores diferentes no mesmo instante. Desconsidera diferenças inferiores a 1 km, porque a introdução manual usa quilómetros inteiros. A comparação depende de matrícula inequívoca, data válida e histórico CarTrack coerente. O aviso pede conferência humana e preserva os dois valores originais. As retificações auditadas continuam pendentes.
 
+Ao reabrir a ficha depois de uma resposta perdida, o portal procura o pedido pelo autor, pela viatura e pelo identificador, mesmo fora das dez leituras apresentadas. Se a base confirmar a leitura, uma nova observação com os mesmos quilómetros recebe um identificador próprio. Se o pedido ainda estiver por confirmar, o formulário recupera o valor e conserva o identificador para a repetição.
+
 ## Dependência e verificação
 
 O SQL proposto em `supabase/sql/vehicle-manual-odometer.sql` depende de `vehicles.id`, `profiles.id/role/status`, de `auth.uid()` e das políticas de visibilidade das viaturas. A instalação é uma operação separada. Sem a tabela, o formulário mostra o histórico indisponível e a restante ficha continua funcional.

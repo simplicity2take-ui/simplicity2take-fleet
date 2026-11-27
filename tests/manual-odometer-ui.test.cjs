@@ -17,8 +17,8 @@ test('admin manual reading retries retain the request id and a previous dialog c
   vm.runInNewContext(fs.readFileSync(require.resolve('../vehicle-manual-odometer.js'),'utf8'),c);
   const controller=c.window.FleetManualOdometer;
   const user={id:'admin',role:'driver'};
-  let data=[], read=async()=>({data}), reads=0;
-  const client={from(){reads++;return {select(){return this;},eq(){return this;},order(){return this;},limit:()=>read()};},
+  let data=[], read=async()=>({data}), reads=0, exact=null;
+  const client={from(){reads++;return {select(){return this;},eq(){return this;},maybeSingle:async()=>({data:exact}),order(){return this;},limit:()=>read()};},
     async rpc(name,args){
       assert.equal(name,'fleet_record_manual_odometer');
       calls.push(args);
@@ -40,6 +40,25 @@ test('admin manual reading retries retain the request id and a previous dialog c
   assert.deepEqual(calls[0],calls[1]);
   assert.match(status.textContent,/Leitura registada/);
   assert.match(list.items[0].textContent,/0 km.*Registada por si/);
+  // Reload after the server committed but its response was lost. Later
+  // readings can push the confirmed request outside the displayed page.
+  const storageKey = 'fleet.manual-odometer.admin.v';
+  store.set(storageKey, JSON.stringify({id:'lost-response', km:0}));
+  data = [];
+  exact = {request_id:'lost-response', recorded_by:user.id, km:'0', recorded_at:'2026-07-01T00:00:00Z'};
+  await controller.open(options);
+  assert.match(status.textContent,/anterior.*confirmad/i);
+  assert.equal(store.has(storageKey),false);
+  field.valueAsNumber=0;
+  await send();
+  assert.notEqual(calls.at(-1).p_request_id,'lost-response');
+  store.set(storageKey, JSON.stringify({id:'not-yet-saved', km:1}));
+  exact = null;
+  await controller.open(options);
+  assert.match(status.textContent,/por confirmar/);
+  assert.equal(field.valueAsNumber,1);
+  await send();
+  assert.equal(calls.at(-1).p_request_id,'not-yet-saved');
   const before = Date.parse('2026-07-01T10:00:00Z');
   const after = before + 3600000;
   options.cartrack = {label:'CarTrack', reading:{at:before, km:100.5}};

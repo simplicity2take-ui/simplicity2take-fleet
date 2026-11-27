@@ -37,6 +37,15 @@
     const context = {userId:user.id, vehicleId:vehicle.id};
     active = context;
     const current = () => active === context && dialog.open && getUser()?.id === user.id && getUser()?.role === 'admin';
+    const key = 'fleet.manual-odometer.' + user.id + '.' + vehicle.id;
+    function pendingRequest() {
+      if (pending.has(key)) return pending.get(key);
+      try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; }
+    }
+    function forgetRequest() {
+      pending.delete(key);
+      try { sessionStorage.removeItem(key); } catch {}
+    }
     let ready = false;
     dialog.querySelector('h2').textContent = 'Leituras manuais · ' + vehicle.plate;
     dialog.querySelector('[data-cartrack]').textContent = cartrack.label;
@@ -64,6 +73,25 @@
           return li;
         }));
         status.textContent = saved ? 'Leitura registada.' : data.length ? '' : 'Sem leituras manuais.';
+        const request = pendingRequest();
+        if (!saved && request?.id && Number.isSafeInteger(request.km) && request.km >= 0) {
+          const matches = row => row.recorded_by === user.id && row.request_id === request.id;
+          let record = data.find(matches);
+          if (!record) {
+            const lookup = await client.from('fleet_manual_odometer').select('recorded_by,request_id,km')
+              .eq('vehicle_id', vehicle.id).eq('recorded_by', user.id).eq('request_id', request.id).maybeSingle();
+            if (!current()) return;
+            if (lookup.error) throw Error('read');
+            record = lookup.data;
+          }
+          if (record && matches(record) && Number(record.km) === request.km) {
+            forgetRequest();
+            status.textContent = 'Leitura anterior confirmada. Podes registar uma nova leitura.';
+          } else {
+            input.valueAsNumber = request.km;
+            status.textContent = 'Leitura por confirmar. Repete o registo para confirmar este pedido.';
+          }
+        }
         ready = true;
         submit.disabled = false;
       } catch {
@@ -81,10 +109,8 @@
       input.disabled = true;
       status.textContent = 'A registar…';
       // Recover the same command on a transport failure, including a page reload.
-      const key = 'fleet.manual-odometer.' + user.id + '.' + vehicle.id;
       try {
-        let request = pending.get(key);
-        try { request ??= JSON.parse(sessionStorage.getItem(key)); } catch {}
+        let request = pendingRequest();
         if (!request || request.km !== km || !request.id) request = {km, id:crypto.randomUUID()};
         pending.set(key, request);
         try { sessionStorage.setItem(key, JSON.stringify(request)); } catch {}
@@ -93,8 +119,7 @@
         });
         if (!current()) return;
         if (error || !data) throw Error('unconfirmed');
-        pending.delete(key);
-        try { sessionStorage.removeItem(key); } catch {}
+        forgetRequest();
         form.reset();
         await refresh(true);
       } catch {
